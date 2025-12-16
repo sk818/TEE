@@ -1,19 +1,31 @@
 <script lang="ts">
     import ViewportSelector from './components/ViewportSelector.svelte';
     import ExplorerView from './components/ExplorerView.svelte';
+    import ThreePaneView from './components/ThreePaneView.svelte';
     import type { ViewportConfig } from './lib/data/DataTypes';
 
-    let currentView: 'selector' | 'explorer' = 'selector';
+    let currentView: 'selector' | 'explorer' | 'three-pane' = 'selector';
     let viewportConfig: ViewportConfig | null = null;
+    let selectedViewportId: string = '';
 
     function handleViewportLoad(event: CustomEvent<ViewportConfig>) {
         viewportConfig = event.detail;
         currentView = 'explorer';
     }
 
+    function handleOpenThreePane(viewportId: string) {
+        selectedViewportId = viewportId;
+        currentView = 'three-pane';
+    }
+
     function handleBackToSelector() {
         currentView = 'selector';
         viewportConfig = null;
+        selectedViewportId = '';
+    }
+
+    function handleCloseThreePane() {
+        handleBackToSelector();
     }
 </script>
 
@@ -21,7 +33,9 @@
     {#if currentView === 'selector'}
         <ViewportSelector on:load={handleViewportLoad} />
     {:else if currentView === 'explorer' && viewportConfig}
-        <ExplorerView config={viewportConfig} on:back={handleBackToSelector} />
+        <ExplorerView config={viewportConfig} on:back={handleBackToSelector} on:open-three-pane={(e) => handleOpenThreePane(e.detail)} />
+    {:else if currentView === 'three-pane' && selectedViewportId}
+        <ThreePaneView viewportId={selectedViewportId} onClose={handleCloseThreePane} />
     {/if}
 </main>
 
