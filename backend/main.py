@@ -166,7 +166,7 @@ def process_viewport_task(task_id: str):
         pyramids_dir.mkdir(parents=True, exist_ok=True)
 
         # Step 1: Download embeddings
-        update_task_status(task_id, 'downloading', 0, 'Downloading TESSERA embeddings...')
+        update_task_status(task_id, 'downloading', 0, 'Preparing to download TESSERA embeddings from geotessera...')
 
         from backend.processing.download_viewport_embeddings import download_embeddings_for_viewport
 
@@ -180,7 +180,10 @@ def process_viewport_task(task_id: str):
         def download_progress(year, status, percent):
             # Update progress for downloading phase (0-50%)
             overall_progress = (percent / 100) * 50
-            update_task_status(task_id, 'downloading', overall_progress, f'Downloading year {year}...')
+            if status == 'complete':
+                update_task_status(task_id, 'downloading', overall_progress, f'✓ Completed year {year}')
+            else:
+                update_task_status(task_id, 'downloading', overall_progress, f'Downloading embeddings for year {year}... (this may take several minutes)')
 
         logger.info(f"Downloading embeddings for bounds {bounds_tuple}")
         embeddings_metadata = download_embeddings_for_viewport(
