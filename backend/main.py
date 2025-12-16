@@ -340,6 +340,48 @@ def process_viewport_task(task_id: str):
 # API Routes
 # ============================================================================
 
+@app.get("/api/viewports/find-by-bounds")
+async def find_viewport_by_bounds(minLon: float, minLat: float, maxLon: float, maxLat: float):
+    """Find existing viewport for given bounds (within tolerance)."""
+    tolerance = 0.001  # ~100 meters tolerance for duplicate detection
+
+    try:
+        import json
+
+        # Search through existing viewports
+        for viewport_dir in DATA_DIR.iterdir():
+            if not viewport_dir.is_dir():
+                continue
+
+            metadata_file = viewport_dir / "metadata.json"
+            if not metadata_file.exists():
+                continue
+
+            with open(metadata_file, 'r') as f:
+                metadata = json.load(f)
+
+            # Check if bounds match within tolerance
+            vp_bounds = metadata.get('bounds', {})
+            if (abs(vp_bounds.get('minLon', 0) - minLon) < tolerance and
+                abs(vp_bounds.get('minLat', 0) - minLat) < tolerance and
+                abs(vp_bounds.get('maxLon', 0) - maxLon) < tolerance and
+                abs(vp_bounds.get('maxLat', 0) - maxLat) < tolerance and
+                metadata.get('status') == 'complete'):
+
+                logger.info(f"Found existing viewport {viewport_dir.name} for bounds")
+                return {
+                    "viewport_id": metadata['viewport_id'],
+                    "found": True,
+                    "years": metadata.get('years', [])
+                }
+
+        return {"found": False}
+
+    except Exception as e:
+        logger.exception("Error searching for viewport by bounds")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 @app.post("/api/viewports/process")
 async def start_viewport_processing(request: ViewportProcessRequest, background_tasks: BackgroundTasks):
     """Start processing a viewport."""

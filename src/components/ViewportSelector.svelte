@@ -126,7 +126,34 @@
         errorMessage = '';
 
         try {
-            console.log('Starting viewport processing...');
+            console.log('Checking for existing viewport...');
+
+            // Check if this viewport already exists
+            const findResponse = await fetch(
+                `${API_BASE_URL}/api/viewports/find-by-bounds?minLon=${bounds.minLon}&minLat=${bounds.minLat}&maxLon=${bounds.maxLon}&maxLat=${bounds.maxLat}`
+            );
+
+            if (findResponse.ok) {
+                const findData = await findResponse.json();
+
+                if (findData.found) {
+                    console.log(`✅ Found existing viewport: ${findData.viewport_id}`);
+
+                    // Load existing viewport directly
+                    const config: ViewportConfig = {
+                        center: [centerLng, centerLat],
+                        bounds,
+                        sizeKm: VIEWPORT_SIZE_KM,
+                        viewportId: findData.viewport_id
+                    };
+
+                    processingState = 'idle';
+                    dispatch('load', config);
+                    return;
+                }
+            }
+
+            console.log('No existing viewport found, starting new processing...');
 
             // Start processing task
             const response = await fetch(`${API_BASE_URL}/api/viewports/process`, {
