@@ -126,6 +126,16 @@
         updateViewport(0.1218, 52.2053); // Reset to Cambridge
         map.flyTo({ center: [0.1218, 52.2053], zoom: 2 });
     }
+
+    function handleZoomIn() {
+        const currentZoom = map.getZoom();
+        map.flyTo({ zoom: Math.min(currentZoom + 1, 20) });
+    }
+
+    function handleZoomOut() {
+        const currentZoom = map.getZoom();
+        map.flyTo({ zoom: Math.max(currentZoom - 1, 1) });
+    }
 </script>
 
 <div class="viewport-selector">
@@ -157,6 +167,15 @@
 
     <div class="map-wrapper">
         <div class="map-container" bind:this={mapContainer}></div>
+
+        <div class="zoom-controls">
+            <button class="zoom-btn zoom-in" on:click={handleZoomIn} title="Zoom In (+)">
+                <span>+</span>
+            </button>
+            <button class="zoom-btn zoom-out" on:click={handleZoomOut} title="Zoom Out (−)">
+                <span>−</span>
+            </button>
+        </div>
     </div>
 
     <div class="info-panel">
@@ -333,5 +352,47 @@
 
     .btn-secondary:hover {
         border-color: #999;
+    }
+
+    .zoom-controls {
+        position: absolute;
+        right: 20px;
+        top: 50%;
+        transform: translateY(-50%);
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+        z-index: 100;
+    }
+
+    .zoom-btn {
+        width: 40px;
+        height: 40px;
+        background: white;
+        border: 2px solid #ddd;
+        border-radius: 4px;
+        cursor: pointer;
+        font-size: 20px;
+        font-weight: 600;
+        color: #333;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        box-shadow: 0 2px 6px rgba(0, 0, 0, 0.1);
+        transition: all 0.2s ease;
+    }
+
+    .zoom-btn:hover {
+        background: #f5f5f5;
+        border-color: #999;
+        box-shadow: 0 4px 8px rgba(0, 0, 0, 0.15);
+    }
+
+    .zoom-btn:active {
+        transform: scale(0.95);
+    }
+
+    .zoom-btn span {
+        line-height: 1;
     }
 </style>
