@@ -18,7 +18,7 @@ def normalize_embeddings(embeddings: np.ndarray) -> np.ndarray:
         embeddings: Array of shape (height, width, 128) with uint8 values
 
     Returns:
-        Normalized embeddings as float16
+        Normalized embeddings as float32
     """
     # Convert to float
     embeddings_f32 = embeddings.astype(np.float32) / 255.0
@@ -28,8 +28,8 @@ def normalize_embeddings(embeddings: np.ndarray) -> np.ndarray:
     norms = np.maximum(norms, 1e-8)  # Avoid division by zero
     embeddings_normalized = embeddings_f32 / norms
 
-    # Convert to float16 to save space
-    return embeddings_normalized.astype(np.float16)
+    # Return as float32 for compatibility with browser Float32Array
+    return embeddings_normalized
 
 def write_embedding_file(embeddings: np.ndarray,
                          year: int,
@@ -37,26 +37,28 @@ def write_embedding_file(embeddings: np.ndarray,
                          output_path: Path):
     """
     Write embeddings in custom binary format with header.
+    Header is exactly 64 bytes for compatibility with browser loader.
     """
     height, width, dims = embeddings.shape
     min_lon, min_lat, max_lon, max_lat = bounds
 
     with open(output_path, 'wb') as f:
-        # Write header
-        f.write(b'TESS')  # Magic number
-        f.write(struct.pack('I', 1))  # Version
-        f.write(struct.pack('I', year))
-        f.write(struct.pack('I', width))
-        f.write(struct.pack('I', height))
-        f.write(struct.pack('I', dims))
-        f.write(struct.pack('d', min_lon))
-        f.write(struct.pack('d', min_lat))
-        f.write(struct.pack('d', max_lon))
-        f.write(struct.pack('d', max_lat))
-        f.write(b'\x00' * 16)  # Reserved
+        # Write 64-byte header (compatible with EmbeddingLoader.ts)
+        f.write(b'EMBD')  # Magic number (4 bytes)
+        f.write(struct.pack('<I', 1))  # Version (4 bytes)
+        f.write(struct.pack('<I', year))  # Year (4 bytes)
+        f.write(struct.pack('<I', width))  # Width (4 bytes)
+        f.write(struct.pack('<I', height))  # Height (4 bytes)
+        f.write(struct.pack('<I', dims))  # Dimensions (4 bytes)
+        f.write(struct.pack('<d', min_lon))  # Min longitude (8 bytes)
+        f.write(struct.pack('<d', min_lat))  # Min latitude (8 bytes)
+        f.write(struct.pack('<d', max_lon))  # Max longitude (8 bytes)
+        f.write(struct.pack('<d', max_lat))  # Max latitude (8 bytes)
+        # Total: 4+4+4+4+4+4+8+8+8+8 = 56 bytes, pad to 64
+        f.write(b'\x00' * 8)  # Reserved (8 bytes)
 
-        # Write data (row-major order)
-        embeddings.tofile(f)
+        # Write data (row-major order) as float32
+        embeddings.astype(np.float32).tofile(f)
 
 def process_all_embeddings(input_dir: Path,
                            output_dir: Path,

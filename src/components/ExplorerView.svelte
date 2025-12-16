@@ -53,8 +53,15 @@
 
             loadingMessage = 'Ready!';
             loading = false;
+
+            // Log compute backend info
+            if (usingCPUFallback) {
+                console.log('✅ Using CPU-based similarity compute');
+            } else {
+                console.log('✅ Using WebGPU-accelerated similarity compute');
+            }
         } catch (e: any) {
-            console.error('Initialization error:', e);
+            console.error('❌ Initialization error:', e);
             error = e.message || 'Unknown error during initialization';
             loading = false;
         }
@@ -195,19 +202,33 @@
 
         <div class="map-view">
             <div class="placeholder-map">
-                <p>Map visualization will be rendered here using Deck.gl</p>
-                <p>Click anywhere to select a pixel and compute similarity</p>
+                <h3>Embedding Visualization</h3>
+                <p style="color: #999; font-size: 14px;">Map rendering (Deck.gl) coming soon</p>
+
+                <div style="margin: 20px 0; padding: 15px; background: #f0f0f0; border-radius: 4px;">
+                    <p style="margin: 0 0 10px 0; font-weight: 600;">Test Similarity Computation:</p>
+                    <p style="margin: 5px 0; color: #666; font-size: 14px;">
+                        Click the button below to select a test pixel (1000, 1000) and compute similarities using {usingCPUFallback ? 'CPU' : 'WebGPU'}
+                    </p>
+                </div>
 
                 {#if selectedPixel}
-                    <p class="selected">Selected: ({selectedPixel[0]}, {selectedPixel[1]})</p>
+                    <p class="selected">✓ Selected Pixel: ({selectedPixel[0]}, {selectedPixel[1]})</p>
+                    <p style="color: #666; font-size: 13px;">Similarity computed and ready for visualization</p>
                 {/if}
 
                 <button
                     class="demo-click"
-                    on:click={() => handlePixelClick(1000, 1000)}
+                    on:click={() => handlePixelClick(100, 100)}
                 >
-                    Demo Click (1000, 1000)
+                    🧪 Test Pixel Selection
                 </button>
+
+                {#if usingCPUFallback}
+                    <p style="margin-top: 20px; color: #ff9800; font-size: 13px;">
+                        ⚠️ Running in CPU mode (embeddings: {embeddingLoader ? '✓ loaded' : 'loading...'})
+                    </p>
+                {/if}
             </div>
         </div>
 

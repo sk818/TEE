@@ -25,20 +25,20 @@ def load_embeddings_for_pca(embedding_dir: Path, years: list) -> np.ndarray:
             raise FileNotFoundError(f"No embedding file found for year {year}")
         file_path = files[0]
 
-        # Read header to get dimensions
+        # Read header to get dimensions (exactly 64 bytes)
         with open(file_path, 'rb') as f:
             magic = f.read(4)
-            version = struct.unpack('I', f.read(4))[0]
-            year_stored = struct.unpack('I', f.read(4))[0]
-            width = struct.unpack('I', f.read(4))[0]
-            height = struct.unpack('I', f.read(4))[0]
-            dims = struct.unpack('I', f.read(4))[0]
+            version = struct.unpack('<I', f.read(4))[0]
+            year_stored = struct.unpack('<I', f.read(4))[0]
+            width = struct.unpack('<I', f.read(4))[0]
+            height = struct.unpack('<I', f.read(4))[0]
+            dims = struct.unpack('<I', f.read(4))[0]
 
-            # Skip bounds and reserved space (8*4 bytes for bounds + 16 reserved)
-            f.seek(4 + 4 + 4 + 4 + 4 + 4 + 32 + 16)  # Total header = 72 bytes
+            # Skip rest of header (bounds + reserved)
+            f.seek(64)  # Exactly 64-byte header
 
-            # Read embeddings as float16
-            embeddings = np.fromfile(f, dtype=np.float16)
+            # Read embeddings as float32
+            embeddings = np.fromfile(f, dtype=np.float32)
             embeddings = embeddings.reshape(height, width, dims)
             all_embeddings.append(embeddings)
 
