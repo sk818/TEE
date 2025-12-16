@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import L from 'leaflet';
+	import { ZoomAwareSimilarity, type SimilarityResult } from '../lib/similarity/ZoomAwareSimilarity';
 
 	// Props
 	export let viewportId: string = '';
@@ -16,6 +17,14 @@
 	let isLoading = true;
 	let errorMessage = '';
 	let tileLayers: { sentinel2?: L.TileLayer; embeddings?: L.TileLayer } = {};
+	let viewportBounds: any = null;
+	let similarityCompute: ZoomAwareSimilarity | null = null;
+	let lastSimilarityResult: SimilarityResult | null = null;
+	let similarityMarker: L.Marker | null = null;
+	let heatmapLayer: L.ImageOverlay | null = null;
+	let isComputingSimilarity = false;
+	let similarityStats: any = null;
+	let topSimilarPixels: any[] = [];
 
 	const TILE_SIZE = 2048;
 
@@ -23,6 +32,173 @@
 	function zoomToPyramidLevel(z: number, maxLevel: number = 5): number {
 		const level = Math.floor((18 - z) / 2);
 		return Math.max(0, Math.min(maxLevel, level));
+	}
+
+	// Load coarsened embeddings for current zoom level
+	async function loadEmbeddingsForZoomLevel() {
+		if (!similarityMode || !similarityCompute) return;
+
+		try {
+			const newLevel = zoomToPyramidLevel(currentZoom);
+			if (newLevel === similarityCompute.getState().level && similarityCompute.getState().loaded) {
+				// Already loaded at this level
+				return;
+			}
+
+			console.log(`[ThreePaneView] Loading embeddings for level ${newLevel}...`);
+			isComputingSimilarity = true;
+
+			await similarityCompute.loadEmbeddingsForLevel(viewportId, selectedYear, newLevel);
+
+			isComputingSimilarity = false;
+			console.log(`[ThreePaneView] ✓ Embeddings loaded for level ${newLevel}`);
+		} catch (err) {
+			console.error('[ThreePaneView] Error loading embeddings:', err);
+			errorMessage = `Failed to load embeddings: ${err instanceof Error ? err.message : String(err)}`;
+			isComputingSimilarity = false;
+		}
+	}
+
+	// Compute and display similarity
+	async function computeAndDisplaySimilarity(pixelX: number, pixelY: number) {
+		if (!similarityCompute || !maps.embeddings || !viewportBounds) return;
+
+		try {
+			isComputingSimilarity = true;
+			const startTime = performance.now();
+
+			// Compute similarity
+			const result = similarityCompute.computeSimilarity(pixelX, pixelY);
+			lastSimilarityResult = result;
+
+			// Calculate statistics
+			similarityStats = ZoomAwareSimilarity.getStatistics(result.similarities);
+
+			// Get top 100 similar pixels
+			topSimilarPixels = similarityCompute.getTopSimilar(result.similarities, 100);
+
+			// Display similarity heatmap
+			displaySimilarityHeatmap(result);
+
+			// Add marker at reference pixel
+			const refLatLng = similarityCompute.pixelToLatLng(
+				pixelX,
+				pixelY,
+				viewportBounds
+			);
+
+			// Remove old marker
+			if (similarityMarker && maps.embeddings) {
+				maps.embeddings.removeLayer(similarityMarker);
+			}
+
+			// Add new marker
+			similarityMarker = L.marker([refLatLng.lat, refLatLng.lng], {
+				icon: L.icon({
+					iconUrl: 'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMzIiIGhlaWdodD0iMzIiIHZpZXdCb3g9IjAgMCAzMiAzMiIgZmlsbD0ibm9uZSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48Y2lyY2xlIGN4PSIxNiIgY3k9IjE2IiByPSIxMiIgZmlsbD0iIzI4YTc0NSIgc3Ryb2tlPSJ3aGl0ZSIgc3Ryb2tlLXdpZHRoPSIyIi8+PC9zdmc+',
+					iconSize: [32, 32],
+					iconAnchor: [16, 16]
+				}),
+				title: `Reference pixel (${pixelX}, ${pixelY})\nSimilarity: 1.00`
+			}).addTo(maps.embeddings);
+
+			const computeTime = performance.now() - startTime;
+			console.log(`[ThreePaneView] Computed similarity in ${computeTime.toFixed(1)}ms`);
+
+			isComputingSimilarity = false;
+		} catch (err) {
+			console.error('[ThreePaneView] Error computing similarity:', err);
+			errorMessage = `Failed to compute similarity: ${err instanceof Error ? err.message : String(err)}`;
+			isComputingSimilarity = false;
+		}
+	}
+
+	// Display similarity as heatmap
+	function displaySimilarityHeatmap(result: SimilarityResult) {
+		if (!maps.embeddings || !lastSimilarityResult) return;
+
+		// Remove old heatmap
+		if (heatmapLayer && maps.embeddings) {
+			maps.embeddings.removeLayer(heatmapLayer);
+		}
+
+		// Create canvas with heatmap
+		const canvas = createSimilarityCanvas(result.similarities, result.width, result.height);
+
+		// Convert canvas to data URL
+		const dataUrl = canvas.toDataURL();
+
+		// Get bounds for the heatmap
+		const bounds = L.latLngBounds(
+			[viewportBounds.minLat, viewportBounds.minLon],
+			[viewportBounds.maxLat, viewportBounds.maxLon]
+		);
+
+		// Create and add image overlay
+		heatmapLayer = L.imageOverlay(dataUrl, bounds, { opacity: 0.6 }).addTo(maps.embeddings);
+	}
+
+	// Create canvas heatmap from similarities
+	function createSimilarityCanvas(similarities: Float32Array, width: number, height: number): HTMLCanvasElement {
+		const canvas = document.createElement('canvas');
+		canvas.width = width;
+		canvas.height = height;
+
+		const ctx = canvas.getContext('2d');
+		if (!ctx) throw new Error('Could not get canvas context');
+
+		const imageData = ctx.createImageData(width, height);
+		const data = imageData.data;
+
+		// Map similarities to colors (blue=dissimilar, red=similar)
+		for (let i = 0; i < similarities.length; i++) {
+			const similarity = (similarities[i] + 1) / 2; // Normalize from [-1, 1] to [0, 1]
+
+			// Color scale: blue (0) -> cyan -> green -> yellow -> red (1)
+			let r, g, b;
+
+			if (similarity < 0.5) {
+				// Blue to cyan
+				r = 0;
+				g = Math.floor(similarity * 2 * 255);
+				b = 255;
+			} else {
+				// Cyan to red
+				r = Math.floor((similarity - 0.5) * 2 * 255);
+				g = Math.floor((1 - (similarity - 0.5) * 2) * 255);
+				b = Math.floor((1 - (similarity - 0.5) * 2) * 255);
+			}
+
+			const idx = i * 4;
+			data[idx] = r; // R
+			data[idx + 1] = g; // G
+			data[idx + 2] = b; // B
+			data[idx + 3] = 200; // A (alpha)
+		}
+
+		ctx.putImageData(imageData, 0, 0);
+		return canvas;
+	}
+
+	// Handle map clicks for similarity
+	function handleMapClick(e: L.LeafletMouseEvent) {
+		if (!similarityMode || !similarityCompute) return;
+
+		try {
+			// Convert lat/lng to pixel coordinates
+			const pixelCoords = similarityCompute.latLngToPixel(
+				e.latlng.lat,
+				e.latlng.lng,
+				viewportBounds
+			);
+
+			console.log(`[ThreePaneView] Computing similarity for pixel (${pixelCoords.x}, ${pixelCoords.y})`);
+
+			computeAndDisplaySimilarity(pixelCoords.x, pixelCoords.y);
+		} catch (err) {
+			console.error('[ThreePaneView] Error handling map click:', err);
+			errorMessage = `Failed to process click: ${err instanceof Error ? err.message : String(err)}`;
+		}
 	}
 
 	// Initialize maps
@@ -39,6 +215,7 @@
 
 			const metadata = await metadataRes.json();
 			const bounds = metadata.bounds || { minLon: -0.02, minLat: 52.11, maxLon: 0.27, maxLat: 52.30 };
+			viewportBounds = bounds;
 			const center: [number, number] = [
 				(bounds.minLat + bounds.maxLat) / 2,
 				(bounds.minLon + bounds.maxLon) / 2
@@ -47,6 +224,9 @@
 			// Set available years
 			availableYears = (metadata.years || [2024]).sort((a: number, b: number) => b - a);
 			selectedYear = availableYears[0] || 2024;
+
+			// Initialize similarity compute engine
+			similarityCompute = new ZoomAwareSimilarity();
 
 			// Create OSM map (reference map)
 			const osmMapEl = document.getElementById('map-osm');
@@ -108,11 +288,19 @@
 			// Set up synchronization
 			setupMapSync();
 
-			// Track zoom level
-			maps.osm.on('zoom', () => {
+			// Track zoom level and load embeddings
+			const handleZoom = async () => {
 				currentZoom = maps.osm?.getZoom() || 13;
 				currentPyramidLevel = zoomToPyramidLevel(currentZoom);
-			});
+				await loadEmbeddingsForZoomLevel();
+			};
+
+			maps.osm.on('zoom', handleZoom);
+
+			// Add click handlers for similarity mode
+			if (maps.embeddings) {
+				maps.embeddings.on('click', handleMapClick);
+			}
 
 			isLoading = false;
 		} catch (err) {
@@ -221,6 +409,7 @@
 					class="btn btn-similarity"
 					class:active={similarityMode}
 					on:click={toggleSimilarityMode}
+					disabled={isComputingSimilarity}
 				>
 					{similarityMode ? 'Exit' : 'Enter'} Similarity Mode
 				</button>
@@ -232,6 +421,12 @@
 				</span>
 			</div>
 
+			{#if isComputingSimilarity}
+				<div class="loading-spinner">
+					<span>Computing similarity...</span>
+				</div>
+			{/if}
+
 			<button class="btn btn-close" on:click={onClose}>Close</button>
 		</div>
 
@@ -241,6 +436,35 @@
 
 		{#if isLoading}
 			<div class="loading-message">Loading maps...</div>
+		{/if}
+
+		{#if similarityStats && lastSimilarityResult}
+			<div class="similarity-stats">
+				<div class="stats-row">
+					<span class="stat-label">Reference Pixel:</span>
+					<span class="stat-value">({lastSimilarityResult.referencePixel.x}, {lastSimilarityResult.referencePixel.y})</span>
+				</div>
+				<div class="stats-row">
+					<span class="stat-label">Compute Time:</span>
+					<span class="stat-value">{lastSimilarityResult.computeTime.toFixed(1)}ms</span>
+				</div>
+				<div class="stats-row">
+					<span class="stat-label">Min Similarity:</span>
+					<span class="stat-value">{similarityStats.min.toFixed(3)}</span>
+				</div>
+				<div class="stats-row">
+					<span class="stat-label">Max Similarity:</span>
+					<span class="stat-value">{similarityStats.max.toFixed(3)}</span>
+				</div>
+				<div class="stats-row">
+					<span class="stat-label">Mean Similarity:</span>
+					<span class="stat-value">{similarityStats.mean.toFixed(3)}</span>
+				</div>
+				<div class="stats-row">
+					<span class="stat-label">Std Dev:</span>
+					<span class="stat-value">{similarityStats.std.toFixed(3)}</span>
+				</div>
+			</div>
 		{/if}
 	</div>
 
@@ -351,10 +575,69 @@
 		background: #c82333;
 	}
 
+	.btn:disabled {
+		opacity: 0.6;
+		cursor: not-allowed;
+	}
+
 	.zoom-info {
 		font-size: 12px;
 		color: #aaa;
 		font-family: monospace;
+	}
+
+	.loading-spinner {
+		display: flex;
+		align-items: center;
+		gap: 8px;
+		font-size: 12px;
+		color: #adf;
+	}
+
+	.loading-spinner::before {
+		content: '';
+		display: inline-block;
+		width: 12px;
+		height: 12px;
+		border: 2px solid #1e5a96;
+		border-top-color: #adf;
+		border-radius: 50%;
+		animation: spin 0.6s linear infinite;
+	}
+
+	@keyframes spin {
+		to {
+			transform: rotate(360deg);
+		}
+	}
+
+	.similarity-stats {
+		display: grid;
+		grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+		gap: 12px;
+		margin-top: 12px;
+		padding: 12px;
+		background: #1a1a1a;
+		border-radius: 4px;
+		border: 1px solid #333;
+	}
+
+	.stats-row {
+		display: flex;
+		justify-content: space-between;
+		align-items: center;
+		font-size: 12px;
+	}
+
+	.stat-label {
+		color: #999;
+		font-weight: 500;
+	}
+
+	.stat-value {
+		color: #adf;
+		font-family: monospace;
+		font-weight: 600;
 	}
 
 	.error-message {
