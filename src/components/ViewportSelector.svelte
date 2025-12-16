@@ -3,13 +3,20 @@
     import maplibregl from 'maplibre-gl';
     import 'maplibre-gl/dist/maplibre-gl.css';
     import { VIEWPORT_SIZE_KM, calculateBounds, createBoxGeoJSON } from '../lib/utils/coordinates';
-    import type { ViewportConfig } from '../lib/data/DataTypes';
+    import type { ViewportConfig, Bounds } from '../lib/data/DataTypes';
 
     const dispatch = createEventDispatcher();
 
     let mapContainer: HTMLDivElement;
     let map: maplibregl.Map;
     let searchQuery = '';
+
+    // Processing state
+    let processingState: 'idle' | 'requesting' | 'downloading' | 'creating_pyramids' | 'complete' | 'error' = 'idle';
+    let processingProgress = 0;
+    let taskId: string | null = null;
+    let errorMessage = '';
+    const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000';
 
     let centerLng = 0.1218; // Cambridge, UK
     let centerLat = 52.2053;
@@ -111,15 +118,98 @@
         }
     }
 
-    function handleLoadExplorer() {
+    async function handleProcessViewport() {
         const bounds = calculateBounds(centerLng, centerLat, VIEWPORT_SIZE_KM);
-        const config: ViewportConfig = {
-            center: [centerLng, centerLat],
-            bounds,
-            sizeKm: VIEWPORT_SIZE_KM
+
+        processingState = 'requesting';
+        taskId = null;
+        errorMessage = '';
+
+        try {
+            console.log('Starting viewport processing...');
+
+            // Start processing task
+            const response = await fetch(`${API_BASE_URL}/api/viewports/process`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    bounds: {
+                        minLon: bounds.minLon,
+                        minLat: bounds.minLat,
+                        maxLon: bounds.maxLon,
+                        maxLat: bounds.maxLat
+                    },
+                    center: [centerLng, centerLat],
+                    sizeKm: VIEWPORT_SIZE_KM,
+                    years: [2017, 2018, 2019, 2020, 2021, 2022, 2023, 2024]
+                })
+            });
+
+            if (!response.ok) {
+                throw new Error(`Server error: ${response.statusText}`);
+            }
+
+            const data = await response.json();
+            taskId = data.task_id;
+
+            console.log(`Task started with ID: ${taskId}`);
+
+            // Poll for status
+            await pollTaskStatus(taskId, bounds);
+        } catch (e: any) {
+            processingState = 'error';
+            errorMessage = e.message || 'Unknown error during processing';
+            console.error('Processing error:', e);
+        }
+    }
+
+    async function pollTaskStatus(currentTaskId: string, bounds: Bounds) {
+        const pollInterval = 1000; // 1 second
+
+        const poll = async () => {
+            try {
+                const response = await fetch(`${API_BASE_URL}/api/viewports/${currentTaskId}/status`);
+
+                if (!response.ok) {
+                    throw new Error(`Failed to get status: ${response.statusText}`);
+                }
+
+                const status = await response.json();
+
+                processingState = status.state;
+                processingProgress = status.progress;
+
+                console.log(`Task status: ${status.state} (${status.progress}%)`);
+
+                if (status.state === 'complete') {
+                    // Load explorer with processed data
+                    const config: ViewportConfig = {
+                        center: [centerLng, centerLat],
+                        bounds,
+                        sizeKm: VIEWPORT_SIZE_KM,
+                        viewportId: status.viewport_id
+                    };
+
+                    dispatch('load', config);
+                } else if (status.state === 'error') {
+                    errorMessage = status.error || 'Processing failed';
+                    processingState = 'error';
+                } else {
+                    // Continue polling
+                    setTimeout(poll, pollInterval);
+                }
+            } catch (e: any) {
+                console.error('Poll error:', e);
+                errorMessage = e.message;
+                processingState = 'error';
+            }
         };
 
-        dispatch('load', config);
+        await poll();
+    }
+
+    function handleLoadExplorer() {
+        handleProcessViewport();
     }
 
     function handleReset() {
@@ -194,6 +284,42 @@
             </button>
         </div>
     </div>
+
+    {#if processingState !== 'idle'}
+        <div class="processing-overlay">
+            <div class="processing-card">
+                {#if processingState === 'error'}
+                    <div class="error-content">
+                        <h3>❌ Error</h3>
+                        <p>{errorMessage}</p>
+                        <button class="btn-retry" on:click={() => processingState = 'idle'}>
+                            Try Again
+                        </button>
+                    </div>
+                {:else}
+                    <div class="loading-content">
+                        <div class="spinner"></div>
+                        <h3>Processing Viewport</h3>
+
+                        {#if processingState === 'requesting'}
+                            <p>Preparing request...</p>
+                        {:else if processingState === 'downloading'}
+                            <p>📥 Downloading TESSERA embeddings...</p>
+                        {:else if processingState === 'creating_pyramids'}
+                            <p>🎨 Creating multi-resolution pyramids...</p>
+                        {:else if processingState === 'complete'}
+                            <p>✅ Complete! Loading explorer...</p>
+                        {/if}
+
+                        <div class="progress-bar">
+                            <div class="progress-fill" style="width: {processingProgress}%"></div>
+                        </div>
+                        <p class="progress-text">{processingProgress.toFixed(0)}%</p>
+                    </div>
+                {/if}
+            </div>
+        </div>
+    {/if}
 </div>
 
 <style>
@@ -394,5 +520,109 @@
 
     .zoom-btn span {
         line-height: 1;
+    }
+
+    .processing-overlay {
+        position: fixed;
+        top: 0;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        background: rgba(0, 0, 0, 0.7);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        z-index: 1000;
+    }
+
+    .processing-card {
+        background: white;
+        border-radius: 8px;
+        padding: 40px;
+        text-align: center;
+        min-width: 400px;
+        box-shadow: 0 8px 32px rgba(0, 0, 0, 0.2);
+    }
+
+    .loading-content,
+    .error-content {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 20px;
+    }
+
+    .spinner {
+        width: 50px;
+        height: 50px;
+        border: 4px solid #f3f3f3;
+        border-top: 4px solid #4CAF50;
+        border-radius: 50%;
+        animation: spin 1s linear infinite;
+    }
+
+    @keyframes spin {
+        0% {
+            transform: rotate(0deg);
+        }
+        100% {
+            transform: rotate(360deg);
+        }
+    }
+
+    .processing-card h3 {
+        margin: 0;
+        font-size: 20px;
+        color: #333;
+    }
+
+    .processing-card p {
+        margin: 0;
+        color: #666;
+        font-size: 14px;
+    }
+
+    .progress-bar {
+        width: 100%;
+        height: 8px;
+        background: #e0e0e0;
+        border-radius: 4px;
+        overflow: hidden;
+    }
+
+    .progress-fill {
+        height: 100%;
+        background: #4CAF50;
+        transition: width 0.3s ease;
+    }
+
+    .progress-text {
+        font-weight: 600;
+        color: #4CAF50;
+        font-size: 14px;
+    }
+
+    .error-content h3 {
+        color: #d32f2f;
+    }
+
+    .error-content p {
+        color: #666;
+        margin: 10px 0;
+    }
+
+    .btn-retry {
+        padding: 10px 20px;
+        background: #4CAF50;
+        color: white;
+        border: none;
+        border-radius: 4px;
+        cursor: pointer;
+        font-size: 14px;
+        font-weight: 600;
+    }
+
+    .btn-retry:hover {
+        background: #45a049;
     }
 </style>

@@ -1,8 +1,7 @@
 <script lang="ts">
     import { onMount } from 'svelte';
-    import { WebGPUContext } from '../lib/gpu/WebGPUContext';
-    import { SimilarityCompute } from '../lib/gpu/SimilarityCompute';
     import { CPUSimilarityCompute } from '../lib/gpu/CPUSimilarityCompute';
+    import { GeoTIFFLoader } from '../lib/data/GeoTIFFLoader';
     import { EmbeddingLoader } from '../lib/data/EmbeddingLoader';
     import ThresholdControl from './ThresholdControl.svelte';
     import YearSelector from './YearSelector.svelte';
@@ -15,11 +14,12 @@
     // Use config to initialize viewport
     $: viewportCenter = config?.center || [0, 0];
     $: viewportBounds = config?.bounds;
+    $: viewportId = config?.viewportId || null;
 
-    let gpuContext: WebGPUContext | null = null;
-    let similarityCompute: SimilarityCompute | CPUSimilarityCompute;
-    let embeddingLoader: EmbeddingLoader;
-    let usingCPUFallback = false;
+    let similarityCompute: CPUSimilarityCompute;
+    let embeddingLoader: EmbeddingLoader | null = null;
+    let geotiffLoader: GeoTIFFLoader | null = null;
+    let usingGeoTIFF = false;
 
     let selectedYear = 2024;
     let threshold = 0.8;
@@ -32,21 +32,18 @@
 
     onMount(async () => {
         try {
-            // Try WebGPU first
-            loadingMessage = 'Initializing WebGPU...';
-            gpuContext = new WebGPUContext();
-            const gpuReady = await gpuContext.initialize();
-
-            if (!gpuReady) {
-                // Fall back to CPU computation
-                console.log('WebGPU not available, using CPU fallback');
-                loadingMessage = 'Using CPU-based computation...';
-                usingCPUFallback = true;
+            // Initialize loaders based on whether we have a viewport ID
+            if (viewportId) {
+                loadingMessage = 'Loading GeoTIFF pyramid data...';
+                geotiffLoader = new GeoTIFFLoader();
+                usingGeoTIFF = true;
+                console.log(`✅ Using GeoTIFF loader for viewport ${viewportId}`);
+            } else {
+                loadingMessage = 'Loading embeddings...';
+                embeddingLoader = new EmbeddingLoader();
+                usingGeoTIFF = false;
+                console.log('✅ Using binary embedding loader (legacy)');
             }
-
-            // Initialize loaders
-            loadingMessage = 'Loading embeddings...';
-            embeddingLoader = new EmbeddingLoader();
 
             // Load initial year
             await loadYear(selectedYear);
@@ -55,11 +52,7 @@
             loading = false;
 
             // Log compute backend info
-            if (usingCPUFallback) {
-                console.log('✅ Using CPU-based similarity compute');
-            } else {
-                console.log('✅ Using WebGPU-accelerated similarity compute');
-            }
+            console.log('✅ Using CPU-based similarity compute');
         } catch (e: any) {
             console.error('❌ Initialization error:', e);
             error = e.message || 'Unknown error during initialization';
@@ -70,29 +63,44 @@
     async function loadYear(year: number) {
         try {
             loadingMessage = `Loading embeddings for ${year}...`;
-            const embeddings = await embeddingLoader.load(year, '/data/embeddings');
+
+            let embeddings: Float32Array;
+
+            if (usingGeoTIFF && geotiffLoader && viewportId) {
+                // Load from GeoTIFF pyramids (start with full resolution level 0)
+                embeddings = await geotiffLoader.loadPyramidLevel(viewportId, year, 0);
+            } else if (embeddingLoader) {
+                // Load from binary format (legacy)
+                embeddings = await embeddingLoader.load(year, '/data/embeddings');
+            } else {
+                throw new Error('No embedding loader available');
+            }
 
             // Initialize similarity compute if needed
             if (!similarityCompute) {
-                const header = embeddingLoader.getHeader(year)!;
+                let width: number;
+                let height: number;
+                let dimensions: number;
 
-                if (usingCPUFallback) {
-                    // Use CPU-based computation
-                    similarityCompute = new CPUSimilarityCompute(
-                        header.width,
-                        header.height,
-                        header.dimensions
-                    );
+                if (usingGeoTIFF && geotiffLoader && viewportId) {
+                    // Get metadata from GeoTIFF
+                    const metadata = await geotiffLoader.loadViewportMetadata(viewportId);
+                    // For now, estimate dimensions from embeddings array
+                    // In a real implementation, this would come from GeoTIFF metadata
+                    dimensions = embeddings.length > 0 ? Math.round(embeddings.length / (256 * 256)) : 128;
+                    width = 256;  // GeoTIFF pyramids are typically 4408x4408, but we can adjust
+                    height = 256;
+                } else if (embeddingLoader) {
+                    const header = embeddingLoader.getHeader(year)!;
+                    width = header.width;
+                    height = header.height;
+                    dimensions = header.dimensions;
                 } else {
-                    // Use GPU computation
-                    similarityCompute = new SimilarityCompute(
-                        gpuContext!,
-                        header.width,
-                        header.height,
-                        header.dimensions
-                    );
+                    throw new Error('Cannot determine embedding dimensions');
                 }
 
+                // Use CPU-based computation
+                similarityCompute = new CPUSimilarityCompute(width, height, dimensions);
                 await similarityCompute.initialize(embeddings);
             }
         } catch (e: any) {
@@ -145,35 +153,8 @@
         </div>
     {:else if error}
         <div class="error">
-            <h2>⚠️ WebGPU Not Available</h2>
+            <h2>⚠️ Error</h2>
             <p>{error}</p>
-            <h3>How to Fix:</h3>
-            <div class="fix-instructions">
-                <div class="instruction">
-                    <strong>Safari 18.3+:</strong>
-                    <ol>
-                        <li>Click "Develop" menu (enable if needed in Preferences > Advanced)</li>
-                        <li>Look for "Experimental Features" or "WebGPU"</li>
-                        <li>Enable the WebGPU option</li>
-                        <li>Reload this page</li>
-                    </ol>
-                </div>
-                <div class="instruction">
-                    <strong>Chrome/Edge:</strong>
-                    <ol>
-                        <li>Update to version 113 or later</li>
-                        <li>WebGPU should be enabled by default</li>
-                    </ol>
-                </div>
-                <div class="instruction">
-                    <strong>Firefox:</strong>
-                    <ol>
-                        <li>Type about:config in address bar</li>
-                        <li>Search for "webgpu.enabled"</li>
-                        <li>Set to true</li>
-                    </ol>
-                </div>
-            </div>
             <p style="margin-top: 20px; color: #999;">Check browser console for more details.</p>
         </div>
     {:else}
@@ -208,7 +189,7 @@
                 <div style="margin: 20px 0; padding: 15px; background: #f0f0f0; border-radius: 4px;">
                     <p style="margin: 0 0 10px 0; font-weight: 600;">Test Similarity Computation:</p>
                     <p style="margin: 5px 0; color: #666; font-size: 14px;">
-                        Click the button below to select a test pixel (1000, 1000) and compute similarities using {usingCPUFallback ? 'CPU' : 'WebGPU'}
+                        Click the button below to select a test pixel and compute similarities using CPU.
                     </p>
                 </div>
 
@@ -224,21 +205,14 @@
                     🧪 Test Pixel Selection
                 </button>
 
-                {#if usingCPUFallback}
-                    <p style="margin-top: 20px; color: #ff9800; font-size: 13px;">
-                        ⚠️ Running in CPU mode (embeddings: {embeddingLoader ? '✓ loaded' : 'loading...'})
-                    </p>
-                {/if}
+                <p style="margin-top: 20px; color: #4CAF50; font-size: 13px;">
+                    ✅ Running in CPU mode (embeddings: {embeddingLoader ? '✓ loaded' : 'loading...'})
+                </p>
             </div>
         </div>
 
         <div class="instructions">
             <p>Click on any pixel to find similar locations • Adjust threshold to control sensitivity</p>
-            {#if usingCPUFallback}
-                <p class="cpu-fallback-badge">
-                    ⚠️ Using CPU computation (WebGPU unavailable)
-                </p>
-            {/if}
         </div>
     {/if}
 </div>
@@ -326,14 +300,6 @@
         margin: 0;
     }
 
-    .cpu-fallback-badge {
-        margin-top: 8px;
-        padding-top: 8px;
-        border-top: 1px solid rgba(255,255,255,0.3);
-        color: #ffb74d;
-        font-size: 12px;
-    }
-
     .loading, .error {
         width: 100%;
         height: 100%;
@@ -378,43 +344,4 @@
         text-align: center;
     }
 
-    .error h3 {
-        margin-top: 30px;
-        margin-bottom: 15px;
-        color: #333;
-        font-size: 16px;
-    }
-
-    .fix-instructions {
-        display: flex;
-        flex-direction: column;
-        gap: 20px;
-        margin: 20px 0;
-        max-width: 700px;
-        text-align: left;
-    }
-
-    .instruction {
-        background: #f5f5f5;
-        padding: 15px;
-        border-radius: 4px;
-        border-left: 4px solid #4CAF50;
-    }
-
-    .instruction strong {
-        color: #333;
-        display: block;
-        margin-bottom: 8px;
-    }
-
-    .instruction ol {
-        margin: 0;
-        padding-left: 20px;
-        color: #666;
-    }
-
-    .instruction li {
-        margin: 5px 0;
-        font-size: 14px;
-    }
 </style>

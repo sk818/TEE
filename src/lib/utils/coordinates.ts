@@ -80,9 +80,10 @@ export function createBoxGeoJSON(
     const bounds = calculateBounds(centerLng, centerLat, sizeKm);
 
     return {
-        type: 'Feature',
+        type: 'Feature' as const,
+        properties: {},
         geometry: {
-            type: 'Polygon',
+            type: 'Polygon' as const,
             coordinates: [[
                 [bounds.minLon, bounds.minLat],
                 [bounds.maxLon, bounds.minLat],

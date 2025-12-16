@@ -50,6 +50,7 @@
         background: linear-gradient(to right, #ddd 0%, #4CAF50 100%);
         border-radius: 3px;
         outline: none;
+        appearance: none;
         -webkit-appearance: none;
     }
 

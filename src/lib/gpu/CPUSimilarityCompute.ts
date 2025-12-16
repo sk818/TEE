@@ -1,6 +1,5 @@
 /**
- * CPU-based fallback for similarity computation
- * Used when WebGPU is not available
+ * CPU-based similarity computation
  */
 
 export interface ComputeParams {
@@ -11,7 +10,7 @@ export interface ComputeParams {
 }
 
 export class CPUSimilarityCompute {
-    private embeddings: Float32Array;
+    private embeddings: Float32Array = new Float32Array();
     private width: number;
     private height: number;
     private embeddingDims: number;
@@ -24,7 +23,7 @@ export class CPUSimilarityCompute {
 
     async initialize(embeddings: Float32Array): Promise<void> {
         this.embeddings = embeddings;
-        console.log('✅ CPU-based similarity compute initialized (WebGPU fallback)');
+        console.log('✅ CPU-based similarity compute initialized');
     }
 
     async compute(params: ComputeParams): Promise<Float32Array> {

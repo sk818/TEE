@@ -13,6 +13,7 @@ export interface ViewportConfig {
     center: [number, number];
     bounds: Bounds;
     sizeKm: number;
+    viewportId?: string;  // Optional: ID of processed viewport data
 }
 
 export interface EmbeddingHeader {
