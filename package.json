@@ -22,8 +22,7 @@
     "@deck.gl/geo-layers": "^9.0.0",
     "@deck.gl/layers": "^9.0.0",
     "@luma.gl/core": "^9.0.0",
-    "maplibre-gl": "^3.6.0",
-    "zarr": "^0.7.0"
+    "maplibre-gl": "^3.6.0"
   },
   "type": "module"
 }

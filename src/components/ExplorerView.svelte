@@ -11,6 +11,10 @@
 
     export let config: ViewportConfig;
 
+    // Use config to initialize viewport
+    $: viewportCenter = config?.center || [0, 0];
+    $: viewportBounds = config?.bounds;
+
     let gpuContext: WebGPUContext;
     let similarityCompute: SimilarityCompute;
     let embeddingLoader: EmbeddingLoader;
