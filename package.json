@@ -1,0 +1,29 @@
+{
+  "name": "tessera-explorer",
+  "version": "1.0.0",
+  "description": "Interactive TESSERA embedding explorer with WebGPU acceleration",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "check": "svelte-check --tsconfig ./tsconfig.json"
+  },
+  "devDependencies": {
+    "@sveltejs/vite-plugin-svelte": "^3.0.0",
+    "@tsconfig/svelte": "^5.0.0",
+    "svelte": "^4.2.0",
+    "svelte-check": "^3.6.0",
+    "tslib": "^2.6.0",
+    "typescript": "^5.3.0",
+    "vite": "^5.0.0"
+  },
+  "dependencies": {
+    "@deck.gl/core": "^9.0.0",
+    "@deck.gl/geo-layers": "^9.0.0",
+    "@deck.gl/layers": "^9.0.0",
+    "@luma.gl/core": "^9.0.0",
+    "maplibre-gl": "^3.6.0",
+    "zarr": "^0.7.0"
+  },
+  "type": "module"
+}
