@@ -65,10 +65,7 @@ def download_embeddings_for_viewport(
         tessera = gt.GeoTessera(embeddings_dir=str(output_dir))
 
         for idx, year in enumerate(years):
-            progress_percent = (idx / len(years)) * 100
-
-            if progress_callback:
-                progress_callback(year, 'downloading', progress_percent)
+            progress_percent_start = (idx / len(years)) * 100
 
             logger.info(f"Downloading embeddings for year {year}...")
 
@@ -92,8 +89,10 @@ def download_embeddings_for_viewport(
 
                 logger.info(f"Saved embeddings for year {year}: {output_file}")
 
+                # Update progress AFTER completing the download
+                progress_percent_complete = ((idx + 1) / len(years)) * 100
                 if progress_callback:
-                    progress_callback(year, 'complete', ((idx + 1) / len(years)) * 100)
+                    progress_callback(year, 'complete', progress_percent_complete)
 
             except Exception as e:
                 logger.error(f"Error downloading year {year}: {e}")
