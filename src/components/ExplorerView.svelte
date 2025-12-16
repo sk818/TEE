@@ -54,36 +54,43 @@
             loadingMessage = 'Ready!';
             loading = false;
         } catch (e: any) {
-            error = e.message;
+            console.error('Initialization error:', e);
+            error = e.message || 'Unknown error during initialization';
             loading = false;
         }
     });
 
     async function loadYear(year: number) {
-        const embeddings = await embeddingLoader.load(year, '/data/embeddings');
+        try {
+            loadingMessage = `Loading embeddings for ${year}...`;
+            const embeddings = await embeddingLoader.load(year, '/data/embeddings');
 
-        // Initialize similarity compute if needed
-        if (!similarityCompute) {
-            const header = embeddingLoader.getHeader(year)!;
+            // Initialize similarity compute if needed
+            if (!similarityCompute) {
+                const header = embeddingLoader.getHeader(year)!;
 
-            if (usingCPUFallback) {
-                // Use CPU-based computation
-                similarityCompute = new CPUSimilarityCompute(
-                    header.width,
-                    header.height,
-                    header.dimensions
-                );
-            } else {
-                // Use GPU computation
-                similarityCompute = new SimilarityCompute(
-                    gpuContext!,
-                    header.width,
-                    header.height,
-                    header.dimensions
-                );
+                if (usingCPUFallback) {
+                    // Use CPU-based computation
+                    similarityCompute = new CPUSimilarityCompute(
+                        header.width,
+                        header.height,
+                        header.dimensions
+                    );
+                } else {
+                    // Use GPU computation
+                    similarityCompute = new SimilarityCompute(
+                        gpuContext!,
+                        header.width,
+                        header.height,
+                        header.dimensions
+                    );
+                }
+
+                await similarityCompute.initialize(embeddings);
             }
-
-            await similarityCompute.initialize(embeddings);
+        } catch (e: any) {
+            console.error('Error loading year:', year, e);
+            throw new Error(`Failed to load embeddings for year ${year}: ${e.message || e}`);
         }
     }
 
