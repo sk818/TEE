@@ -88,12 +88,20 @@ export class GeoTIFFLoader {
             this.cache.set(cacheKey, embeddings);
             console.log(`✓ Cached pyramid level: ${cacheKey}`);
 
-            // Debug: log some sample values
+            // Debug: log some sample values (without spreading huge array)
+            let min = embeddings[0];
+            let max = embeddings[0];
+            let sum = 0;
+            for (let i = 0; i < Math.min(10000, embeddings.length); i++) {
+                min = Math.min(min, embeddings[i]);
+                max = Math.max(max, embeddings[i]);
+                sum += embeddings[i];
+            }
             const stats = {
-                min: Math.min(...embeddings),
-                max: Math.max(...embeddings),
-                mean: embeddings.reduce((a, b) => a + b) / embeddings.length,
-                sampleValues: Array.from(embeddings).slice(0, 10)
+                min: min,
+                max: max,
+                mean: sum / Math.min(10000, embeddings.length),
+                size: embeddings.length
             };
             console.log(`Embeddings stats:`, stats);
 
