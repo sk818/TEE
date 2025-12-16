@@ -220,7 +220,7 @@ def process_additional_years_task(task_id: str, viewport_id: str):
         from backend.processing.create_viewport_pyramids import create_pyramids_for_viewport
 
         def pyramid_progress(year, level, status, percent):
-            overall_progress = 50 + (percent / 100) * 50
+            overall_progress = 50 + (percent / 100) * 35
             update_task_status(task_id, 'creating_pyramids', overall_progress, f'Creating pyramids for year {year}, level {level}...')
 
         logger.info(f"Creating pyramids for additional years")
@@ -229,6 +229,23 @@ def process_additional_years_task(task_id: str, viewport_id: str):
             pyramids_dir=viewport_dir / "pyramids",
             years=new_years,
             progress_callback=pyramid_progress
+        )
+
+        # Step 2.5: Create coarsened embeddings for new years
+        update_task_status(task_id, 'creating_pyramids', 85, 'Creating coarsened embeddings for additional years...')
+
+        from backend.processing.create_coarsened_embedding_pyramids import create_coarsened_pyramids
+
+        def coarsening_progress(year, level, status, percent):
+            overall_progress = 85 + (percent / 100) * 15
+            update_task_status(task_id, 'creating_pyramids', overall_progress, f'Coarsening embeddings for year {year}, level {level}...')
+
+        logger.info(f"Creating coarsened embeddings for additional years")
+        coarsening_info = create_coarsened_pyramids(
+            raw_embeddings_dir=viewport_dir / "raw",
+            coarsened_dir=viewport_dir / "coarsened",
+            years=new_years,
+            progress_callback=coarsening_progress
         )
 
         # Step 3: Update metadata with new years
@@ -320,6 +337,27 @@ def process_viewport_task(task_id: str):
             pyramids_dir=pyramids_dir,
             years=years,
             progress_callback=pyramid_progress
+        )
+
+        # Step 2.5: Create coarsened embedding pyramids
+        update_task_status(task_id, 'creating_pyramids', 75, 'Creating coarsened embedding pyramids for zoom-aware similarity...')
+
+        from backend.processing.create_coarsened_embedding_pyramids import create_coarsened_pyramids
+
+        def coarsening_progress(year, level, status, percent):
+            # Update progress for coarsening (50-100%, with 75-100% for coarsening)
+            overall_progress = 75 + (percent / 100) * 25
+            update_task_status(task_id, 'creating_pyramids', overall_progress, f'Coarsening embeddings for year {year}, level {level}...')
+
+        coarsened_dir = viewport_dir / "coarsened"
+        coarsened_dir.mkdir(parents=True, exist_ok=True)
+
+        logger.info(f"Creating coarsened embedding pyramids")
+        coarsening_info = create_coarsened_pyramids(
+            raw_embeddings_dir=viewport_dir / "raw",
+            coarsened_dir=coarsened_dir,
+            years=years,
+            progress_callback=coarsening_progress
         )
 
         # Step 3: Save metadata
@@ -478,6 +516,22 @@ async def get_embeddings_npy(viewport_id: str, year: int):
     )
 
 
+@app.get("/api/viewports/{viewport_id}/coarsened-embeddings/{year}/level_{level}.npy")
+async def get_coarsened_embeddings_npy(viewport_id: str, year: int, level: int):
+    """Serve coarsened embeddings for zoom-aware similarity computation."""
+    npy_file = DATA_DIR / viewport_id / "coarsened" / str(year) / f"level_{level}.npy"
+
+    if not npy_file.exists():
+        logger.warning(f"Coarsened embeddings file not found: {npy_file}")
+        raise HTTPException(status_code=404, detail="Coarsened embeddings not found")
+
+    return FileResponse(
+        path=npy_file,
+        media_type="application/octet-stream",
+        headers={"Content-Disposition": f"attachment; filename=level_{level}.npy"}
+    )
+
+
 @app.post("/api/viewports/{viewport_id}/download-years")
 async def start_additional_years_download(viewport_id: str, request: DownloadAdditionalYearsRequest, background_tasks: BackgroundTasks):
     """Start downloading and processing additional years for an existing viewport."""
@@ -535,6 +589,225 @@ async def get_additional_years_status(viewport_id: str, task_id: str):
         message=task['message'],
         error=task.get('error')
     )
+
+
+# ============================================================================
+# Tile Serving Routes (for three-pane viewer)
+# ============================================================================
+
+def zoom_to_pyramid_level(z: int, max_pyramid_level: int = 5) -> int:
+    """Map Leaflet zoom level to pyramid level."""
+    pyramid_level = (18 - z) // 2
+    return max(0, min(max_pyramid_level, pyramid_level))
+
+
+def tile_to_bbox(x: int, y: int, z: int) -> tuple:
+    """Convert tile coordinates to bounding box in EPSG:4326."""
+    import math
+
+    n = 2.0 ** z
+    lon_min = x / n * 360.0 - 180.0
+    lon_max = (x + 1) / n * 360.0 - 180.0
+
+    lat_max_rad = math.atan(math.sinh(math.pi * (1 - 2 * y / n)))
+    lat_min_rad = math.atan(math.sinh(math.pi * (1 - 2 * (y + 1) / n)))
+
+    lat_max = math.degrees(lat_max_rad)
+    lat_min = math.degrees(lat_min_rad)
+
+    return (lon_min, lat_min, lon_max, lat_max)
+
+
+def get_rgb_tile(tif_path: Path, bbox: tuple, tile_size: int = 2048):
+    """Extract a tile from a GeoTIFF and return as PIL Image."""
+    try:
+        from rio_tiler.io import Reader
+        from PIL import Image
+        import numpy as np
+
+        with Reader(str(tif_path)) as src:
+            # Read tile from GeoTIFF
+            img_data = src.part(bbox, width=tile_size, height=tile_size)
+            data = img_data.data
+
+            # Handle different band counts
+            if data.shape[0] == 1:
+                # Single band - duplicate to RGB
+                arr = data[0]
+                rgb = np.stack([arr, arr, arr], axis=0)
+            elif data.shape[0] == 3:
+                # Already RGB
+                rgb = data[:3]
+            elif data.shape[0] > 3:
+                # More than 3 bands - take first 3
+                rgb = data[:3]
+            else:
+                # Less than 3 bands - pad with zeros
+                rgb = np.zeros((3, data.shape[1], data.shape[2]), dtype=data.dtype)
+                rgb[:data.shape[0]] = data
+
+            # Transpose to (H, W, C) for PIL
+            rgb_t = np.transpose(rgb, (1, 2, 0))
+
+            # Ensure uint8
+            if rgb_t.dtype != np.uint8:
+                if rgb_t.max() > 255:
+                    rgb_t = (rgb_t / rgb_t.max() * 255).astype(np.uint8)
+                else:
+                    rgb_t = rgb_t.astype(np.uint8)
+
+            # Create PIL image
+            img = Image.fromarray(rgb_t, mode='RGB')
+            return img
+
+    except ImportError:
+        logger.warning("rio_tiler not installed, tile serving unavailable")
+        return None
+
+
+@app.get("/api/tiles/sentinel2/{viewport_id}/{year}/{z}/{x}/{y}.png")
+async def get_sentinel2_tile(viewport_id: str, year: int, z: int, x: int, y: int):
+    """Serve Sentinel-2 RGB tile."""
+    import io
+    from PIL import Image
+
+    try:
+        tif_path = DATA_DIR / viewport_id / "sentinel2" / f"{year}_rgb.tif"
+
+        if not tif_path.exists():
+            # Return transparent tile if file doesn't exist
+            img = Image.new('RGBA', (2048, 2048), (0, 0, 0, 0))
+            buf = io.BytesIO()
+            img.save(buf, format='PNG')
+            buf.seek(0)
+            return FileResponse(
+                path_or_file=buf,
+                media_type="image/png"
+            )
+
+        # Get tile bounds
+        bbox = tile_to_bbox(x, y, z)
+
+        try:
+            img = get_rgb_tile(tif_path, bbox)
+
+            if img is None:
+                # rio_tiler not available
+                raise HTTPException(status_code=500, detail="Tile server not available")
+
+            # Save to buffer
+            buf = io.BytesIO()
+            img.save(buf, format='PNG')
+            buf.seek(0)
+
+            from fastapi.responses import StreamingResponse
+
+            return StreamingResponse(iter([buf.getvalue()]), media_type="image/png")
+
+        except Exception as e:
+            logger.warning(f"Error reading Sentinel-2 tile {viewport_id}/{year}/{z}/{x}/{y}: {e}")
+            # Return transparent tile on error
+            img = Image.new('RGBA', (2048, 2048), (0, 0, 0, 0))
+            buf = io.BytesIO()
+            img.save(buf, format='PNG')
+            buf.seek(0)
+
+            from fastapi.responses import StreamingResponse
+
+            return StreamingResponse(iter([buf.getvalue()]), media_type="image/png")
+
+    except Exception as e:
+        logger.error(f"Error serving Sentinel-2 tile: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/tiles/embeddings/{viewport_id}/{year}/{z}/{x}/{y}.png")
+async def get_embeddings_tile(viewport_id: str, year: int, z: int, x: int, y: int):
+    """Serve embeddings visualization tile (RGB pyramids)."""
+    import io
+    from PIL import Image
+
+    try:
+        # Map zoom level to pyramid level
+        pyramid_level = zoom_to_pyramid_level(z)
+
+        # Get pyramid level file
+        tif_path = DATA_DIR / viewport_id / "pyramids" / str(year) / f"level_{pyramid_level}.tif"
+
+        if not tif_path.exists():
+            # Return transparent tile if file doesn't exist
+            img = Image.new('RGBA', (2048, 2048), (0, 0, 0, 0))
+            buf = io.BytesIO()
+            img.save(buf, format='PNG')
+            buf.seek(0)
+
+            from fastapi.responses import StreamingResponse
+
+            return StreamingResponse(iter([buf.getvalue()]), media_type="image/png")
+
+        # Get tile bounds
+        bbox = tile_to_bbox(x, y, z)
+
+        try:
+            img = get_rgb_tile(tif_path, bbox)
+
+            if img is None:
+                # rio_tiler not available
+                raise HTTPException(status_code=500, detail="Tile server not available")
+
+            # Save to buffer
+            buf = io.BytesIO()
+            img.save(buf, format='PNG')
+            buf.seek(0)
+
+            from fastapi.responses import StreamingResponse
+
+            logger.debug(f"Served embeddings tile {viewport_id}/{year}/level_{pyramid_level}/{z}/{x}/{y}")
+
+            return StreamingResponse(iter([buf.getvalue()]), media_type="image/png")
+
+        except Exception as e:
+            logger.warning(f"Error reading embeddings tile {viewport_id}/{year}/level_{pyramid_level}/{z}/{x}/{y}: {e}")
+            # Return transparent tile on error
+            img = Image.new('RGBA', (2048, 2048), (0, 0, 0, 0))
+            buf = io.BytesIO()
+            img.save(buf, format='PNG')
+            buf.seek(0)
+
+            from fastapi.responses import StreamingResponse
+
+            return StreamingResponse(iter([buf.getvalue()]), media_type="image/png")
+
+    except Exception as e:
+        logger.error(f"Error serving embeddings tile: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/tiles/bounds/{viewport_id}")
+async def get_tile_bounds(viewport_id: str):
+    """Get bounds and center for a viewport."""
+    import json
+
+    try:
+        metadata_file = DATA_DIR / viewport_id / "metadata.json"
+
+        if not metadata_file.exists():
+            raise HTTPException(status_code=404, detail="Viewport not found")
+
+        with open(metadata_file, 'r') as f:
+            metadata = json.load(f)
+
+        return {
+            'bounds': metadata.get('bounds', {}),
+            'center': metadata.get('center', [0, 0]),
+            'years': metadata.get('years', [])
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error getting bounds for {viewport_id}: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 @app.get("/api/health")

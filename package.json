@@ -23,7 +23,9 @@
     "@deck.gl/geo-layers": "^9.0.0",
     "@deck.gl/layers": "^9.0.0",
     "@luma.gl/core": "^9.0.0",
+    "@types/leaflet": "^1.9.8",
     "geotiff": "^2.1.0",
+    "leaflet": "^1.9.4",
     "maplibre-gl": "^3.6.0"
   },
   "type": "module"
