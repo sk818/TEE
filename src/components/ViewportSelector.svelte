@@ -141,7 +141,7 @@
                     },
                     center: [centerLng, centerLat],
                     sizeKm: VIEWPORT_SIZE_KM,
-                    years: [2017, 2018, 2019, 2020, 2021, 2022, 2023, 2024]
+                    years: [2024]
                 })
             });
 

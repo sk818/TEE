@@ -66,7 +66,12 @@ class ViewportProcessRequest(BaseModel):
     bounds: Bounds
     center: list[float]
     sizeKm: float
-    years: list[int] = [2017, 2018, 2019, 2020, 2021, 2022, 2023, 2024]
+    years: list[int] = [2024]
+
+
+class DownloadAdditionalYearsRequest(BaseModel):
+    """Request to download additional years for an existing viewport."""
+    years: list[int]
 
 
 class TaskStatus(BaseModel):
@@ -143,6 +148,94 @@ def set_task_error(task_id: str, error: str):
 # ============================================================================
 # Background Processing
 # ============================================================================
+
+def process_additional_years_task(task_id: str, viewport_id: str):
+    """Background task to download and process additional years for existing viewport."""
+    if task_id not in tasks:
+        logger.error(f"Task {task_id} not found")
+        return
+
+    task = tasks[task_id]
+    years = task['years']
+    viewport_dir = DATA_DIR / viewport_id
+
+    try:
+        logger.info(f"Starting additional years download for viewport {viewport_id}")
+
+        # Load existing metadata
+        metadata_file = viewport_dir / "metadata.json"
+        if not metadata_file.exists():
+            raise RuntimeError(f"Viewport {viewport_id} not found")
+
+        import json
+        with open(metadata_file, 'r') as f:
+            metadata = json.load(f)
+
+        existing_years = set(metadata.get('years', []))
+        new_years = [y for y in years if y not in existing_years]
+
+        if not new_years:
+            logger.info(f"All requested years already downloaded for viewport {viewport_id}")
+            update_task_status(task_id, 'complete', 100, 'All requested years already available')
+            return
+
+        # Step 1: Download embeddings for new years
+        update_task_status(task_id, 'downloading', 0, f'Downloading {len(new_years)} additional years...')
+
+        from backend.processing.download_viewport_embeddings import download_embeddings_for_viewport
+
+        bounds_dict = metadata['bounds']
+        bounds_tuple = (
+            bounds_dict['minLon'],
+            bounds_dict['minLat'],
+            bounds_dict['maxLon'],
+            bounds_dict['maxLat']
+        )
+
+        def download_progress(year, status, percent):
+            overall_progress = (percent / 100) * 50
+            if status == 'complete':
+                update_task_status(task_id, 'downloading', overall_progress, f'✓ Completed year {year}')
+            else:
+                update_task_status(task_id, 'downloading', overall_progress, f'Downloading year {year}... (this may take several minutes)')
+
+        logger.info(f"Downloading additional years: {new_years}")
+        embeddings_metadata = download_embeddings_for_viewport(
+            bounds=bounds_tuple,
+            years=new_years,
+            output_dir=viewport_dir / "raw",
+            progress_callback=download_progress
+        )
+
+        # Step 2: Create pyramids for new years
+        update_task_status(task_id, 'creating_pyramids', 50, 'Creating pyramids for additional years...')
+
+        from backend.processing.create_viewport_pyramids import create_pyramids_for_viewport
+
+        def pyramid_progress(year, level, status, percent):
+            overall_progress = 50 + (percent / 100) * 50
+            update_task_status(task_id, 'creating_pyramids', overall_progress, f'Creating pyramids for year {year}, level {level}...')
+
+        logger.info(f"Creating pyramids for additional years")
+        create_pyramids_for_viewport(
+            embeddings_dir=viewport_dir / "raw",
+            pyramids_dir=viewport_dir / "pyramids",
+            years=new_years,
+            progress_callback=pyramid_progress
+        )
+
+        # Step 3: Update metadata with new years
+        metadata['years'] = sorted(list(set(metadata['years']) | set(new_years)))
+        with open(metadata_file, 'w') as f:
+            json.dump(metadata, f, indent=2)
+
+        logger.info(f"Completed downloading additional years for viewport {viewport_id}")
+        update_task_status(task_id, 'complete', 100, 'Additional years processed!')
+
+    except Exception as e:
+        logger.exception(f"Error processing additional years for viewport {viewport_id}")
+        set_task_error(task_id, str(e))
+
 
 def process_viewport_task(task_id: str):
     """Background task to process viewport embeddings and create pyramids."""
@@ -303,6 +396,65 @@ async def get_pyramid_tif(viewport_id: str, year: int, level: int):
         path=tif_file,
         media_type="image/tiff",
         headers={"Content-Disposition": f"attachment; filename=level_{level}.tif"}
+    )
+
+
+@app.post("/api/viewports/{viewport_id}/download-years")
+async def start_additional_years_download(viewport_id: str, request: DownloadAdditionalYearsRequest, background_tasks: BackgroundTasks):
+    """Start downloading and processing additional years for an existing viewport."""
+    try:
+        logger.info(f"Additional years download request for viewport {viewport_id}: {request.years}")
+
+        # Verify viewport exists
+        metadata_file = DATA_DIR / viewport_id / "metadata.json"
+        if not metadata_file.exists():
+            raise HTTPException(status_code=404, detail="Viewport not found")
+
+        # Create task
+        task_id = str(uuid.uuid4())
+        tasks[task_id] = {
+            'viewport_id': viewport_id,
+            'state': 'pending',
+            'progress': 0.0,
+            'message': 'Queued for processing',
+            'error': None,
+            'years': request.years,
+            'created_at': datetime.utcnow().isoformat()
+        }
+
+        logger.info(f"Created additional years task {task_id} for viewport {viewport_id}")
+
+        # Add background task
+        background_tasks.add_task(process_additional_years_task, task_id, viewport_id)
+
+        return {"task_id": task_id, "viewport_id": viewport_id}
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.exception("Error starting additional years download")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/viewports/{viewport_id}/download-years/{task_id}/status")
+async def get_additional_years_status(viewport_id: str, task_id: str):
+    """Get status of additional years download task."""
+    if task_id not in tasks:
+        raise HTTPException(status_code=404, detail="Task not found")
+
+    task = tasks[task_id]
+
+    # Verify this task belongs to the requested viewport
+    if task.get('viewport_id') != viewport_id:
+        raise HTTPException(status_code=404, detail="Task not found for this viewport")
+
+    return TaskStatus(
+        task_id=task_id,
+        viewport_id=task.get('viewport_id'),
+        state=task['state'],
+        progress=task['progress'],
+        message=task['message'],
+        error=task.get('error')
     )
 
 

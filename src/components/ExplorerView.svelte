@@ -26,6 +26,15 @@
     let selectedPixel: [number, number] | null = null;
     let similarityResults: Float32Array | null = null;
 
+    // Additional years management
+    const allYears = [2017, 2018, 2019, 2020, 2021, 2022, 2023, 2024];
+    let availableYears = [2024]; // Years downloaded so far
+    let showAdditionalYearsDialog = false;
+    let selectedAdditionalYears = new Set<number>();
+    let downloadingAdditionalYears = false;
+    let additionalYearsError = '';
+    const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000';
+
     let loading = true;
     let error = '';
     let loadingMessage = 'Initializing...';
@@ -143,6 +152,91 @@
             await computeSimilarity(selectedPixel[0], selectedPixel[1]);
         }
     }
+
+    function toggleYear(year: number) {
+        if (selectedAdditionalYears.has(year)) {
+            selectedAdditionalYears.delete(year);
+        } else {
+            selectedAdditionalYears.add(year);
+        }
+        selectedAdditionalYears = selectedAdditionalYears; // Trigger reactivity
+    }
+
+    async function downloadAdditionalYears() {
+        if (selectedAdditionalYears.size === 0) return;
+
+        downloadingAdditionalYears = true;
+        additionalYearsError = '';
+
+        try {
+            const yearsToDownload = Array.from(selectedAdditionalYears).sort();
+
+            const response = await fetch(`${API_BASE_URL}/api/viewports/${viewportId}/download-years`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    years: yearsToDownload
+                })
+            });
+
+            if (!response.ok) {
+                throw new Error(`Server error: ${response.statusText}`);
+            }
+
+            const data = await response.json();
+            const taskId = data.task_id;
+
+            console.log(`Additional years download started with task ID: ${taskId}`);
+
+            // Poll for completion
+            await pollAdditionalYearsProgress(taskId, yearsToDownload);
+
+        } catch (e: any) {
+            console.error('Error downloading additional years:', e);
+            additionalYearsError = e.message || 'Unknown error during download';
+            downloadingAdditionalYears = false;
+        }
+    }
+
+    async function pollAdditionalYearsProgress(taskId: string, yearsToDownload: number[]) {
+        const pollInterval = 1000;
+
+        const poll = async () => {
+            try {
+                const response = await fetch(`${API_BASE_URL}/api/viewports/${viewportId}/download-years/${taskId}/status`);
+
+                if (!response.ok) {
+                    throw new Error(`Failed to get status: ${response.statusText}`);
+                }
+
+                const status = await response.json();
+
+                if (status.state === 'complete') {
+                    // Update available years
+                    availableYears = [...new Set([...availableYears, ...yearsToDownload])].sort((a, b) => a - b);
+
+                    // Clear selections
+                    selectedAdditionalYears.clear();
+                    showAdditionalYearsDialog = false;
+                    downloadingAdditionalYears = false;
+
+                    console.log(`✅ Downloaded years: ${yearsToDownload.join(', ')}`);
+                } else if (status.state === 'error') {
+                    additionalYearsError = status.error || 'Download failed';
+                    downloadingAdditionalYears = false;
+                } else {
+                    // Continue polling
+                    setTimeout(poll, pollInterval);
+                }
+            } catch (e: any) {
+                console.error('Poll error:', e);
+                additionalYearsError = e.message;
+                downloadingAdditionalYears = false;
+            }
+        };
+
+        await poll();
+    }
 </script>
 
 <div class="explorer-container">
@@ -162,10 +256,16 @@
             <h3>Controls</h3>
 
             <YearSelector
-                years={[2017, 2018, 2019, 2020, 2021, 2022, 2023, 2024]}
+                years={availableYears}
                 selected={selectedYear}
                 on:change={handleYearChange}
             />
+
+            {#if viewportId && availableYears.length < allYears.length}
+                <button class="btn-download-years" on:click={() => showAdditionalYearsDialog = true}>
+                    ⬇️ Download More Years
+                </button>
+            {/if}
 
             <ThresholdControl
                 value={threshold}
@@ -214,6 +314,56 @@
         <div class="instructions">
             <p>Click on any pixel to find similar locations • Adjust threshold to control sensitivity</p>
         </div>
+
+        {#if showAdditionalYearsDialog}
+            <div class="modal-overlay" on:click={() => !downloadingAdditionalYears && (showAdditionalYearsDialog = false)}>
+                <div class="modal-card" on:click={(e) => e.stopPropagation()}>
+                    <h3>Download Additional Years</h3>
+
+                    <div class="warning-box">
+                        <p>⚠️ <strong>Warning:</strong> Downloading additional years is time-consuming. Each year typically takes 5-15+ minutes to download and process.</p>
+                    </div>
+
+                    <div class="years-list">
+                        <p style="margin: 0 0 10px 0; font-weight: 600;">Select years to download:</p>
+                        {#each allYears.filter(y => !availableYears.includes(y)) as year}
+                            <label class="year-checkbox">
+                                <input
+                                    type="checkbox"
+                                    disabled={downloadingAdditionalYears}
+                                    checked={selectedAdditionalYears.has(year)}
+                                    on:change={() => toggleYear(year)}
+                                />
+                                <span>{year}</span>
+                            </label>
+                        {/each}
+                    </div>
+
+                    {#if additionalYearsError}
+                        <div class="error-message">
+                            <p>{additionalYearsError}</p>
+                        </div>
+                    {/if}
+
+                    <div class="modal-actions">
+                        <button
+                            class="btn-cancel"
+                            disabled={downloadingAdditionalYears}
+                            on:click={() => showAdditionalYearsDialog = false}
+                        >
+                            Cancel
+                        </button>
+                        <button
+                            class="btn-download"
+                            disabled={selectedAdditionalYears.size === 0 || downloadingAdditionalYears}
+                            on:click={downloadAdditionalYears}
+                        >
+                            {downloadingAdditionalYears ? '⏳ Downloading...' : '⬇️ Download'}
+                        </button>
+                    </div>
+                </div>
+            </div>
+        {/if}
     {/if}
 </div>
 
@@ -342,6 +492,159 @@
         margin: 10px 0;
         max-width: 600px;
         text-align: center;
+    }
+
+    .btn-download-years {
+        width: 100%;
+        margin: 15px 0;
+        padding: 12px 16px;
+        background: #2196F3;
+        color: white;
+        border: none;
+        border-radius: 4px;
+        cursor: pointer;
+        font-size: 14px;
+        font-weight: 600;
+        transition: background 0.2s ease;
+    }
+
+    .btn-download-years:hover {
+        background: #1976D2;
+    }
+
+    .modal-overlay {
+        position: fixed;
+        top: 0;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        background: rgba(0, 0, 0, 0.7);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        z-index: 2000;
+    }
+
+    .modal-card {
+        background: white;
+        border-radius: 8px;
+        padding: 30px;
+        max-width: 500px;
+        width: 90%;
+        box-shadow: 0 8px 32px rgba(0, 0, 0, 0.2);
+    }
+
+    .modal-card h3 {
+        margin: 0 0 20px 0;
+        font-size: 20px;
+        color: #333;
+    }
+
+    .warning-box {
+        background: #fff3cd;
+        border: 1px solid #ffc107;
+        border-radius: 4px;
+        padding: 12px 16px;
+        margin-bottom: 20px;
+    }
+
+    .warning-box p {
+        margin: 0;
+        color: #856404;
+        font-size: 14px;
+    }
+
+    .years-list {
+        margin-bottom: 20px;
+        max-height: 250px;
+        overflow-y: auto;
+    }
+
+    .year-checkbox {
+        display: flex;
+        align-items: center;
+        padding: 8px 0;
+        cursor: pointer;
+        font-size: 14px;
+        user-select: none;
+    }
+
+    .year-checkbox input {
+        margin-right: 10px;
+        cursor: pointer;
+        width: 16px;
+        height: 16px;
+    }
+
+    .year-checkbox input:disabled {
+        cursor: not-allowed;
+        opacity: 0.5;
+    }
+
+    .year-checkbox span {
+        color: #333;
+    }
+
+    .error-message {
+        background: #ffebee;
+        border: 1px solid #ef5350;
+        border-radius: 4px;
+        padding: 12px 16px;
+        margin-bottom: 20px;
+    }
+
+    .error-message p {
+        margin: 0;
+        color: #c62828;
+        font-size: 14px;
+    }
+
+    .modal-actions {
+        display: flex;
+        gap: 10px;
+        justify-content: flex-end;
+    }
+
+    .btn-cancel {
+        padding: 10px 20px;
+        background: #f5f5f5;
+        color: #333;
+        border: 1px solid #ddd;
+        border-radius: 4px;
+        cursor: pointer;
+        font-size: 14px;
+        font-weight: 600;
+        transition: background 0.2s ease;
+    }
+
+    .btn-cancel:hover:not(:disabled) {
+        background: #e0e0e0;
+    }
+
+    .btn-cancel:disabled {
+        opacity: 0.5;
+        cursor: not-allowed;
+    }
+
+    .btn-download {
+        padding: 10px 20px;
+        background: #2196F3;
+        color: white;
+        border: none;
+        border-radius: 4px;
+        cursor: pointer;
+        font-size: 14px;
+        font-weight: 600;
+        transition: background 0.2s ease;
+    }
+
+    .btn-download:hover:not(:disabled) {
+        background: #1976D2;
+    }
+
+    .btn-download:disabled {
+        opacity: 0.5;
+        cursor: not-allowed;
     }
 
 </style>
