@@ -30,12 +30,38 @@ export class WebGPUContext {
 
             console.log('WebGPU adapter obtained, requesting device...');
 
-            this.device = await this.adapter.requestDevice({
-                requiredLimits: {
-                    maxStorageBufferBindingSize: 2 * 1024 * 1024 * 1024, // 2GB
-                    maxBufferSize: 2 * 1024 * 1024 * 1024
+            // Try to get device with reasonable limits
+            // Different browsers have different limits - start conservative
+            const limitsToTry = [
+                {
+                    maxStorageBufferBindingSize: 256 * 1024 * 1024, // 256MB
+                    maxBufferSize: 256 * 1024 * 1024
+                },
+                {
+                    maxStorageBufferBindingSize: 128 * 1024 * 1024, // 128MB
+                    maxBufferSize: 128 * 1024 * 1024
                 }
-            });
+            ];
+
+            let deviceCreated = false;
+            for (const limits of limitsToTry) {
+                try {
+                    this.device = await this.adapter.requestDevice({
+                        requiredLimits: limits
+                    });
+                    console.log(`✅ Device created with limits: ${limits.maxStorageBufferBindingSize / (1024 * 1024)}MB`);
+                    deviceCreated = true;
+                    break;
+                } catch (e) {
+                    console.warn(`Could not create device with ${limits.maxStorageBufferBindingSize / (1024 * 1024)}MB limits, trying smaller...`);
+                }
+            }
+
+            if (!deviceCreated) {
+                // Last resort: request device without explicit limits
+                console.warn('Requesting device without explicit buffer limits...');
+                this.device = await this.adapter.requestDevice();
+            }
 
             console.log('✅ WebGPU initialized successfully');
             console.log(`GPU: ${this.adapter.name || 'Unknown'}`);
