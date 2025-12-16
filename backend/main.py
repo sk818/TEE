@@ -194,7 +194,11 @@ def process_additional_years_task(task_id: str, viewport_id: str):
 
         def download_progress(year, status, percent):
             overall_progress = (percent / 100) * 50
-            if status == 'complete':
+            if status == 'initializing':
+                update_task_status(task_id, 'downloading', overall_progress, 'Initializing GeoTessera (checking registries, loading tile metadata)...')
+            elif status == 'ready':
+                update_task_status(task_id, 'downloading', overall_progress, f'Ready to download {len(new_years)} additional year(s)...')
+            elif status == 'complete':
                 update_task_status(task_id, 'downloading', overall_progress, f'✓ Completed year {year}')
             else:
                 update_task_status(task_id, 'downloading', overall_progress, f'Downloading year {year}... (this may take several minutes)')
@@ -273,7 +277,11 @@ def process_viewport_task(task_id: str):
         def download_progress(year, status, percent):
             # Update progress for downloading phase (0-50%)
             overall_progress = (percent / 100) * 50
-            if status == 'complete':
+            if status == 'initializing':
+                update_task_status(task_id, 'downloading', overall_progress, 'Initializing GeoTessera (checking registries, loading tile metadata)...')
+            elif status == 'ready':
+                update_task_status(task_id, 'downloading', overall_progress, 'Ready to download. Starting year-by-year download...')
+            elif status == 'complete':
                 update_task_status(task_id, 'downloading', overall_progress, f'✓ Completed year {year}')
             else:
                 update_task_status(task_id, 'downloading', overall_progress, f'Downloading embeddings for year {year}... (this may take several minutes)')

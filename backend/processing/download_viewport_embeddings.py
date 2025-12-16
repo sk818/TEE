@@ -61,8 +61,17 @@ def download_embeddings_for_viewport(
     logger.info(f"Output directory: {output_dir}")
 
     try:
+        # Notify about GeoTessera initialization
+        if progress_callback:
+            progress_callback(None, 'initializing', 5)
+
         # Initialize GeoTessera
+        logger.info("Initializing GeoTessera (checking registries, loading metadata...)")
         tessera = gt.GeoTessera(embeddings_dir=str(output_dir))
+
+        # Notify initialization complete
+        if progress_callback:
+            progress_callback(None, 'ready', 10)
 
         for idx, year in enumerate(years):
             progress_percent_start = (idx / len(years)) * 100
