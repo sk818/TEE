@@ -114,9 +114,36 @@
         </div>
     {:else if error}
         <div class="error">
-            <h2>Error</h2>
+            <h2>⚠️ WebGPU Not Available</h2>
             <p>{error}</p>
-            <p>Please ensure your browser supports WebGPU (Chrome 113+, Edge 113+, or Safari 17.4+)</p>
+            <h3>How to Fix:</h3>
+            <div class="fix-instructions">
+                <div class="instruction">
+                    <strong>Safari 18.3+:</strong>
+                    <ol>
+                        <li>Click "Develop" menu (enable if needed in Preferences > Advanced)</li>
+                        <li>Look for "Experimental Features" or "WebGPU"</li>
+                        <li>Enable the WebGPU option</li>
+                        <li>Reload this page</li>
+                    </ol>
+                </div>
+                <div class="instruction">
+                    <strong>Chrome/Edge:</strong>
+                    <ol>
+                        <li>Update to version 113 or later</li>
+                        <li>WebGPU should be enabled by default</li>
+                    </ol>
+                </div>
+                <div class="instruction">
+                    <strong>Firefox:</strong>
+                    <ol>
+                        <li>Type about:config in address bar</li>
+                        <li>Search for "webgpu.enabled"</li>
+                        <li>Set to true</li>
+                    </ol>
+                </div>
+            </div>
+            <p style="margin-top: 20px; color: #999;">Check browser console for more details.</p>
         </div>
     {:else}
         <div class="controls-panel">
@@ -286,5 +313,45 @@
         margin: 10px 0;
         max-width: 600px;
         text-align: center;
+    }
+
+    .error h3 {
+        margin-top: 30px;
+        margin-bottom: 15px;
+        color: #333;
+        font-size: 16px;
+    }
+
+    .fix-instructions {
+        display: flex;
+        flex-direction: column;
+        gap: 20px;
+        margin: 20px 0;
+        max-width: 700px;
+        text-align: left;
+    }
+
+    .instruction {
+        background: #f5f5f5;
+        padding: 15px;
+        border-radius: 4px;
+        border-left: 4px solid #4CAF50;
+    }
+
+    .instruction strong {
+        color: #333;
+        display: block;
+        margin-bottom: 8px;
+    }
+
+    .instruction ol {
+        margin: 0;
+        padding-left: 20px;
+        color: #666;
+    }
+
+    .instruction li {
+        margin: 5px 0;
+        font-size: 14px;
     }
 </style>
