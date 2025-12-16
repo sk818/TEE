@@ -2,6 +2,7 @@
     import { onMount } from 'svelte';
     import { WebGPUContext } from '../lib/gpu/WebGPUContext';
     import { SimilarityCompute } from '../lib/gpu/SimilarityCompute';
+    import { CPUSimilarityCompute } from '../lib/gpu/CPUSimilarityCompute';
     import { EmbeddingLoader } from '../lib/data/EmbeddingLoader';
     import ThresholdControl from './ThresholdControl.svelte';
     import YearSelector from './YearSelector.svelte';
@@ -15,9 +16,10 @@
     $: viewportCenter = config?.center || [0, 0];
     $: viewportBounds = config?.bounds;
 
-    let gpuContext: WebGPUContext;
-    let similarityCompute: SimilarityCompute;
+    let gpuContext: WebGPUContext | null = null;
+    let similarityCompute: SimilarityCompute | CPUSimilarityCompute;
     let embeddingLoader: EmbeddingLoader;
+    let usingCPUFallback = false;
 
     let selectedYear = 2024;
     let threshold = 0.8;
@@ -26,17 +28,20 @@
 
     let loading = true;
     let error = '';
-    let loadingMessage = 'Initializing WebGPU...';
+    let loadingMessage = 'Initializing...';
 
     onMount(async () => {
         try {
-            // Initialize WebGPU
+            // Try WebGPU first
             loadingMessage = 'Initializing WebGPU...';
             gpuContext = new WebGPUContext();
             const gpuReady = await gpuContext.initialize();
 
             if (!gpuReady) {
-                throw new Error('WebGPU not available');
+                // Fall back to CPU computation
+                console.log('WebGPU not available, using CPU fallback');
+                loadingMessage = 'Using CPU-based computation...';
+                usingCPUFallback = true;
             }
 
             // Initialize loaders
@@ -60,12 +65,24 @@
         // Initialize similarity compute if needed
         if (!similarityCompute) {
             const header = embeddingLoader.getHeader(year)!;
-            similarityCompute = new SimilarityCompute(
-                gpuContext,
-                header.width,
-                header.height,
-                header.dimensions
-            );
+
+            if (usingCPUFallback) {
+                // Use CPU-based computation
+                similarityCompute = new CPUSimilarityCompute(
+                    header.width,
+                    header.height,
+                    header.dimensions
+                );
+            } else {
+                // Use GPU computation
+                similarityCompute = new SimilarityCompute(
+                    gpuContext!,
+                    header.width,
+                    header.height,
+                    header.dimensions
+                );
+            }
+
             await similarityCompute.initialize(embeddings);
         }
     }
@@ -189,6 +206,11 @@
 
         <div class="instructions">
             <p>Click on any pixel to find similar locations • Adjust threshold to control sensitivity</p>
+            {#if usingCPUFallback}
+                <p class="cpu-fallback-badge">
+                    ⚠️ Using CPU computation (WebGPU unavailable)
+                </p>
+            {/if}
         </div>
     {/if}
 </div>
@@ -269,6 +291,19 @@
         padding: 10px 20px;
         border-radius: 4px;
         font-size: 14px;
+        text-align: center;
+    }
+
+    .instructions p {
+        margin: 0;
+    }
+
+    .cpu-fallback-badge {
+        margin-top: 8px;
+        padding-top: 8px;
+        border-top: 1px solid rgba(255,255,255,0.3);
+        color: #ffb74d;
+        font-size: 12px;
     }
 
     .loading, .error {
