@@ -168,7 +168,7 @@ def process_viewport_task(task_id: str):
         # Step 1: Download embeddings
         update_task_status(task_id, 'downloading', 0, 'Downloading TESSERA embeddings...')
 
-        from processing.download_viewport_embeddings import download_embeddings_for_viewport
+        from backend.processing.download_viewport_embeddings import download_embeddings_for_viewport
 
         bounds_tuple = (
             bounds_dict['minLon'],
@@ -193,7 +193,7 @@ def process_viewport_task(task_id: str):
         # Step 2: Create pyramids
         update_task_status(task_id, 'creating_pyramids', 50, 'Creating multi-resolution pyramids...')
 
-        from processing.create_viewport_pyramids import create_pyramids_for_viewport
+        from backend.processing.create_viewport_pyramids import create_pyramids_for_viewport
 
         def pyramid_progress(year, level, status, percent):
             # Update progress for pyramid creation (50-100%)
