@@ -76,8 +76,16 @@
             let embeddings: Float32Array;
 
             if (usingGeoTIFF && geotiffLoader && viewportId) {
-                // Load from GeoTIFF pyramids (start with full resolution level 0)
-                embeddings = await geotiffLoader.loadPyramidLevel(viewportId, year, 0);
+                // Load full embeddings from NPY file for similarity computation
+                try {
+                    loadingMessage = `Loading full embeddings for ${year}...`;
+                    embeddings = await geotiffLoader.loadFullEmbeddings(viewportId, year);
+                    console.log(`✓ Loaded full embeddings for similarity: ${embeddings.length} values`);
+                } catch (npy_error) {
+                    console.warn('Could not load NPY embeddings, falling back to GeoTIFF:', npy_error);
+                    // Fallback to GeoTIFF (RGB only, less accurate)
+                    embeddings = await geotiffLoader.loadPyramidLevel(viewportId, year, 0);
+                }
             } else if (embeddingLoader) {
                 // Load from binary format (legacy)
                 embeddings = await embeddingLoader.load(year, '/data/embeddings');
@@ -94,11 +102,22 @@
                 if (usingGeoTIFF && geotiffLoader && viewportId) {
                     // Get metadata from GeoTIFF
                     const metadata = await geotiffLoader.loadViewportMetadata(viewportId);
-                    // For now, estimate dimensions from embeddings array
-                    // In a real implementation, this would come from GeoTIFF metadata
-                    dimensions = embeddings.length > 0 ? Math.round(embeddings.length / (256 * 256)) : 128;
-                    width = 256;  // GeoTIFF pyramids are typically 4408x4408, but we can adjust
-                    height = 256;
+
+                    // Extract dimensions from metadata
+                    width = metadata.width || 4408;
+                    height = metadata.height || 4408;
+
+                    // Calculate actual embedding dimensions from array size
+                    // embeddings.length should be width * height * dimensions
+                    const numPixels = width * height;
+                    dimensions = Math.round(embeddings.length / numPixels);
+
+                    if (dimensions === 0 || embeddings.length !== numPixels * dimensions) {
+                        console.warn(`Dimension mismatch: embeddings.length=${embeddings.length}, expected=${numPixels * dimensions}`);
+                        dimensions = Math.max(1, dimensions);
+                    }
+
+                    console.log(`✓ Loaded dimensions from metadata: ${width}×${height} with ${dimensions} embedding dimensions`);
                 } else if (embeddingLoader) {
                     const header = embeddingLoader.getHeader(year)!;
                     width = header.width;
@@ -109,6 +128,7 @@
                 }
 
                 // Use CPU-based computation
+                console.log(`✓ Initializing CPU compute with dimensions: ${width}×${height}, ${dimensions}D embeddings`);
                 similarityCompute = new CPUSimilarityCompute(width, height, dimensions);
                 await similarityCompute.initialize(embeddings);
             }

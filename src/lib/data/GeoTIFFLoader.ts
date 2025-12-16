@@ -180,6 +180,71 @@ export class GeoTIFFLoader {
     }
 
     /**
+     * Load full embeddings from NPY file for similarity computation
+     */
+    async loadFullEmbeddings(viewportId: string, year: number): Promise<Float32Array> {
+        const cacheKey = `${viewportId}_full_${year}`;
+
+        // Check cache
+        if (this.cache.has(cacheKey)) {
+            console.log(`✓ Loaded full embeddings from cache: ${cacheKey}`);
+            return this.cache.get(cacheKey)!;
+        }
+
+        try {
+            console.log(`Loading full embeddings: ${viewportId}/${year}`);
+
+            // Fetch NPY file using relative path (Vite proxy handles routing)
+            const url = `/api/viewports/${viewportId}/embeddings/${year}.npy`;
+            const response = await fetch(url);
+
+            if (!response.ok) {
+                throw new Error(`Failed to fetch embeddings: ${response.statusText}`);
+            }
+
+            const arrayBuffer = await response.arrayBuffer();
+
+            // Parse NPY file format
+            // NPY format: 6-byte magic + 2-byte version + uint16 header_len + header + data
+            const view = new DataView(arrayBuffer);
+
+            // Check magic bytes "\\x93NUMPY"
+            const magic = String.fromCharCode(view.getUint8(0), view.getUint8(1), view.getUint8(2), view.getUint8(3), view.getUint8(4), view.getUint8(5));
+            if (magic !== '\x93NUMPY') {
+                throw new Error('Invalid NPY file format');
+            }
+
+            // Get version (stored at offset 6, but we don't need to use it)
+            view.getUint16(6, true); // true = little-endian
+
+            // Get header length
+            const headerLen = view.getUint16(8, true);
+
+            // Skip past header (we just need the data)
+            const dataStart = 10 + headerLen;
+
+            // Convert to Float32Array
+            // Assuming the NPY contains float32 data
+            const dataView = new DataView(arrayBuffer, dataStart);
+            const numFloats = (arrayBuffer.byteLength - dataStart) / 4;
+            const embeddings = new Float32Array(numFloats);
+
+            for (let i = 0; i < numFloats; i++) {
+                embeddings[i] = dataView.getFloat32(i * 4, true); // true = little-endian
+            }
+
+            // Cache
+            this.cache.set(cacheKey, embeddings);
+            console.log(`✓ Loaded full embeddings: ${embeddings.length} values (${(embeddings.length / 1024 / 1024).toFixed(1)}MB)`);
+
+            return embeddings;
+        } catch (error) {
+            console.error(`Error loading full embeddings for ${viewportId}/${year}:`, error);
+            throw error;
+        }
+    }
+
+    /**
      * Clear cache
      */
     clearCache(): void {

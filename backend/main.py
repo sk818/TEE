@@ -91,6 +91,9 @@ class ViewportMetadata(BaseModel):
     center: list[float]
     years: list[int]
     pyramid_levels: int = 6
+    width: int = 4408  # Default width of pyramid level 0
+    height: int = 4408  # Default height of pyramid level 0
+    bands: int = 3  # Number of bands in GeoTIFF (RGB)
     processed_date: str
     status: str
 
@@ -221,7 +224,7 @@ def process_additional_years_task(task_id: str, viewport_id: str):
             update_task_status(task_id, 'creating_pyramids', overall_progress, f'Creating pyramids for year {year}, level {level}...')
 
         logger.info(f"Creating pyramids for additional years")
-        create_pyramids_for_viewport(
+        pyramid_info = create_pyramids_for_viewport(
             embeddings_dir=viewport_dir / "raw",
             pyramids_dir=viewport_dir / "pyramids",
             years=new_years,
@@ -230,6 +233,13 @@ def process_additional_years_task(task_id: str, viewport_id: str):
 
         # Step 3: Update metadata with new years
         metadata['years'] = sorted(list(set(metadata['years']) | set(new_years)))
+        # Update dimensions if they were captured
+        if 'width' not in metadata:
+            metadata['width'] = pyramid_info.get('width', 4408)
+        if 'height' not in metadata:
+            metadata['height'] = pyramid_info.get('height', 4408)
+        if 'bands' not in metadata:
+            metadata['bands'] = pyramid_info.get('bands', 3)
         with open(metadata_file, 'w') as f:
             json.dump(metadata, f, indent=2)
 
@@ -305,7 +315,7 @@ def process_viewport_task(task_id: str):
             update_task_status(task_id, 'creating_pyramids', overall_progress, f'Creating pyramids for year {year}, level {level}...')
 
         logger.info(f"Creating pyramids from embeddings")
-        create_pyramids_for_viewport(
+        pyramid_info = create_pyramids_for_viewport(
             embeddings_dir=viewport_dir / "raw",
             pyramids_dir=pyramids_dir,
             years=years,
@@ -319,6 +329,9 @@ def process_viewport_task(task_id: str):
             center=center,
             years=years,
             pyramid_levels=6,
+            width=pyramid_info.get('width', 4408),
+            height=pyramid_info.get('height', 4408),
+            bands=pyramid_info.get('bands', 3),
             processed_date=datetime.utcnow().isoformat(),
             status='complete'
         )
@@ -446,6 +459,22 @@ async def get_pyramid_tif(viewport_id: str, year: int, level: int):
         path=tif_file,
         media_type="image/tiff",
         headers={"Content-Disposition": f"attachment; filename=level_{level}.tif"}
+    )
+
+
+@app.get("/api/viewports/{viewport_id}/embeddings/{year}.npy")
+async def get_embeddings_npy(viewport_id: str, year: int):
+    """Serve raw embeddings as NPY file for similarity computation."""
+    npy_file = DATA_DIR / viewport_id / "raw" / f"embeddings_{year}.npy"
+
+    if not npy_file.exists():
+        logger.warning(f"NPY file not found: {npy_file}")
+        raise HTTPException(status_code=404, detail="Embeddings not found")
+
+    return FileResponse(
+        path=npy_file,
+        media_type="application/octet-stream",
+        headers={"Content-Disposition": f"attachment; filename=embeddings_{year}.npy"}
     )
 
 

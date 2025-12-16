@@ -171,7 +171,7 @@ def create_pyramids_for_viewport(
     pyramids_dir: Path,
     years: list,
     progress_callback: Optional[Callable] = None
-) -> None:
+) -> dict:
     """
     Create multi-resolution pyramids from embeddings.
 
@@ -180,6 +180,9 @@ def create_pyramids_for_viewport(
         pyramids_dir: Base directory for output pyramids
         years: List of years to process
         progress_callback: Optional callback(year, level, status, percent)
+
+    Returns:
+        Dictionary with pyramid dimensions: {width, height, bands}
     """
     if rasterio is None:
         raise RuntimeError("rasterio library not available")
@@ -193,6 +196,8 @@ def create_pyramids_for_viewport(
     # Determine bounds from first embeddings file (you might want to pass this as parameter)
     # For now, we'll infer from the data
     bounds = (-180, -90, 180, 90)  # Default global bounds
+
+    pyramid_info = {'width': 4408, 'height': 4408, 'bands': 3}
 
     for year_idx, year in enumerate(years):
         embeddings_file = embeddings_dir / f'embeddings_{year}.npy'
@@ -222,6 +227,11 @@ def create_pyramids_for_viewport(
             size_kb = level_0_file.stat().st_size / 1024
             with rasterio.open(level_0_file) as src:
                 logger.info(f"Level 0: {src.width}×{src.height} @ 10m/pixel ({size_kb:.1f} KB)")
+                # Capture actual dimensions from first year
+                if year_idx == 0:
+                    pyramid_info['width'] = src.width
+                    pyramid_info['height'] = src.height
+                    pyramid_info['bands'] = src.count
 
             # Create pyramid levels 1-5
             prev_level_file = level_0_file
@@ -247,6 +257,8 @@ def create_pyramids_for_viewport(
             raise
 
     logger.info("✅ Pyramid creation complete!")
+    logger.info(f"Pyramid dimensions: {pyramid_info['width']}×{pyramid_info['height']} with {pyramid_info['bands']} bands")
+    return pyramid_info
 
 
 if __name__ == "__main__":
