@@ -55,13 +55,14 @@ python -m uvicorn main:app --reload --port 8000
 # In the root directory
 npm run dev
 
-# Frontend will be available at http://localhost:5173
+# Frontend will be available at http://localhost:3000
+# API requests are automatically proxied to http://localhost:8000
 ```
 
 ## Usage Workflow
 
 1. **Open the Application**
-   - Navigate to http://localhost:5173
+   - Navigate to http://localhost:3000
    - You'll see the viewport selector with a map
 
 2. **Select a Viewport**
