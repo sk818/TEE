@@ -55,6 +55,8 @@ export class GeoTIFFLoader {
 
             // Read all bands
             const rasters = await image.readRasters();
+            console.log(`Rasters loaded: ${rasters.length} bands, first band sample values:`,
+                Array.from(rasters[0] as any).slice(0, 10));
 
             // Convert to Float32Array and interleave
             const embeddings = new Float32Array(width * height * numBands);
@@ -85,6 +87,15 @@ export class GeoTIFFLoader {
             // Cache
             this.cache.set(cacheKey, embeddings);
             console.log(`✓ Cached pyramid level: ${cacheKey}`);
+
+            // Debug: log some sample values
+            const stats = {
+                min: Math.min(...embeddings),
+                max: Math.max(...embeddings),
+                mean: embeddings.reduce((a, b) => a + b) / embeddings.length,
+                sampleValues: Array.from(embeddings).slice(0, 10)
+            };
+            console.log(`Embeddings stats:`, stats);
 
             return embeddings;
         } catch (error) {
