@@ -47,6 +47,18 @@
                 geotiffLoader = new GeoTIFFLoader();
                 usingGeoTIFF = true;
                 console.log(`✅ Using GeoTIFF loader for viewport ${viewportId}`);
+
+                // Load metadata to get available years
+                try {
+                    const metadata = await geotiffLoader.loadViewportMetadata(viewportId);
+                    if (metadata.years && Array.isArray(metadata.years)) {
+                        availableYears = metadata.years.sort((a, b) => a - b);
+                        selectedYear = availableYears[availableYears.length - 1]; // Use latest year
+                        console.log(`✓ Loaded available years from metadata: ${availableYears.join(', ')}`);
+                    }
+                } catch (metadata_error) {
+                    console.warn('Could not load metadata for years:', metadata_error);
+                }
             } else {
                 loadingMessage = 'Loading embeddings...';
                 embeddingLoader = new EmbeddingLoader();
