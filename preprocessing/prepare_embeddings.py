@@ -76,8 +76,8 @@ def process_all_embeddings(input_dir: Path,
         # Normalize
         embeddings_normalized = normalize_embeddings(embeddings)
 
-        # Write binary file
-        output_file = output_dir / f'embeddings_{year}_{bounds[0]:.4f}_{bounds[1]:.4f}.bin'
+        # Write binary file (use simple name without bounds for now)
+        output_file = output_dir / f'embeddings_{year}.bin'
         write_embedding_file(embeddings_normalized, year, bounds, output_file)
 
         print(f"  Saved to {output_file}")
