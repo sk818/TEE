@@ -163,9 +163,21 @@
 			[bounds.maxLat + latDiff * padding, bounds.maxLon + lonDiff * padding]
 		);
 
+		// Fit OSM map to bounds
 		maps.osm.fitBounds(paddedBounds, { padding: [20, 20] });
-		maps.embedding?.fitBounds(paddedBounds, { padding: [20, 20] });
-		maps.rgb?.fitBounds(paddedBounds, { padding: [20, 20] });
+		const osmZoom = maps.osm.getZoom();
+
+		// For embedding and RGB maps with zoomOffset -3, we need to zoom OUT by 3 levels
+		// to account for the larger tile size (2048 vs 256)
+		const adjustedZoom = Math.max(0, osmZoom - 3);
+		if (maps.embedding) {
+			maps.embedding.setView(center, adjustedZoom, { animate: false });
+		}
+		if (maps.rgb) {
+			maps.rgb.setView(center, adjustedZoom, { animate: false });
+		}
+
+		console.log(`OSM zoom: ${osmZoom}, Adjusted zoom for tiled layers: ${adjustedZoom}`);
 	}
 
 	// Add click handlers
