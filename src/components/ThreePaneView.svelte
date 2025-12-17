@@ -205,11 +205,15 @@
 			const refCenter = refMap.getCenter();
 			const refZoom = refMap.getZoom();
 
+			// For maps with zoomOffset -3 (embedding and rgb), adjust zoom by -3
+			// This compensates for the larger 2048x2048 tile size vs standard 256x256
 			if (maps.embedding) {
-				maps.embedding.setView(refCenter, refZoom, { animate: false });
+				const embeddingZoom = Math.max(0, refZoom - 3);
+				maps.embedding.setView(refCenter, embeddingZoom, { animate: false });
 			}
 			if (maps.rgb) {
-				maps.rgb.setView(refCenter, refZoom, { animate: false });
+				const rgbZoom = Math.max(0, refZoom - 3);
+				maps.rgb.setView(refCenter, rgbZoom, { animate: false });
 			}
 		});
 	}
