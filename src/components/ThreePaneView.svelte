@@ -40,34 +40,6 @@
 	let bounds: { minLon: number; minLat: number; maxLon: number; maxLat: number } | null = null;
 	let zoom = 11;
 
-	// Calculate zoom level to fit bounds
-	function calculateZoomForBounds(
-		minLon: number,
-		minLat: number,
-		maxLon: number,
-		maxLat: number,
-		mapWidth: number = 400,
-		mapHeight: number = 400
-	): number {
-		const EARTH_RADIUS = 6371; // km
-		const MAX_ZOOM = 17;
-		const TILE_SIZE = 256; // pixels
-
-		// Calculate viewport size in degrees
-		const lonDiff = maxLon - minLon;
-		const latDiff = maxLat - minLat;
-
-		// Use the larger dimension to determine zoom
-		const maxDiff = Math.max(lonDiff, latDiff);
-
-		// Calculate required zoom level
-		// At zoom z, one tile covers 360 / 2^z degrees
-		const degreesPerTile = 360 / Math.pow(2, MAX_ZOOM);
-		const requiredZoom = Math.log2(360 / (maxDiff * 1.2)) / Math.log(2); // 1.2 = padding factor
-
-		return Math.max(4, Math.min(MAX_ZOOM - 3, Math.floor(requiredZoom)));
-	}
-
 	// Load viewport metadata to get correct center and bounds
 	async function loadViewportMetadata() {
 		try {
@@ -80,14 +52,6 @@
 				}
 				if (metadata.bounds) {
 					bounds = metadata.bounds;
-					// Calculate appropriate zoom level for bounds
-					zoom = calculateZoomForBounds(
-						bounds.minLon,
-						bounds.minLat,
-						bounds.maxLon,
-						bounds.maxLat
-					);
-					console.log(`Calculated zoom level: ${zoom} for bounds`, bounds);
 				}
 			}
 		} catch (err) {
@@ -124,9 +88,7 @@
 			attribution: 'Tessera Embeddings',
 			opacity: 1.0,
 			maxZoom: 17,
-			minZoom: 6,
-			tileSize: 2048,
-			zoomOffset: -3
+			minZoom: 6
 		}).addTo(maps.embedding);
 
 		// RGB Satellite Map
@@ -142,58 +104,45 @@
 			attribution: 'Sentinel-2 RGB',
 			opacity: 1.0,
 			maxZoom: 17,
-			minZoom: 6,
-			tileSize: 2048,
-			zoomOffset: -3
+			minZoom: 6
 		}).addTo(maps.rgb);
 
-		// Fit bounds if available, otherwise use center/zoom
-	if (bounds && maps.osm) {
-		const leafletBounds = L.latLngBounds(
-			[bounds.minLat, bounds.minLon],
-			[bounds.maxLat, bounds.maxLon]
-		);
+		// Fit bounds if available
+		if (bounds && maps.osm) {
+			const leafletBounds = L.latLngBounds(
+				[bounds.minLat, bounds.minLon],
+				[bounds.maxLat, bounds.maxLon]
+			);
 
-		// Add padding (10% on each side)
-		const padding = 0.1;
-		const latDiff = bounds.maxLat - bounds.minLat;
-		const lonDiff = bounds.maxLon - bounds.minLon;
-		const paddedBounds = L.latLngBounds(
-			[bounds.minLat - latDiff * padding, bounds.minLon - lonDiff * padding],
-			[bounds.maxLat + latDiff * padding, bounds.maxLon + lonDiff * padding]
-		);
+			// Add padding (10% on each side)
+			const padding = 0.1;
+			const latDiff = bounds.maxLat - bounds.minLat;
+			const lonDiff = bounds.maxLon - bounds.minLon;
+			const paddedBounds = L.latLngBounds(
+				[bounds.minLat - latDiff * padding, bounds.minLon - lonDiff * padding],
+				[bounds.maxLat + latDiff * padding, bounds.maxLon + lonDiff * padding]
+			);
 
-		// Fit OSM map to bounds
-		maps.osm.fitBounds(paddedBounds, { padding: [20, 20] });
-		const osmZoom = maps.osm.getZoom();
-
-		// For embedding and RGB maps with zoomOffset -3, we need to zoom OUT by 3 levels
-		// to account for the larger tile size (2048 vs 256)
-		const adjustedZoom = Math.max(0, osmZoom - 3);
-		if (maps.embedding) {
-			maps.embedding.setView(center, adjustedZoom, { animate: false });
-		}
-		if (maps.rgb) {
-			maps.rgb.setView(center, adjustedZoom, { animate: false });
+			// Fit all maps to the same bounds
+			maps.osm.fitBounds(paddedBounds, { padding: [20, 20] });
+			maps.embedding?.fitBounds(paddedBounds, { padding: [20, 20] });
+			maps.rgb?.fitBounds(paddedBounds, { padding: [20, 20] });
 		}
 
-		console.log(`OSM zoom: ${osmZoom}, Adjusted zoom for tiled layers: ${adjustedZoom}`);
-	}
-
-	// Add click handlers
-	const panels: Array<'osm' | 'embedding' | 'rgb'> = ['osm', 'embedding', 'rgb'];
-	panels.forEach(panel => {
-		maps[panel]?.on('click', function(e: L.LeafletMouseEvent) {
-			const label = labelInput || 'unlabeled';
-			addMarker(panel, e.latlng.lat, e.latlng.lng, label);
+		// Add click handlers
+		const panels: Array<'osm' | 'embedding' | 'rgb'> = ['osm', 'embedding', 'rgb'];
+		panels.forEach(panel => {
+			maps[panel]?.on('click', function(e: L.LeafletMouseEvent) {
+				const label = labelInput || 'unlabeled';
+				addMarker(panel, e.latlng.lat, e.latlng.lng, label);
+			});
 		});
-	});
 
-	// Synchronize maps
-	syncMaps();
+		// Synchronize maps
+		syncMaps();
 
-	isLoading = false;
-}
+		isLoading = false;
+	}
 
 	// Synchronize all maps
 	function syncMaps() {
@@ -205,15 +154,12 @@
 			const refCenter = refMap.getCenter();
 			const refZoom = refMap.getZoom();
 
-			// For maps with zoomOffset -3 (embedding and rgb), adjust zoom by -3
-			// This compensates for the larger 2048x2048 tile size vs standard 256x256
+			// Sync all maps to the same center and zoom
 			if (maps.embedding) {
-				const embeddingZoom = Math.max(0, refZoom - 3);
-				maps.embedding.setView(refCenter, embeddingZoom, { animate: false });
+				maps.embedding.setView(refCenter, refZoom, { animate: false });
 			}
 			if (maps.rgb) {
-				const rgbZoom = Math.max(0, refZoom - 3);
-				maps.rgb.setView(refCenter, rgbZoom, { animate: false });
+				maps.rgb.setView(refCenter, refZoom, { animate: false });
 			}
 		});
 	}
@@ -347,9 +293,7 @@
 			attribution: 'Tessera Embeddings',
 			opacity: 1.0,
 			maxZoom: 17,
-			minZoom: 6,
-			tileSize: 2048,
-			zoomOffset: -3
+			minZoom: 6
 		}).addTo(maps.embedding);
 
 		// Update RGB layer
@@ -363,9 +307,7 @@
 			attribution: 'Sentinel-2 RGB',
 			opacity: 1.0,
 			maxZoom: 17,
-			minZoom: 6,
-			tileSize: 2048,
-			zoomOffset: -3
+			minZoom: 6
 		}).addTo(maps.rgb);
 	}
 
