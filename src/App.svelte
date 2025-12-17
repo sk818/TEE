@@ -10,7 +10,8 @@
 
     function handleViewportLoad(event: CustomEvent<ViewportConfig>) {
         viewportConfig = event.detail;
-        currentView = 'explorer';
+        selectedViewportId = event.detail.viewportId || '';
+        currentView = 'three-pane';
     }
 
     function handleOpenThreePane(viewportId: string) {

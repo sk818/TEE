@@ -1,5 +1,5 @@
 <script lang="ts">
-    import { onMount } from 'svelte';
+    import { onMount, createEventDispatcher } from 'svelte';
     import { CPUSimilarityCompute } from '../lib/gpu/CPUSimilarityCompute';
     import { GeoTIFFLoader } from '../lib/data/GeoTIFFLoader';
     import { EmbeddingLoader } from '../lib/data/EmbeddingLoader';
@@ -10,6 +10,8 @@
     import { geoToPixel } from '../lib/utils/coordinates';
 
     export let config: ViewportConfig;
+
+    const dispatch = createEventDispatcher();
 
     // Use config to initialize viewport
     $: viewportCenter = config?.center || [0, 0];
@@ -52,7 +54,7 @@
                 try {
                     const metadata = await geotiffLoader.loadViewportMetadata(viewportId);
                     if (metadata.years && Array.isArray(metadata.years)) {
-                        availableYears = metadata.years.sort((a, b) => a - b);
+                        availableYears = metadata.years.sort((a: number, b: number) => a - b);
                         selectedYear = availableYears[availableYears.length - 1]; // Use latest year
                         console.log(`✓ Loaded available years from metadata: ${availableYears.join(', ')}`);
                     }
@@ -299,6 +301,12 @@
                 </button>
             {/if}
 
+            {#if viewportId}
+                <button class="btn-three-pane" on:click={() => dispatch('open-three-pane', viewportId)}>
+                    🗺️ Open Three-Pane Viewer
+                </button>
+            {/if}
+
             <ThresholdControl
                 value={threshold}
                 on:change={handleThresholdChange}
@@ -542,6 +550,24 @@
 
     .btn-download-years:hover {
         background: #1976D2;
+    }
+
+    .btn-three-pane {
+        width: 100%;
+        margin: 10px 0;
+        padding: 12px 16px;
+        background: #4CAF50;
+        color: white;
+        border: none;
+        border-radius: 4px;
+        cursor: pointer;
+        font-size: 14px;
+        font-weight: 600;
+        transition: background 0.2s ease;
+    }
+
+    .btn-three-pane:hover {
+        background: #45a049;
     }
 
     .modal-overlay {

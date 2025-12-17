@@ -1,376 +1,316 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import L from 'leaflet';
-	import { ZoomAwareSimilarity, type SimilarityResult } from '../lib/similarity/ZoomAwareSimilarity';
 
 	// Props
 	export let viewportId: string = '';
 	export let onClose: () => void = () => {};
 
 	// State
-	let maps: { osm?: L.Map; sentinel2?: L.Map; embeddings?: L.Map } = {};
-	let selectedYear = 2024;
-	let availableYears: number[] = [];
-	let similarityMode = false;
-	let currentZoom = 13;
-	let currentPyramidLevel = 0;
+	let maps: { osm?: L.Map; embedding?: L.Map; rgb?: L.Map } = {};
+	let currentEmbeddingYear = '2024';
+	let labelInput = 'building';
+	let labelCount = 0;
 	let isLoading = true;
 	let errorMessage = '';
-	let tileLayers: { sentinel2?: L.TileLayer; embeddings?: L.TileLayer } = {};
-	let viewportBounds: any = null;
-	let similarityCompute: ZoomAwareSimilarity | null = null;
-	let lastSimilarityResult: SimilarityResult | null = null;
-	let similarityMarker: L.Marker | null = null;
-	let heatmapLayer: L.ImageOverlay | null = null;
-	let isComputingSimilarity = false;
-	let similarityStats: any = null;
-	let topSimilarPixels: any[] = [];
 
-	const TILE_SIZE = 2048;
+	// Storage for labels: {panel: [[lat, lon, label], ...]}
+	let labels: {
+		osm: [number, number, string][];
+		embedding: [number, number, string][];
+		rgb: [number, number, string][];
+	} = {
+		osm: [],
+		embedding: [],
+		rgb: []
+	};
 
-	// Map zoom to pyramid level
-	function zoomToPyramidLevel(z: number, maxLevel: number = 5): number {
-		const level = Math.floor((18 - z) / 2);
-		return Math.max(0, Math.min(maxLevel, level));
-	}
+	// Storage for marker objects: {panel: {key: marker}}
+	let markers: {
+		osm: { [key: string]: L.Marker };
+		embedding: { [key: string]: L.Marker };
+		rgb: { [key: string]: L.Marker };
+	} = {
+		osm: {},
+		embedding: {},
+		rgb: {}
+	};
 
-	// Load coarsened embeddings for current zoom level
-	async function loadEmbeddingsForZoomLevel() {
-		if (!similarityMode || !similarityCompute) return;
+	let center: [number, number] = [12.97, 77.59];
+	const zoom = 11;
 
+	// Load viewport metadata to get correct center
+	async function loadViewportMetadata() {
 		try {
-			const newLevel = zoomToPyramidLevel(currentZoom);
-			if (newLevel === similarityCompute.getState().level && similarityCompute.getState().loaded) {
-				// Already loaded at this level
-				return;
+			const response = await fetch(`/api/viewports/${viewportId}/metadata`);
+			if (response.ok) {
+				const metadata = await response.json();
+				if (metadata.center) {
+					center = metadata.center;
+					console.log(`Loaded viewport center: ${center}`);
+				}
 			}
-
-			console.log(`[ThreePaneView] Loading embeddings for level ${newLevel}...`);
-			isComputingSimilarity = true;
-
-			await similarityCompute.loadEmbeddingsForLevel(viewportId, selectedYear, newLevel);
-
-			isComputingSimilarity = false;
-			console.log(`[ThreePaneView] ✓ Embeddings loaded for level ${newLevel}`);
 		} catch (err) {
-			console.error('[ThreePaneView] Error loading embeddings:', err);
-			errorMessage = `Failed to load embeddings: ${err instanceof Error ? err.message : String(err)}`;
-			isComputingSimilarity = false;
+			console.warn(`Could not load viewport metadata: ${err}`);
 		}
 	}
 
-	// Compute and display similarity
-	async function computeAndDisplaySimilarity(pixelX: number, pixelY: number) {
-		if (!similarityCompute || !maps.embeddings || !viewportBounds) return;
+	// Create all three maps
+	function createMaps() {
+		// OSM Map
+		maps.osm = L.map('map-osm', {
+			center: center,
+			zoom: zoom,
+			zoomControl: true,
+			minZoom: 6,
+			maxZoom: 18
+		});
 
-		try {
-			isComputingSimilarity = true;
-			const startTime = performance.now();
+		L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+			attribution: '© OpenStreetMap contributors',
+			maxZoom: 19
+		}).addTo(maps.osm);
 
-			// Compute similarity
-			const result = similarityCompute.computeSimilarity(pixelX, pixelY);
-			lastSimilarityResult = result;
+		// Embedding Map (Tessera)
+		maps.embedding = L.map('map-embedding', {
+			center: center,
+			zoom: zoom,
+			zoomControl: true,
+			minZoom: 6,
+			maxZoom: 17
+		});
 
-			// Calculate statistics
-			similarityStats = ZoomAwareSimilarity.getStatistics(result.similarities);
+		L.tileLayer(`/api/tiles/embeddings/${viewportId}/${currentEmbeddingYear}/{z}/{x}/{y}.png`, {
+			attribution: 'Tessera Embeddings',
+			opacity: 1.0,
+			maxZoom: 17,
+			minZoom: 6,
+			tileSize: 2048,
+			zoomOffset: -3
+		}).addTo(maps.embedding);
 
-			// Get top 100 similar pixels
-			topSimilarPixels = similarityCompute.getTopSimilar(result.similarities, 100);
+		// RGB Satellite Map
+		maps.rgb = L.map('map-rgb', {
+			center: center,
+			zoom: zoom,
+			zoomControl: true,
+			minZoom: 6,
+			maxZoom: 17
+		});
 
-			// Display similarity heatmap
-			displaySimilarityHeatmap(result);
+		L.tileLayer(`/api/tiles/sentinel2/${viewportId}/${currentEmbeddingYear}/{z}/{x}/{y}.png`, {
+			attribution: 'Sentinel-2 RGB',
+			opacity: 1.0,
+			maxZoom: 17,
+			minZoom: 6,
+			tileSize: 2048,
+			zoomOffset: -3
+		}).addTo(maps.rgb);
 
-			// Add marker at reference pixel
-			const refLatLng = similarityCompute.pixelToLatLng(
-				pixelX,
-				pixelY,
-				viewportBounds
+		// Add click handlers
+		const panels: Array<'osm' | 'embedding' | 'rgb'> = ['osm', 'embedding', 'rgb'];
+		panels.forEach(panel => {
+			maps[panel]?.on('click', function(e: L.LeafletMouseEvent) {
+				const label = labelInput || 'unlabeled';
+				addMarker(panel, e.latlng.lat, e.latlng.lng, label);
+			});
+		});
+
+		// Synchronize maps
+		syncMaps();
+
+		isLoading = false;
+	}
+
+	// Synchronize all maps
+	function syncMaps() {
+		// Use OSM as reference map
+		const refMap = maps.osm;
+		if (!refMap) return;
+
+		refMap.on('zoomend moveend', function() {
+			const refCenter = refMap.getCenter();
+			const refZoom = refMap.getZoom();
+
+			if (maps.embedding) {
+				maps.embedding.setView(refCenter, refZoom, { animate: false });
+			}
+			if (maps.rgb) {
+				maps.rgb.setView(refCenter, refZoom, { animate: false });
+			}
+		});
+	}
+
+	// Add marker
+	function addMarker(panel: 'osm' | 'embedding' | 'rgb', lat: number, lon: number, label: string) {
+		const key = `${lat.toFixed(6)},${lon.toFixed(6)}`;
+
+		// Check if marker already exists (remove it)
+		if (markers[panel][key]) {
+			removeMarker(panel, lat, lon);
+			return;
+		}
+
+		// Create marker
+		const marker = L.marker([lat, lon], {
+			title: label
+		}).addTo(maps[panel]!);
+
+		marker.bindPopup(`<div class="marker-popup">${label}</div>`);
+
+		// Store marker
+		markers[panel][key] = marker;
+		labels[panel].push([lat, lon, label]);
+
+		updateLabelCount();
+		console.log(`Added '${label}' at (${lat.toFixed(4)}, ${lon.toFixed(4)}) on ${panel} panel`);
+	}
+
+	// Remove marker
+	function removeMarker(panel: 'osm' | 'embedding' | 'rgb', lat: number, lon: number) {
+		const key = `${lat.toFixed(6)},${lon.toFixed(6)}`;
+
+		if (markers[panel][key]) {
+			maps[panel]?.removeLayer(markers[panel][key]);
+			delete markers[panel][key];
+
+			// Remove from labels
+			labels[panel] = labels[panel].filter(
+				([la, lo]) => Math.abs(la - lat) > 0.00001 || Math.abs(lo - lon) > 0.00001
 			);
 
-			// Remove old marker
-			if (similarityMarker && maps.embeddings) {
-				maps.embeddings.removeLayer(similarityMarker);
-			}
-
-			// Add new marker
-			similarityMarker = L.marker([refLatLng.lat, refLatLng.lng], {
-				icon: L.icon({
-					iconUrl: 'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMzIiIGhlaWdodD0iMzIiIHZpZXdCb3g9IjAgMCAzMiAzMiIgZmlsbD0ibm9uZSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48Y2lyY2xlIGN4PSIxNiIgY3k9IjE2IiByPSIxMiIgZmlsbD0iIzI4YTc0NSIgc3Ryb2tlPSJ3aGl0ZSIgc3Ryb2tlLXdpZHRoPSIyIi8+PC9zdmc+',
-					iconSize: [32, 32],
-					iconAnchor: [16, 16]
-				}),
-				title: `Reference pixel (${pixelX}, ${pixelY})\nSimilarity: 1.00`
-			}).addTo(maps.embeddings);
-
-			const computeTime = performance.now() - startTime;
-			console.log(`[ThreePaneView] Computed similarity in ${computeTime.toFixed(1)}ms`);
-
-			isComputingSimilarity = false;
-		} catch (err) {
-			console.error('[ThreePaneView] Error computing similarity:', err);
-			errorMessage = `Failed to compute similarity: ${err instanceof Error ? err.message : String(err)}`;
-			isComputingSimilarity = false;
+			updateLabelCount();
+			console.log(`Removed marker at (${lat.toFixed(4)}, ${lon.toFixed(4)}) from ${panel} panel`);
 		}
 	}
 
-	// Display similarity as heatmap
-	function displaySimilarityHeatmap(result: SimilarityResult) {
-		if (!maps.embeddings || !lastSimilarityResult) return;
-
-		// Remove old heatmap
-		if (heatmapLayer && maps.embeddings) {
-			maps.embeddings.removeLayer(heatmapLayer);
-		}
-
-		// Create canvas with heatmap
-		const canvas = createSimilarityCanvas(result.similarities, result.width, result.height);
-
-		// Convert canvas to data URL
-		const dataUrl = canvas.toDataURL();
-
-		// Get bounds for the heatmap
-		const bounds = L.latLngBounds(
-			[viewportBounds.minLat, viewportBounds.minLon],
-			[viewportBounds.maxLat, viewportBounds.maxLon]
-		);
-
-		// Create and add image overlay
-		heatmapLayer = L.imageOverlay(dataUrl, bounds, { opacity: 0.6 }).addTo(maps.embeddings);
+	// Update label count
+	function updateLabelCount() {
+		labelCount = Object.values(labels).reduce((sum, arr) => sum + arr.length, 0);
 	}
 
-	// Create canvas heatmap from similarities
-	function createSimilarityCanvas(similarities: Float32Array, width: number, height: number): HTMLCanvasElement {
-		const canvas = document.createElement('canvas');
-		canvas.width = width;
-		canvas.height = height;
-
-		const ctx = canvas.getContext('2d');
-		if (!ctx) throw new Error('Could not get canvas context');
-
-		const imageData = ctx.createImageData(width, height);
-		const data = imageData.data;
-
-		// Map similarities to colors (blue=dissimilar, red=similar)
-		for (let i = 0; i < similarities.length; i++) {
-			const similarity = (similarities[i] + 1) / 2; // Normalize from [-1, 1] to [0, 1]
-
-			// Color scale: blue (0) -> cyan -> green -> yellow -> red (1)
-			let r, g, b;
-
-			if (similarity < 0.5) {
-				// Blue to cyan
-				r = 0;
-				g = Math.floor(similarity * 2 * 255);
-				b = 255;
-			} else {
-				// Cyan to red
-				r = Math.floor((similarity - 0.5) * 2 * 255);
-				g = Math.floor((1 - (similarity - 0.5) * 2) * 255);
-				b = Math.floor((1 - (similarity - 0.5) * 2) * 255);
-			}
-
-			const idx = i * 4;
-			data[idx] = r; // R
-			data[idx + 1] = g; // G
-			data[idx + 2] = b; // B
-			data[idx + 3] = 200; // A (alpha)
-		}
-
-		ctx.putImageData(imageData, 0, 0);
-		return canvas;
+	// Save labels to localStorage
+	function saveLabels() {
+		const saveData = {
+			labels: labels,
+			embeddingYear: currentEmbeddingYear
+		};
+		localStorage.setItem('tee_labels_3panel', JSON.stringify(saveData));
+		alert(`Saved ${labelCount} labels to browser storage`);
 	}
 
-	// Handle map clicks for similarity
-	function handleMapClick(e: L.LeafletMouseEvent) {
-		if (!similarityMode || !similarityCompute) return;
-
-		try {
-			// Convert lat/lng to pixel coordinates
-			const pixelCoords = similarityCompute.latLngToPixel(
-				e.latlng.lat,
-				e.latlng.lng,
-				viewportBounds
+	// Load labels from localStorage
+	function loadLabels() {
+		const stored = localStorage.getItem('tee_labels_3panel');
+		if (stored) {
+			const saveData = JSON.parse(stored);
+			const panels: Array<'osm' | 'embedding' | 'rgb'> = ['osm', 'embedding', 'rgb'];
+			panels.forEach(panel => {
+				if (saveData.labels[panel]) {
+					saveData.labels[panel].forEach(([lat, lon, label]: [number, number, string]) => {
+						addMarker(panel, lat, lon, label);
+					});
+				}
+			});
+			console.log(
+				`Loaded ${Object.values(saveData.labels).reduce((sum: number, arr: any[]) => sum + arr.length, 0)} labels`
 			);
-
-			console.log(`[ThreePaneView] Computing similarity for pixel (${pixelCoords.x}, ${pixelCoords.y})`);
-
-			computeAndDisplaySimilarity(pixelCoords.x, pixelCoords.y);
-		} catch (err) {
-			console.error('[ThreePaneView] Error handling map click:', err);
-			errorMessage = `Failed to process click: ${err instanceof Error ? err.message : String(err)}`;
 		}
 	}
 
-	// Initialize maps
-	async function initializeMaps() {
+	// Clear all labels
+	function clearAllLabels() {
+		if (!confirm('Clear all labels?')) return;
+
+		const panels: Array<'osm' | 'embedding' | 'rgb'> = ['osm', 'embedding', 'rgb'];
+		panels.forEach(panel => {
+			Object.values(markers[panel]).forEach(marker => {
+				maps[panel]?.removeLayer(marker);
+			});
+			markers[panel] = {};
+			labels[panel] = [];
+		});
+
+		updateLabelCount();
+		console.log('Cleared all labels');
+	}
+
+	// Export labels to JSON
+	function exportLabels() {
+		const exportData = {
+			embeddingYear: currentEmbeddingYear,
+			labels: labels,
+			timestamp: new Date().toISOString()
+		};
+		const dataStr = JSON.stringify(exportData, null, 2);
+		const dataBlob = new Blob([dataStr], { type: 'application/json' });
+		const url = URL.createObjectURL(dataBlob);
+		const link = document.createElement('a');
+		link.href = url;
+		link.download = `tee_labels_${currentEmbeddingYear}_${Date.now()}.json`;
+		link.click();
+		URL.revokeObjectURL(url);
+		console.log('Exported labels to JSON file');
+	}
+
+	// Change embedding year
+	function changeYear(newYear: string) {
+		currentEmbeddingYear = newYear;
+
+		if (!maps.embedding || !maps.rgb) return;
+
+		// Update embedding layer
+		maps.embedding.eachLayer(function(layer: L.Layer) {
+			if (layer instanceof L.TileLayer) {
+				maps.embedding?.removeLayer(layer);
+			}
+		});
+
+		L.tileLayer(`/api/tiles/embeddings/${viewportId}/${currentEmbeddingYear}/{z}/{x}/{y}.png`, {
+			attribution: 'Tessera Embeddings',
+			opacity: 1.0,
+			maxZoom: 17,
+			minZoom: 6,
+			tileSize: 2048,
+			zoomOffset: -3
+		}).addTo(maps.embedding);
+
+		// Update RGB layer
+		maps.rgb.eachLayer(function(layer: L.Layer) {
+			if (layer instanceof L.TileLayer) {
+				maps.rgb?.removeLayer(layer);
+			}
+		});
+
+		L.tileLayer(`/api/tiles/sentinel2/${viewportId}/${currentEmbeddingYear}/{z}/{x}/{y}.png`, {
+			attribution: 'Sentinel-2 RGB',
+			opacity: 1.0,
+			maxZoom: 17,
+			minZoom: 6,
+			tileSize: 2048,
+			zoomOffset: -3
+		}).addTo(maps.rgb);
+	}
+
+	onMount(async () => {
+		// Add Leaflet CSS
+		const link = document.createElement('link');
+		link.rel = 'stylesheet';
+		link.href = 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.css';
+		document.head.appendChild(link);
+
+		// Create maps
 		try {
-			isLoading = true;
-			errorMessage = '';
-
-			// Get viewport metadata
-			const metadataRes = await fetch(`/api/viewports/${viewportId}/metadata`);
-			if (!metadataRes.ok) {
-				throw new Error('Failed to load viewport metadata');
+			// Load viewport metadata first to get correct center
+			if (viewportId) {
+				await loadViewportMetadata();
 			}
-
-			const metadata = await metadataRes.json();
-			const bounds = metadata.bounds || { minLon: -0.02, minLat: 52.11, maxLon: 0.27, maxLat: 52.30 };
-			viewportBounds = bounds;
-			const center: [number, number] = [
-				(bounds.minLat + bounds.maxLat) / 2,
-				(bounds.minLon + bounds.maxLon) / 2
-			];
-
-			// Set available years
-			availableYears = (metadata.years || [2024]).sort((a: number, b: number) => b - a);
-			selectedYear = availableYears[0] || 2024;
-
-			// Initialize similarity compute engine
-			similarityCompute = new ZoomAwareSimilarity();
-
-			// Create OSM map (reference map)
-			const osmMapEl = document.getElementById('map-osm');
-			if (!osmMapEl) throw new Error('OSM map container not found');
-
-			maps.osm = L.map(osmMapEl, {
-				center: center,
-				zoom: 13,
-				zoomControl: true,
-				minZoom: 5,
-				maxZoom: 18
-			});
-
-			L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-				attribution: '© OpenStreetMap contributors',
-				maxZoom: 19
-			}).addTo(maps.osm);
-
-			// Create Sentinel-2 map
-			const sentinel2MapEl = document.getElementById('map-sentinel2');
-			if (!sentinel2MapEl) throw new Error('Sentinel-2 map container not found');
-
-			maps.sentinel2 = L.map(sentinel2MapEl, {
-				center: center,
-				zoom: 13,
-				zoomControl: true,
-				minZoom: 5,
-				maxZoom: 18
-			});
-
-			tileLayers.sentinel2 = L.tileLayer(`/api/tiles/sentinel2/${viewportId}/${selectedYear}/{z}/{x}/{y}.png`, {
-				attribution: 'Sentinel-2',
-				maxZoom: 18,
-				minZoom: 5,
-				tileSize: TILE_SIZE,
-				zoomOffset: -3
-			}).addTo(maps.sentinel2);
-
-			// Create Embeddings map
-			const embeddingsMapEl = document.getElementById('map-embeddings');
-			if (!embeddingsMapEl) throw new Error('Embeddings map container not found');
-
-			maps.embeddings = L.map(embeddingsMapEl, {
-				center: center,
-				zoom: 13,
-				zoomControl: true,
-				minZoom: 5,
-				maxZoom: 18
-			});
-
-			tileLayers.embeddings = L.tileLayer(`/api/tiles/embeddings/${viewportId}/${selectedYear}/{z}/{x}/{y}.png`, {
-				attribution: 'TESSERA',
-				maxZoom: 18,
-				minZoom: 5,
-				tileSize: TILE_SIZE,
-				zoomOffset: -3
-			}).addTo(maps.embeddings);
-
-			// Set up synchronization
-			setupMapSync();
-
-			// Track zoom level and load embeddings
-			const handleZoom = async () => {
-				currentZoom = maps.osm?.getZoom() || 13;
-				currentPyramidLevel = zoomToPyramidLevel(currentZoom);
-				await loadEmbeddingsForZoomLevel();
-			};
-
-			maps.osm.on('zoom', handleZoom);
-
-			// Add click handlers for similarity mode
-			if (maps.embeddings) {
-				maps.embeddings.on('click', handleMapClick);
-			}
-
-			isLoading = false;
+			createMaps();
+			loadLabels();
 		} catch (err) {
 			console.error('Error initializing maps:', err);
 			errorMessage = `Failed to initialize maps: ${err instanceof Error ? err.message : String(err)}`;
 			isLoading = false;
-		}
-	}
-
-	// Synchronize maps
-	function setupMapSync() {
-		if (!maps.osm || !maps.sentinel2 || !maps.embeddings) return;
-
-		let syncing = false;
-
-		// OSM is the reference map
-		maps.osm!.on('move zoom', () => {
-			if (syncing) return;
-
-			syncing = true;
-			const center = maps.osm!.getCenter();
-			const zoom = maps.osm!.getZoom();
-
-			maps.sentinel2!.setView(center, zoom, { animate: false });
-			maps.embeddings!.setView(center, zoom, { animate: false });
-
-			syncing = false;
-		});
-	}
-
-	// Change year
-	async function changeYear(newYear: number) {
-		if (!maps.sentinel2 || !maps.embeddings || !tileLayers.sentinel2 || !tileLayers.embeddings) return;
-
-		selectedYear = newYear;
-
-		// Update Sentinel-2 layer
-		maps.sentinel2.removeLayer(tileLayers.sentinel2);
-		tileLayers.sentinel2 = L.tileLayer(`/api/tiles/sentinel2/${viewportId}/${selectedYear}/{z}/{x}/{y}.png`, {
-			attribution: 'Sentinel-2',
-			maxZoom: 18,
-			minZoom: 5,
-			tileSize: TILE_SIZE,
-			zoomOffset: -3
-		}).addTo(maps.sentinel2);
-
-		// Update Embeddings layer
-		maps.embeddings.removeLayer(tileLayers.embeddings);
-		tileLayers.embeddings = L.tileLayer(`/api/tiles/embeddings/${viewportId}/${selectedYear}/{z}/{x}/{y}.png`, {
-			attribution: 'TESSERA',
-			maxZoom: 18,
-			minZoom: 5,
-			tileSize: TILE_SIZE,
-			zoomOffset: -3
-		}).addTo(maps.embeddings);
-	}
-
-	// Toggle similarity mode
-	function toggleSimilarityMode() {
-		similarityMode = !similarityMode;
-		if (similarityMode) {
-			console.log(`Entered similarity mode at pyramid level ${currentPyramidLevel}`);
-		} else {
-			console.log('Exited similarity mode');
-		}
-	}
-
-	onMount(() => {
-		if (viewportId) {
-			initializeMaps();
 		}
 
 		// Clean up on unmount
@@ -378,121 +318,80 @@
 			Object.values(maps).forEach(map => map?.remove());
 		};
 	});
-
-	// Define Leaflet CSS
-	let leafletCss: string;
-	onMount(async () => {
-		const link = document.createElement('link');
-		link.rel = 'stylesheet';
-		link.href = 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.css';
-		document.head.appendChild(link);
-	});
 </script>
 
 <div class="three-pane-container">
 	<!-- Control Panel -->
-	<div class="control-panel">
-		<h2>Three-Pane Synchronized Viewer</h2>
+	<div id="controls">
+		<h1>TEE Viewer</h1>
 
-		<div class="controls">
-			<div class="control-group">
-				<label for="year-select">Year:</label>
-				<select id="year-select" bind:value={selectedYear} on:change={() => changeYear(selectedYear)}>
-					{#each availableYears as year}
-						<option value={year}>{year}</option>
-					{/each}
-				</select>
-			</div>
+		<label for="year-select">Embedding Year:</label>
+		<select id="year-select" bind:value={currentEmbeddingYear} on:change={() => changeYear(currentEmbeddingYear)}>
+			<option value="2024">2024</option>
+			<option value="2023">2023</option>
+			<option value="2022">2022</option>
+			<option value="2021">2021</option>
+			<option value="2020">2020</option>
+			<option value="2019">2019</option>
+			<option value="2018">2018</option>
+			<option value="2017">2017</option>
+		</select>
 
-			<div class="control-group">
-				<button
-					class="btn btn-similarity"
-					class:active={similarityMode}
-					on:click={toggleSimilarityMode}
-					disabled={isComputingSimilarity}
-				>
-					{similarityMode ? 'Exit' : 'Enter'} Similarity Mode
-				</button>
-			</div>
+		<label for="label-input">Label:</label>
+		<input type="text" id="label-input" bind:value={labelInput} placeholder="Enter label" />
 
-			<div class="control-group">
-				<span class="zoom-info">
-					Zoom: {currentZoom} | Pyramid Level: {currentPyramidLevel}
-				</span>
-			</div>
+		<button class="save-btn" on:click={saveLabels}>Save Labels</button>
+		<button class="clear-btn" on:click={clearAllLabels}>Clear All</button>
+		<button class="export-btn" on:click={exportLabels}>Export JSON</button>
 
-			{#if isComputingSimilarity}
-				<div class="loading-spinner">
-					<span>Computing similarity...</span>
-				</div>
-			{/if}
+		<span id="label-count">Labels: {labelCount}</span>
 
-			<button class="btn btn-close" on:click={onClose}>Close</button>
-		</div>
-
-		{#if errorMessage}
-			<div class="error-message">{errorMessage}</div>
-		{/if}
-
-		{#if isLoading}
-			<div class="loading-message">Loading maps...</div>
-		{/if}
-
-		{#if similarityStats && lastSimilarityResult}
-			<div class="similarity-stats">
-				<div class="stats-row">
-					<span class="stat-label">Reference Pixel:</span>
-					<span class="stat-value">({lastSimilarityResult.referencePixel.x}, {lastSimilarityResult.referencePixel.y})</span>
-				</div>
-				<div class="stats-row">
-					<span class="stat-label">Compute Time:</span>
-					<span class="stat-value">{lastSimilarityResult.computeTime.toFixed(1)}ms</span>
-				</div>
-				<div class="stats-row">
-					<span class="stat-label">Min Similarity:</span>
-					<span class="stat-value">{similarityStats.min.toFixed(3)}</span>
-				</div>
-				<div class="stats-row">
-					<span class="stat-label">Max Similarity:</span>
-					<span class="stat-value">{similarityStats.max.toFixed(3)}</span>
-				</div>
-				<div class="stats-row">
-					<span class="stat-label">Mean Similarity:</span>
-					<span class="stat-value">{similarityStats.mean.toFixed(3)}</span>
-				</div>
-				<div class="stats-row">
-					<span class="stat-label">Std Dev:</span>
-					<span class="stat-value">{similarityStats.std.toFixed(3)}</span>
-				</div>
-			</div>
-		{/if}
+		<button class="close-btn" on:click={onClose}>Close</button>
 	</div>
 
 	<!-- Map Container -->
-	<div class="map-container">
-		<div class="map-pane">
-			<div class="map-header">OpenStreetMap</div>
+	<div id="map-container">
+		<div class="panel">
+			<div class="panel-header">OpenStreetMap</div>
 			<div id="map-osm" class="map"></div>
 		</div>
-
-		<div class="map-pane">
-			<div class="map-header">Sentinel-2 RGB</div>
-			<div id="map-sentinel2" class="map"></div>
+		<div class="panel">
+			<div class="panel-header">Tessera Embeddings <span id="embedding-year">{currentEmbeddingYear}</span></div>
+			<div id="map-embedding" class="map"></div>
 		</div>
-
-		<div class="map-pane">
-			<div class="map-header">TESSERA Embeddings</div>
-			<div id="map-embeddings" class="map"></div>
+		<div class="panel">
+			<div class="panel-header">Satellite RGB</div>
+			<div id="map-rgb" class="map"></div>
 		</div>
 	</div>
 
 	<!-- Status Bar -->
-	<div class="status-bar">
-		<span>Pan/zoom on any map to navigate • All maps are synchronized</span>
+	<div id="status">
+		<strong>Instructions:</strong> Pan/zoom on any map to navigate • Click to place labeled markers • Click existing markers
+		to remove • All maps are synchronized
+		{#if errorMessage}
+			<div class="error-message">{errorMessage}</div>
+		{/if}
+		{#if isLoading}
+			<div class="loading-message">Loading maps...</div>
+		{/if}
 	</div>
 </div>
 
 <style>
+	:global(body) {
+		margin: 0;
+		padding: 0;
+		font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Arial, sans-serif;
+		background: #1a1a1a;
+		color: #fff;
+		overflow: hidden;
+	}
+
+	:global(*) {
+		box-sizing: border-box;
+	}
+
 	.three-pane-container {
 		display: flex;
 		flex-direction: column;
@@ -501,179 +400,114 @@
 		color: #fff;
 	}
 
-	.control-panel {
+	#controls {
+		position: fixed;
+		top: 0;
+		left: 0;
+		right: 0;
 		background: #2a2a2a;
 		padding: 15px 20px;
-		border-bottom: 1px solid #333;
 		box-shadow: 0 2px 10px rgba(0, 0, 0, 0.5);
+		z-index: 1000;
+		display: flex;
+		align-items: center;
+		gap: 15px;
 	}
 
-	.control-panel h2 {
-		margin: 0 0 15px 0;
+	#controls h1 {
 		font-size: 18px;
 		font-weight: 600;
+		margin-right: 20px;
+		margin: 0;
 	}
 
-	.controls {
-		display: flex;
-		align-items: center;
-		gap: 20px;
-		flex-wrap: wrap;
-	}
-
-	.control-group {
-		display: flex;
-		align-items: center;
-		gap: 8px;
-	}
-
-	label {
+	#controls label {
 		font-size: 14px;
-		font-weight: 500;
+		margin-right: 5px;
 	}
 
-	select {
+	#controls select,
+	#controls input {
 		padding: 8px 12px;
 		border: 1px solid #444;
 		border-radius: 4px;
 		background: #333;
 		color: #fff;
 		font-size: 14px;
-		cursor: pointer;
 	}
 
-	.btn {
+	#controls button {
 		padding: 8px 16px;
 		border: none;
 		border-radius: 4px;
 		cursor: pointer;
 		font-weight: 600;
 		font-size: 14px;
-		transition: all 0.2s ease;
+		transition: background 0.2s;
 	}
 
-	.btn-similarity {
-		background: #0056b3;
+	.save-btn {
+		background: #28a745;
 		color: white;
 	}
 
-	.btn-similarity:hover {
-		background: #004494;
+	.save-btn:hover {
+		background: #218838;
 	}
 
-	.btn-similarity.active {
-		background: #28a745;
-	}
-
-	.btn-close {
+	.clear-btn {
 		background: #dc3545;
+		color: white;
+	}
+
+	.clear-btn:hover {
+		background: #c82333;
+	}
+
+	.export-btn {
+		background: #007bff;
+		color: white;
+	}
+
+	.export-btn:hover {
+		background: #0056b3;
+	}
+
+	.close-btn {
+		background: #666;
 		color: white;
 		margin-left: auto;
 	}
 
-	.btn-close:hover {
-		background: #c82333;
+	.close-btn:hover {
+		background: #777;
 	}
 
-	.btn:disabled {
-		opacity: 0.6;
-		cursor: not-allowed;
-	}
-
-	.zoom-info {
-		font-size: 12px;
-		color: #aaa;
-		font-family: monospace;
-	}
-
-	.loading-spinner {
-		display: flex;
-		align-items: center;
-		gap: 8px;
-		font-size: 12px;
-		color: #adf;
-	}
-
-	.loading-spinner::before {
-		content: '';
-		display: inline-block;
-		width: 12px;
-		height: 12px;
-		border: 2px solid #1e5a96;
-		border-top-color: #adf;
-		border-radius: 50%;
-		animation: spin 0.6s linear infinite;
-	}
-
-	@keyframes spin {
-		to {
-			transform: rotate(360deg);
-		}
-	}
-
-	.similarity-stats {
-		display: grid;
-		grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-		gap: 12px;
-		margin-top: 12px;
-		padding: 12px;
-		background: #1a1a1a;
+	#label-count {
+		padding: 8px 12px;
+		background: #333;
 		border-radius: 4px;
-		border: 1px solid #333;
-	}
-
-	.stats-row {
-		display: flex;
-		justify-content: space-between;
-		align-items: center;
-		font-size: 12px;
-	}
-
-	.stat-label {
-		color: #999;
-		font-weight: 500;
-	}
-
-	.stat-value {
-		color: #adf;
-		font-family: monospace;
 		font-weight: 600;
 	}
 
-	.error-message {
-		margin-top: 10px;
-		padding: 10px 12px;
-		background: #8b0000;
-		border-radius: 4px;
-		font-size: 12px;
-		color: #fdd;
-	}
-
-	.loading-message {
-		margin-top: 10px;
-		padding: 10px 12px;
-		background: #1e5a96;
-		border-radius: 4px;
-		font-size: 12px;
-		color: #adf;
-	}
-
-	.map-container {
-		display: flex;
-		flex: 1;
-		overflow: hidden;
+	#map-container {
+		position: fixed;
+		top: 70px;
+		left: 0;
+		right: 0;
+		bottom: 40px;
+		display: grid;
+		grid-template-columns: 1fr 1fr 1fr;
 		gap: 2px;
-		background: #000;
+		background: #1a1a1a;
 	}
 
-	.map-pane {
-		flex: 1;
+	.panel {
 		position: relative;
 		background: #2a2a2a;
-		overflow: hidden;
 	}
 
-	.map-header {
+	.panel-header {
 		position: absolute;
 		top: 10px;
 		left: 10px;
@@ -682,10 +516,9 @@
 		padding: 8px 12px;
 		border-radius: 4px;
 		font-weight: 600;
-		font-size: 13px;
+		font-size: 14px;
 		z-index: 400;
 		backdrop-filter: blur(5px);
-		pointer-events: none;
 	}
 
 	.map {
@@ -693,13 +526,36 @@
 		height: 100%;
 	}
 
-	.status-bar {
+	#status {
+		position: fixed;
+		bottom: 0;
+		left: 0;
+		right: 0;
 		background: #2a2a2a;
 		padding: 10px 20px;
 		font-size: 12px;
 		color: #999;
 		border-top: 1px solid #333;
-		text-align: center;
+	}
+
+	.error-message {
+		display: inline-block;
+		margin-left: 20px;
+		padding: 5px 10px;
+		background: #8b0000;
+		border-radius: 4px;
+		font-size: 11px;
+		color: #fdd;
+	}
+
+	.loading-message {
+		display: inline-block;
+		margin-left: 20px;
+		padding: 5px 10px;
+		background: #1e5a96;
+		border-radius: 4px;
+		font-size: 11px;
+		color: #adf;
 	}
 
 	/* Leaflet overrides for dark theme */

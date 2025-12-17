@@ -1,0 +1,56 @@
+models:
+  - name: qwen
+    provider: ollama
+    model: qwen2.5-coder:14b
+    systemMessage: >
+      You are an AI assistant helping with the TESSERA Embedding Explorer (TEE) project.
+
+      PROJECT CONTEXT:
+      - Three-pane synchronized geospatial viewer for exploring high-dimensional embeddings
+      - Key innovation: Coarsened embedding pyramids enable 100-1000x faster similarity computation
+      - Tech stack: FastAPI backend (Python 3.13), Svelte frontend, Leaflet maps, Ollama LLM
+
+      CURRENT STATUS:
+      - ✅ Three-pane viewer setup complete
+      - ✅ Coarsened embedding pyramids (6 levels) working
+      - ⚠️ Sentinel-2 data not downloaded for Cambridge viewport (tiles grey)
+      - ⚠️ Embeddings visualization low contrast (tan colors)
+
+      PRIORITY TASKS:
+      1. Test similarity computation on right panel (click to compute)
+      2. Add Sentinel-2 download for Cambridge viewport (optional)
+      3. Improve embeddings visualization color mapping
+      4. Add error handling for missing data
+
+      KEY FILES:
+      - backend/main.py - FastAPI endpoints & tile server
+      - src/components/ThreePaneView.svelte - Three-pane viewer UI
+      - src/lib/similarity/ZoomAwareSimilarity.ts - Similarity computation
+      - public/data/viewports/ - Viewport data (Cambridge: 68751907-ffaf-...)
+
+      CODE CONVENTIONS:
+      - Backend: async/await, FastAPI /api/resource/{param} pattern
+      - Frontend: Svelte components, TypeScript, camelCase utilities
+      - Files: Components=PascalCase.svelte, Utils=camelCase.ts
+
+      API ENDPOINTS:
+      - GET /api/health, /api/viewports/{id}/metadata
+      - GET /api/tiles/embeddings/{id}/{y}/{z}/{x}/{y}.png
+      - GET /api/tiles/sentinel2/{id}/{y}/{z}/{x}/{y}.png
+
+      When answering: Reference file paths, suggest fixes with context, focus on single-file edits for quick fixes.
+
+  - name: deepseek
+    provider: ollama
+    model: deepseek-coder:6.7b
+
+  - name: nomic-embed
+    provider: ollama
+    model: nomic-embed-text
+
+tabAutocompleteModel:
+  name: deepseek
+  provider: ollama
+  model: deepseek-coder:6.7b
+
+allowAnonymousTelemetry: false

@@ -288,11 +288,8 @@ def process_viewport_task(task_id: str):
         viewport_dir.mkdir(parents=True, exist_ok=True)
         pyramids_dir = viewport_dir / "pyramids"
         pyramids_dir.mkdir(parents=True, exist_ok=True)
-
-        # Step 1: Download embeddings
-        update_task_status(task_id, 'downloading', 0, 'Preparing to download TESSERA embeddings from geotessera...')
-
-        from backend.processing.download_viewport_embeddings import download_embeddings_for_viewport
+        sentinel2_dir = viewport_dir / "sentinel2"
+        sentinel2_dir.mkdir(parents=True, exist_ok=True)
 
         bounds_tuple = (
             bounds_dict['minLon'],
@@ -301,15 +298,20 @@ def process_viewport_task(task_id: str):
             bounds_dict['maxLat']
         )
 
+        # Step 1: Download embeddings
+        update_task_status(task_id, 'downloading', 0, 'Preparing to download TESSERA embeddings from geotessera...')
+
+        from backend.processing.download_viewport_embeddings import download_embeddings_for_viewport
+
         def download_progress(year, status, percent):
-            # Update progress for downloading phase (0-50%)
-            overall_progress = (percent / 100) * 50
+            # Update progress for downloading phase (0-33%)
+            overall_progress = (percent / 100) * 33
             if status == 'initializing':
                 update_task_status(task_id, 'downloading', overall_progress, 'Initializing GeoTessera (checking registries, loading tile metadata)...')
             elif status == 'ready':
                 update_task_status(task_id, 'downloading', overall_progress, 'Ready to download. Starting year-by-year download...')
             elif status == 'complete':
-                update_task_status(task_id, 'downloading', overall_progress, f'✓ Completed year {year}')
+                update_task_status(task_id, 'downloading', overall_progress, f'✓ Completed embeddings year {year}')
             else:
                 update_task_status(task_id, 'downloading', overall_progress, f'Downloading embeddings for year {year}... (this may take several minutes)')
 
@@ -321,14 +323,46 @@ def process_viewport_task(task_id: str):
             progress_callback=download_progress
         )
 
-        # Step 2: Create pyramids
-        update_task_status(task_id, 'creating_pyramids', 50, 'Creating multi-resolution pyramids...')
+        # Step 1.5: Download Sentinel-2 RGB imagery
+        update_task_status(task_id, 'downloading', 33, 'Downloading Sentinel-2 RGB satellite imagery...')
+
+        from backend.processing.download_sentinel2 import download_sentinel2_rgb
+
+        sentinel2_metadata = {}
+        for year in years:
+            try:
+                update_task_status(task_id, 'downloading', 33 + (years.index(year) / len(years)) * 33, f'Downloading Sentinel-2 for year {year}...')
+
+                # Save as {year}_rgb.tif to match tile serving endpoint expectations
+                sentinel2_path = sentinel2_dir / f"{year}_rgb.tif"
+
+                def s2_progress(status, percent):
+                    year_progress = 33 + (years.index(year) / len(years)) * 33
+                    overall_progress = year_progress + (percent / 100) * (33 / len(years))
+                    update_task_status(task_id, 'downloading', overall_progress, f'Sentinel-2 {year} ({status})...')
+
+                logger.info(f"Downloading Sentinel-2 for year {year}")
+                result_path = download_sentinel2_rgb(
+                    bounds=bounds_tuple,
+                    year=year,
+                    output_file=sentinel2_path,
+                    progress_callback=s2_progress
+                )
+                sentinel2_metadata[year] = str(result_path)
+                logger.info(f"✓ Sentinel-2 saved to {result_path}")
+
+            except Exception as e:
+                logger.warning(f"Failed to download Sentinel-2 for year {year}: {e}")
+                sentinel2_metadata[year] = None
+
+        # Step 2: Create pyramids from embeddings and Sentinel-2
+        update_task_status(task_id, 'creating_pyramids', 66, 'Creating multi-resolution pyramids from embeddings and Sentinel-2...')
 
         from backend.processing.create_viewport_pyramids import create_pyramids_for_viewport
 
         def pyramid_progress(year, level, status, percent):
-            # Update progress for pyramid creation (50-100%)
-            overall_progress = 50 + (percent / 100) * 50
+            # Update progress for pyramid creation (66-100%)
+            overall_progress = 66 + (percent / 100) * 34
             update_task_status(task_id, 'creating_pyramids', overall_progress, f'Creating pyramids for year {year}, level {level}...')
 
         logger.info(f"Creating pyramids from embeddings")
@@ -340,13 +374,13 @@ def process_viewport_task(task_id: str):
         )
 
         # Step 2.5: Create coarsened embedding pyramids
-        update_task_status(task_id, 'creating_pyramids', 75, 'Creating coarsened embedding pyramids for zoom-aware similarity...')
+        update_task_status(task_id, 'creating_pyramids', 80, 'Creating coarsened embedding pyramids for zoom-aware similarity...')
 
         from backend.processing.create_coarsened_embedding_pyramids import create_coarsened_pyramids
 
         def coarsening_progress(year, level, status, percent):
-            # Update progress for coarsening (50-100%, with 75-100% for coarsening)
-            overall_progress = 75 + (percent / 100) * 25
+            # Update progress for coarsening (80-100%)
+            overall_progress = 80 + (percent / 100) * 20
             update_task_status(task_id, 'creating_pyramids', overall_progress, f'Coarsening embeddings for year {year}, level {level}...')
 
         coarsened_dir = viewport_dir / "coarsened"
@@ -377,7 +411,9 @@ def process_viewport_task(task_id: str):
         metadata_file = viewport_dir / "metadata.json"
         with open(metadata_file, 'w') as f:
             import json
-            json.dump(metadata.model_dump(), f, indent=2)
+            metadata_dict = metadata.model_dump()
+            metadata_dict['sentinel2_files'] = sentinel2_metadata
+            json.dump(metadata_dict, f, indent=2)
 
         logger.info(f"Completed processing for viewport {viewport_id}")
         update_task_status(task_id, 'complete', 100, 'Processing complete!')
@@ -597,7 +633,10 @@ async def get_additional_years_status(viewport_id: str, task_id: str):
 
 def zoom_to_pyramid_level(z: int, max_pyramid_level: int = 5) -> int:
     """Map Leaflet zoom level to pyramid level."""
-    pyramid_level = (18 - z) // 2
+    # Account for zoomOffset: -3 on custom tiles
+    # Frontend requests z-3, so we need to add 3 back for proper level mapping
+    z_adjusted = z + 3
+    pyramid_level = (18 - z_adjusted) // 2
     return max(0, min(max_pyramid_level, pyramid_level))
 
 
@@ -605,7 +644,11 @@ def tile_to_bbox(x: int, y: int, z: int) -> tuple:
     """Convert tile coordinates to bounding box in EPSG:4326."""
     import math
 
-    n = 2.0 ** z
+    # Account for zoomOffset: -3 on custom tiles
+    # Frontend requests z-3, so we need to add 3 back for proper bbox calculation
+    z_adjusted = z + 3
+
+    n = 2.0 ** z_adjusted
     lon_min = x / n * 360.0 - 180.0
     lon_max = (x + 1) / n * 360.0 - 180.0
 
@@ -676,14 +719,12 @@ async def get_sentinel2_tile(viewport_id: str, year: int, z: int, x: int, y: int
 
         if not tif_path.exists():
             # Return transparent tile if file doesn't exist
+            from fastapi.responses import StreamingResponse
             img = Image.new('RGBA', (2048, 2048), (0, 0, 0, 0))
             buf = io.BytesIO()
             img.save(buf, format='PNG')
             buf.seek(0)
-            return FileResponse(
-                path_or_file=buf,
-                media_type="image/png"
-            )
+            return StreamingResponse(iter([buf.getvalue()]), media_type="image/png")
 
         # Get tile bounds
         bbox = tile_to_bbox(x, y, z)

@@ -69,9 +69,13 @@ export class GeoTIFFLoader {
                     continue;
                 }
 
+                // Cast to TypedArray and get length
+                const data = bandData as any;
+                const dataLength = data.length || 0;
+
                 // Interleave data into embeddings array
-                for (let i = 0; i < bandData.length; i++) {
-                    const value = bandData[i];
+                for (let i = 0; i < dataLength; i++) {
+                    const value = data[i];
 
                     // Handle different data types
                     if (typeof value === 'number') {
@@ -176,7 +180,7 @@ export class GeoTIFFLoader {
 
         // For now, just return the embeddings buffer
         // In the future, could add 64-byte header like EmbeddingLoader expects
-        return embeddings.buffer;
+        return embeddings.buffer as ArrayBuffer;
     }
 
     /**

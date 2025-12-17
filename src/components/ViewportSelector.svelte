@@ -182,7 +182,9 @@
             console.log(`Task started with ID: ${taskId}`);
 
             // Poll for status
-            await pollTaskStatus(taskId, bounds);
+            if (taskId) {
+                await pollTaskStatus(taskId, bounds);
+            }
         } catch (e: any) {
             processingState = 'error';
             errorMessage = e.message || 'Unknown error during processing';
@@ -304,7 +306,7 @@
 
         <div class="actions">
             <button class="btn-primary" on:click={handleLoadExplorer}>
-                Load Explorer
+                Viewer
             </button>
             <button class="btn-secondary" on:click={handleReset}>
                 Reset
