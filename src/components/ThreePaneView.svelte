@@ -61,7 +61,7 @@
 
 	// Create all three maps
 	function createMaps() {
-		// OSM Map
+		// OSM Map - with zoom control
 		maps.osm = L.map('map-osm', {
 			center: center,
 			zoom: zoom,
@@ -75,36 +75,44 @@
 			maxZoom: 19
 		}).addTo(maps.osm);
 
-		// Embedding Map (Tessera)
+		// Embedding Map (Tessera) - NO zoom control, uses zoomOffset
 		maps.embedding = L.map('map-embedding', {
 			center: center,
 			zoom: zoom,
-			zoomControl: true,
+			zoomControl: false,
 			minZoom: 6,
-			maxZoom: 17
+			maxZoom: 17,
+			dragging: true,
+			touchZoom: false  // Disable touch zoom to prevent accidental zoom
 		});
 
 		L.tileLayer(`/api/tiles/embeddings/${viewportId}/${currentEmbeddingYear}/{z}/{x}/{y}.png`, {
 			attribution: 'Tessera Embeddings',
 			opacity: 1.0,
 			maxZoom: 17,
-			minZoom: 6
+			minZoom: 6,
+			tileSize: 2048,
+			zoomOffset: -3
 		}).addTo(maps.embedding);
 
-		// RGB Satellite Map
+		// RGB Satellite Map - NO zoom control, uses zoomOffset
 		maps.rgb = L.map('map-rgb', {
 			center: center,
 			zoom: zoom,
-			zoomControl: true,
+			zoomControl: false,
 			minZoom: 6,
-			maxZoom: 17
+			maxZoom: 17,
+			dragging: true,
+			touchZoom: false  // Disable touch zoom to prevent accidental zoom
 		});
 
 		L.tileLayer(`/api/tiles/sentinel2/${viewportId}/${currentEmbeddingYear}/{z}/{x}/{y}.png`, {
 			attribution: 'Sentinel-2 RGB',
 			opacity: 1.0,
 			maxZoom: 17,
-			minZoom: 6
+			minZoom: 6,
+			tileSize: 2048,
+			zoomOffset: -3
 		}).addTo(maps.rgb);
 
 		// Fit bounds if available
@@ -155,6 +163,7 @@
 			const refZoom = refMap.getZoom();
 
 			// Sync all maps to the same center and zoom
+			// The zoomOffset: -3 on embedding/RGB is handled by Leaflet automatically
 			if (maps.embedding) {
 				maps.embedding.setView(refCenter, refZoom, { animate: false });
 			}
@@ -293,7 +302,9 @@
 			attribution: 'Tessera Embeddings',
 			opacity: 1.0,
 			maxZoom: 17,
-			minZoom: 6
+			minZoom: 6,
+			tileSize: 2048,
+			zoomOffset: -3
 		}).addTo(maps.embedding);
 
 		// Update RGB layer
@@ -307,7 +318,9 @@
 			attribution: 'Sentinel-2 RGB',
 			opacity: 1.0,
 			maxZoom: 17,
-			minZoom: 6
+			minZoom: 6,
+			tileSize: 2048,
+			zoomOffset: -3
 		}).addTo(maps.rgb);
 	}
 
@@ -386,8 +399,7 @@
 
 	<!-- Status Bar -->
 	<div id="status">
-		<strong>Instructions:</strong> Pan/zoom on any map to navigate • Click to place labeled markers • Click existing markers
-		to remove • All maps are synchronized
+		<strong>Instructions:</strong> Pan/zoom on left panel (OSM) to navigate • All panels stay synchronized • Click to place labeled markers • Click existing markers to remove
 		{#if errorMessage}
 			<div class="error-message">{errorMessage}</div>
 		{/if}
