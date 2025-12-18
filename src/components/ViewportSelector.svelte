@@ -246,6 +246,31 @@
         map.flyTo({ center: [0.1218, 52.2053], zoom: 2 });
     }
 
+    async function handleSaveViewport() {
+        const bounds = calculateBounds(centerLng, centerLat, VIEWPORT_SIZE_KM);
+
+        try {
+            const response = await fetch(`${API_BASE_URL}/api/save-viewport`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    center: [centerLng, centerLat],
+                    bounds,
+                    sizeKm: VIEWPORT_SIZE_KM
+                })
+            });
+
+            if (!response.ok) {
+                throw new Error(`Failed to save viewport: ${response.statusText}`);
+            }
+
+            alert(`✓ Viewport saved!\n\nCenter: ${centerLat.toFixed(4)}°N, ${centerLng.toFixed(4)}°E\nSize: ${VIEWPORT_SIZE_KM}km × ${VIEWPORT_SIZE_KM}km`);
+        } catch (error) {
+            alert(`Error saving viewport: ${error.message}`);
+            console.error('Save error:', error);
+        }
+    }
+
     function handleZoomIn() {
         const currentZoom = map.getZoom();
         map.flyTo({ zoom: Math.min(currentZoom + 1, 20) });
@@ -307,6 +332,9 @@
         <div class="actions">
             <button class="btn-primary" on:click={handleLoadExplorer}>
                 Viewer
+            </button>
+            <button class="btn-save" on:click={handleSaveViewport}>
+                Save Viewport
             </button>
             <button class="btn-secondary" on:click={handleReset}>
                 Reset
@@ -507,6 +535,21 @@
 
     .btn-secondary:hover {
         border-color: #999;
+    }
+
+    .btn-save {
+        padding: 12px 30px;
+        background: #2196F3;
+        color: white;
+        border: none;
+        border-radius: 4px;
+        cursor: pointer;
+        font-size: 16px;
+        font-weight: 600;
+    }
+
+    .btn-save:hover {
+        background: #1976D2;
     }
 
     .zoom-controls {

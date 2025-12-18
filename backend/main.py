@@ -851,6 +851,51 @@ async def get_tile_bounds(viewport_id: str):
         raise HTTPException(status_code=500, detail=str(e))
 
 
+@app.post("/api/save-viewport")
+async def save_viewport(request: dict):
+    """Save the selected viewport to viewport.txt."""
+    try:
+        center = request.get('center', [0, 0])
+        bounds = request.get('bounds', {})
+        sizeKm = request.get('sizeKm', 20)
+
+        # Create viewport.txt content
+        viewport_content = f"""Viewport Configuration
+=====================
+
+Center (degrees):
+  Latitude:  {center[1]:.6f}°
+  Longitude: {center[0]:.6f}°
+
+Bounds (degrees):
+  Min Latitude:  {bounds.get('minLat', 0):.6f}°
+  Max Latitude:  {bounds.get('maxLat', 0):.6f}°
+  Min Longitude: {bounds.get('minLon', 0):.6f}°
+  Max Longitude: {bounds.get('maxLon', 0):.6f}°
+
+Size: {sizeKm}km × {sizeKm}km
+
+Generated: {datetime.now().isoformat()}
+"""
+
+        # Save to file in the project root
+        viewport_file = Path(__file__).parent.parent / "viewport.txt"
+        viewport_file.write_text(viewport_content)
+
+        logger.info(f"Viewport saved to {viewport_file}")
+        return {
+            "status": "success",
+            "message": "Viewport saved to viewport.txt",
+            "file": str(viewport_file),
+            "center": center,
+            "bounds": bounds
+        }
+
+    except Exception as e:
+        logger.error(f"Error saving viewport: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 @app.get("/api/health")
 async def health_check():
     """Health check endpoint."""
