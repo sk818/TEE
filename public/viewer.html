@@ -472,79 +472,37 @@
                     ];
 
                     try {
-                        // Use RGB pyramid tiles from tile server with variable tile sizes
+                        // Use RGB pyramid tiles from tile server with consistent 1024px tiles
                         if (viewportId) {
                             const tileUrl = `${TILE_SERVER_URL}/api/tiles/rgb/${viewportId}/2024/{z}/{x}/{y}.png`;
-                            console.log('Setting up variable tile size layers for URL:', tileUrl);
+                            console.log('Setting up RGB tile layer with 1024px tiles:', tileUrl);
 
-                            // Create tile layers with different tile sizes for different zoom ranges
-                            // This provides better quality at all zoom levels
-                            const tileLayers = [
-                                {
-                                    config: {
-                                        attribution: 'RGB Pyramids (256px)',
-                                        opacity: 1.0,
-                                        maxZoom: 18,
-                                        minZoom: 14,
-                                        tileSize: 256,
-                                        crossOrigin: true
-                                    },
-                                    zoomRange: '14-18'
-                                },
-                                {
-                                    config: {
-                                        attribution: 'RGB Pyramids (512px)',
-                                        opacity: 1.0,
-                                        maxZoom: 13,
-                                        minZoom: 12,
-                                        tileSize: 512,
-                                        crossOrigin: true
-                                    },
-                                    zoomRange: '12-13'
-                                },
-                                {
-                                    config: {
-                                        attribution: 'RGB Pyramids (1024px)',
-                                        opacity: 1.0,
-                                        maxZoom: 11,
-                                        minZoom: 6,
-                                        tileSize: 1024,
-                                        crossOrigin: true
-                                    },
-                                    zoomRange: '6-11'
-                                }
-                            ];
-
-                            let totalTileCount = 0;
-                            let totalErrorCount = 0;
-
-                            // Add all layers to map
-                            tileLayers.forEach(layer => {
-                                const tileLayer = L.tileLayer(tileUrl, layer.config);
-
-                                // Track tile events
-                                tileLayer.on('tileload', function(event) {
-                                    totalTileCount++;
-                                    console.log(`Tile loaded (${layer.zoomRange}): ${event.tile.src}`);
-                                });
-
-                                tileLayer.on('tileerror', function(error) {
-                                    totalErrorCount++;
-                                    console.error(`Tile error (${layer.zoomRange}): ${error.tile.src}`);
-                                });
-
-                                tileLayer.on('load', function() {
-                                    console.log(`✓ Tile layer (${layer.zoomRange}) fully loaded`);
-                                });
-
-                                tileLayer.addTo(mapRGB);
-                                console.log(`✓ Added tile layer for zoom ${layer.zoomRange} (${layer.config.tileSize}×${layer.config.tileSize} tiles)`);
+                            // Create single tile layer with large tiles for better visual quality
+                            // Pyramid level transitions are adjusted for smoother quality across zoom levels
+                            const tileLayer = L.tileLayer(tileUrl, {
+                                attribution: 'RGB Pyramids (1024×1024px)',
+                                opacity: 1.0,
+                                maxZoom: 18,
+                                minZoom: 6,
+                                tileSize: 1024,
+                                crossOrigin: true
                             });
 
-                            console.log('✓ RGB tile layers configured with variable sizes');
-                            console.log(`  Zoom 14+: 256px tiles`);
-                            console.log(`  Zoom 12-13: 512px tiles`);
-                            console.log(`  Zoom <12: 1024px tiles`);
+                            // Track tile events
+                            tileLayer.on('tileload', function(event) {
+                                console.log(`✓ Tile loaded: ${event.tile.src}`);
+                            });
+
+                            tileLayer.on('tileerror', function(error) {
+                                console.error(`✗ Tile error: ${error.tile.src}`);
+                            });
+
+                            tileLayer.on('load', function() {
+                                console.log(`✓ Tile layer fully loaded`);
+                            });
+
+                            tileLayer.addTo(mapRGB);
+                            console.log('✓ RGB tile layer configured with 1024×1024px tiles');
                             console.log(`  Current zoom: ${mapRGB.getZoom()}`);
                         } else {
                             console.error('Viewport ID not found - cannot load RGB pyramids');

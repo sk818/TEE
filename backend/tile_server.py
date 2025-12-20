@@ -48,28 +48,9 @@ app.add_middleware(
 
 # Configuration
 DATA_DIR = Path(__file__).parent.parent / "public" / "data" / "viewports"
-DEFAULT_TILE_SIZE = 256  # Default tile size for high zoom levels
+DEFAULT_TILE_SIZE = 1024  # Consistent tile size for all zoom levels
 
 
-def get_tile_size_for_zoom(z: int) -> int:
-    """
-    Determine tile size based on zoom level for better quality at zoomed-out views.
-
-    Higher zoom levels (zoomed in) use smaller tiles.
-    Lower zoom levels (zoomed out) use larger tiles for more detail.
-
-    Args:
-        z: Leaflet zoom level (0-28)
-
-    Returns:
-        Tile size in pixels
-    """
-    if z >= 14:
-        return 256    # High zoom: standard size, more tiles
-    elif z >= 12:
-        return 512    # Medium zoom: 2x larger, fewer tiles, more detail
-    else:
-        return 1024   # Low zoom: 4x larger, crisp when zoomed out
 
 # RGB pyramids are stored per-viewport at: viewports/{viewport_id}/pyramids/{year}/level_N.tif
 
@@ -91,7 +72,7 @@ def zoom_to_pyramid_level(z: int, max_pyramid_level: int = 5) -> int:
 
 def zoom_to_rgb_pyramid_level(z: int, max_pyramid_level: int = 4) -> int:
     """
-    Map Leaflet zoom level to RGB pyramid level.
+    Map Leaflet zoom level to RGB pyramid level (hybrid approach).
 
     RGB pyramids have 5 levels (0-4) where each level zooms out by √10 ≈ 3.162x
     Level 0: 1m/pixel (highest zoom)
@@ -100,12 +81,13 @@ def zoom_to_rgb_pyramid_level(z: int, max_pyramid_level: int = 4) -> int:
     Level 3: 31.6m/pixel
     Level 4: 100m/pixel (lowest zoom)
 
-    Each level change ≈ 1.66 Leaflet zoom levels (log2(3.162) ≈ 1.66)
+    Hybrid approach: Less aggressive level transitions (every 2.5 zoom levels instead of 1.66)
+    for smoother quality across all zoom levels while keeping consistent 1024px tile sizes.
     """
-    # Map Leaflet zoom to pyramid level
-    # At higher z values, use lower (finer) pyramid levels
-    # z=18 → level 0, z=16.34 → level 1, z=14.68 → level 2, etc.
-    pyramid_level = max(0, int((18 - z) / 1.66))
+    # Map Leaflet zoom to pyramid level with less aggressive transitions
+    # Each 2.5 zoom levels = 1 pyramid level
+    # z=18 → level 0, z=15.5 → level 1, z=13 → level 2, z=10.5 → level 3, z=8 → level 4
+    pyramid_level = max(0, int((18 - z) / 2.5))
     return min(max_pyramid_level, pyramid_level)
 
 
@@ -287,12 +269,12 @@ async def get_embeddings_tile(viewport_id: str, year: int, z: int, x: int, y: in
 
 @app.get("/api/tiles/rgb/{viewport_id}/{year}/{z}/{x}/{y}.png")
 async def get_rgb_pyramid_tile(viewport_id: str, year: int, z: int, x: int, y: int):
-    """Serve RGB pyramid tile from viewport-specific pyramids with dynamic tile sizes."""
+    """Serve RGB pyramid tile from viewport-specific pyramids with consistent 1024px tiles."""
     try:
-        # Determine tile size based on zoom level for better quality
-        tile_size = get_tile_size_for_zoom(z)
+        # Use consistent tile size for all zoom levels (hybrid approach)
+        tile_size = DEFAULT_TILE_SIZE
 
-        # Map zoom level to pyramid level
+        # Map zoom level to pyramid level with less aggressive transitions
         pyramid_level = zoom_to_rgb_pyramid_level(z)
 
         # Get pyramid level file from viewport-specific directory
@@ -311,7 +293,7 @@ async def get_rgb_pyramid_tile(viewport_id: str, year: int, z: int, x: int, y: i
         bbox = tile_to_bbox(x, y, z)
 
         try:
-            # Read tile from GeoTIFF with dynamic size
+            # Read tile from GeoTIFF with 1024px size
             img = get_rgb_tile(tif_path, bbox, tile_size)
 
             # Save to buffer
