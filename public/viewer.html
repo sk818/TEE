@@ -424,9 +424,19 @@
 
                 // Center maps on viewport
                 if (viewportCenter) {
+                    console.log(`🎯 Setting map view to center: [${viewportCenter[1]}, ${viewportCenter[0]}] (lat, lon)`);
                     mapRGB.setView([viewportCenter[1], viewportCenter[0]], 14);
                     mapOSM.setView([viewportCenter[1], viewportCenter[0]], 14);
+
+                    // Log map state after centering
+                    setTimeout(() => {
+                        const rgbCenter = mapRGB.getCenter();
+                        const osmCenter = mapOSM.getCenter();
+                        console.log(`✓ RGB map centered at: [${rgbCenter.lat}, ${rgbCenter.lng}], zoom: ${mapRGB.getZoom()}`);
+                        console.log(`✓ OSM map centered at: [${osmCenter.lat}, ${osmCenter.lng}], zoom: ${mapOSM.getZoom()}`);
+                    }, 100);
                 } else if (viewportBounds) {
+                    console.log(`🎯 Fitting bounds: (${viewportBounds.minLat}, ${viewportBounds.minLon}) to (${viewportBounds.maxLat}, ${viewportBounds.maxLon})`);
                     const bounds = [
                         [viewportBounds.minLat, viewportBounds.minLon],
                         [viewportBounds.maxLat, viewportBounds.maxLon]
