@@ -10,6 +10,7 @@ from typing import Tuple, Optional, Callable
 
 import numpy as np
 import rasterio
+from rasterio.transform import Affine
 
 try:
     import geotessera as gt
@@ -183,6 +184,29 @@ def download_embeddings(
         height, width, bands = mosaic_array.shape
         logger.info(f"✓ Downloaded mosaic: {width}×{height} pixels, {bands} bands")
         logger.info(f"  CRS: {crs}")
+        logger.info(f"  Original transform: {mosaic_transform}")
+
+        # Fix broken transform from tessera if needed
+        # Calculate correct transform from bounding box and dimensions
+        min_lon, min_lat, max_lon, max_lat = bbox
+        pixel_width = (max_lon - min_lon) / width
+        pixel_height = (max_lat - min_lat) / height
+
+        # Create proper Affine transform
+        corrected_transform = Affine(
+            pixel_width,   # pixel width in degrees
+            0.0,           # no rotation
+            min_lon,       # upper left x
+            0.0,           # no rotation
+            -pixel_height, # pixel height in degrees (negative for top-down)
+            max_lat        # upper left y
+        )
+
+        logger.info(f"  Corrected transform: {corrected_transform}")
+        logger.info(f"  Pixel size: {pixel_width:.10f}° × {pixel_height:.10f}°")
+
+        # Use corrected transform instead of tessera's broken one
+        final_transform = corrected_transform
 
         # Update UI: Downloaded, now saving
         if progress_callback:
@@ -200,7 +224,7 @@ def download_embeddings(
             count=bands,
             dtype=mosaic_array.dtype,
             crs=crs,
-            transform=mosaic_transform,
+            transform=final_transform,
             compress='lzw'
         ) as dst:
             for band in range(bands):
