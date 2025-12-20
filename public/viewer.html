@@ -58,7 +58,7 @@
         }
 
         .map-panel {
-            flex: 1;
+            width: 512px;
             position: relative;
             display: flex;
             flex-direction: column;
@@ -75,10 +75,9 @@
         }
 
         .map-container {
-            flex: 1;
+            width: 512px;
+            height: 512px;
             position: relative;
-            min-width: 512px;
-            min-height: 512px;
         }
 
         .map {
@@ -328,8 +327,11 @@
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 
     <script>
-        // Use the same host/port as this page is being served from
+        // Use the same host as this page, but tiles come from tile server on port 8001
         const API_BASE_URL = window.location.origin;
+        const TILE_SERVER_URL = window.location.hostname ?
+            `${window.location.protocol}//${window.location.hostname}:8001` :
+            'http://localhost:8001';
 
         let mapRGB = null;
         let mapOSM = null;
@@ -472,7 +474,7 @@
                     try {
                         // Use RGB pyramid tiles from tile server
                         if (viewportId) {
-                            const tileUrl = `${API_BASE_URL}/api/tiles/rgb/${viewportId}/2024/{z}/{x}/{y}.png`;
+                            const tileUrl = `${TILE_SERVER_URL}/api/tiles/rgb/${viewportId}/2024/{z}/{x}/{y}.png`;
                             console.log('Adding tile layer with URL:', tileUrl);
 
                             const tileLayer = L.tileLayer(tileUrl, {
@@ -481,20 +483,32 @@
                                 maxZoom: 18,
                                 minZoom: 6,
                                 tileSize: 256,
-                                errorTile: false,
                                 crossOrigin: true
                             });
 
+                            // Track tile requests and responses
+                            let tileCount = 0;
+                            let errorCount = 0;
+
+                            tileLayer.on('tileload', function(event) {
+                                tileCount++;
+                                console.log(`Tile loaded: ${event.tile.src} (${tileCount} total)`);
+                            });
+
                             tileLayer.on('tileerror', function(error) {
-                                console.error('Tile error:', error.tile.src);
+                                errorCount++;
+                                console.error(`Tile error (${errorCount}): ${error.tile.src}`);
                             });
 
                             tileLayer.on('load', function() {
-                                console.log('✓ Tile layer loaded');
+                                console.log(`✓ Tile layer fully loaded (${tileCount} tiles)`);
                             });
 
                             tileLayer.addTo(mapRGB);
-                            console.log('✓ RGB tile layer added to map for viewport:', viewportId);
+                            console.log('✓ RGB tile layer added to map');
+                            console.log(`  URL: ${tileUrl}`);
+                            console.log(`  Viewport: ${viewportId}`);
+                            console.log(`  Current map view: zoom=${mapRGB.getZoom()}, center=${mapRGB.getCenter()}`);
                         } else {
                             console.error('Viewport ID not found - cannot load RGB pyramids');
                             showError('Viewport ID not found. Cannot load RGB pyramids.');
