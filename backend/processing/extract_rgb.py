@@ -7,7 +7,7 @@ import logging
 from pathlib import Path
 import numpy as np
 import rasterio
-from rasterio.transform import Affine
+from rasterio.transform import Affine, from_bounds
 
 logger = logging.getLogger(__name__)
 
@@ -117,10 +117,35 @@ def extract_rgb(
                 normalize_band(bands_data[2])
             ], axis=0)
 
-            # Copy metadata
+            # Copy metadata and fix transform if broken
             profile = src.profile.copy()
             crs = src.crs
-            transform = src.transform
+
+            # Check if transform is broken (has 0.0 scale values)
+            source_transform = src.transform
+            height, width = rgb_array.shape[1], rgb_array.shape[2]
+
+            if source_transform[0] == 0.0 or source_transform[4] == 0.0:
+                # Transform is broken, calculate from bounds
+                bounds = src.bounds
+                pixel_width = (bounds.right - bounds.left) / width
+                pixel_height = (bounds.top - bounds.bottom) / height
+
+                transform = Affine(
+                    pixel_width,   # pixel width in degrees
+                    0.0,           # no rotation
+                    bounds.left,   # upper left x
+                    0.0,           # no rotation
+                    -pixel_height, # pixel height in degrees (negative for top-down)
+                    bounds.top     # upper left y
+                )
+                logger.info(f"Corrected broken transform:")
+                logger.info(f"  Original: {source_transform}")
+                logger.info(f"  Corrected: {transform}")
+            else:
+                # Transform looks OK, use it
+                transform = source_transform
+                logger.info(f"Using embeddings transform: {transform}")
 
             logger.info(f"RGB shape: {rgb_array.shape}")
             logger.info(f"CRS: {crs}, Transform: {transform}")
