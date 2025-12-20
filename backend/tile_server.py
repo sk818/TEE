@@ -184,7 +184,7 @@ async def get_sentinel2_tile(viewport_id: str, year: int, z: int, x: int, y: int
 
         if not tif_path.exists():
             # Return transparent tile if file doesn't exist
-            img = Image.new('RGBA', (TILE_SIZE, TILE_SIZE), (0, 0, 0, 0))
+            img = Image.new('RGBA', (DEFAULT_TILE_SIZE, DEFAULT_TILE_SIZE), (0, 0, 0, 0))
             buf = io.BytesIO()
             img.save(buf, format='PNG')
             buf.seek(0)
@@ -195,7 +195,7 @@ async def get_sentinel2_tile(viewport_id: str, year: int, z: int, x: int, y: int
 
         try:
             # Read tile from GeoTIFF
-            img = get_rgb_tile(tif_path, bbox, TILE_SIZE)
+            img = get_rgb_tile(tif_path, bbox, DEFAULT_TILE_SIZE)
 
             # Save to buffer
             buf = io.BytesIO()
@@ -207,7 +207,7 @@ async def get_sentinel2_tile(viewport_id: str, year: int, z: int, x: int, y: int
         except Exception as e:
             logger.warning(f"Error reading tile sentinel2/{viewport_id}/{year}/{z}/{x}/{y}: {e}")
             # Return transparent tile on error
-            img = Image.new('RGBA', (TILE_SIZE, TILE_SIZE), (0, 0, 0, 0))
+            img = Image.new('RGBA', (DEFAULT_TILE_SIZE, DEFAULT_TILE_SIZE), (0, 0, 0, 0))
             buf = io.BytesIO()
             img.save(buf, format='PNG')
             buf.seek(0)
@@ -230,7 +230,7 @@ async def get_embeddings_tile(viewport_id: str, year: int, z: int, x: int, y: in
 
         if not tif_path.exists():
             # Return transparent tile if file doesn't exist
-            img = Image.new('RGBA', (TILE_SIZE, TILE_SIZE), (0, 0, 0, 0))
+            img = Image.new('RGBA', (DEFAULT_TILE_SIZE, DEFAULT_TILE_SIZE), (0, 0, 0, 0))
             buf = io.BytesIO()
             img.save(buf, format='PNG')
             buf.seek(0)
@@ -242,7 +242,7 @@ async def get_embeddings_tile(viewport_id: str, year: int, z: int, x: int, y: in
 
         try:
             # Read tile from GeoTIFF
-            img = get_rgb_tile(tif_path, bbox, TILE_SIZE)
+            img = get_rgb_tile(tif_path, bbox, DEFAULT_TILE_SIZE)
 
             # Save to buffer
             buf = io.BytesIO()
@@ -256,7 +256,7 @@ async def get_embeddings_tile(viewport_id: str, year: int, z: int, x: int, y: in
         except Exception as e:
             logger.warning(f"Error reading tile embeddings/{viewport_id}/{year}/level_{pyramid_level}/{z}/{x}/{y}: {e}")
             # Return transparent tile on error
-            img = Image.new('RGBA', (TILE_SIZE, TILE_SIZE), (0, 0, 0, 0))
+            img = Image.new('RGBA', (DEFAULT_TILE_SIZE, DEFAULT_TILE_SIZE), (0, 0, 0, 0))
             buf = io.BytesIO()
             img.save(buf, format='PNG')
             buf.seek(0)
@@ -352,7 +352,7 @@ async def health():
     return {
         'status': 'ok',
         'data_dir': str(DATA_DIR),
-        'tile_size': TILE_SIZE
+        'tile_size': DEFAULT_TILE_SIZE
     }
 
 
