@@ -48,11 +48,13 @@ app.add_middleware(
 
 # Configuration
 DATA_DIR = Path(__file__).parent.parent / "public" / "data" / "viewports"
-TILE_SIZE = 2048  # Large tiles for near-native resolution
+TILE_SIZE = 256  # Standard tile size (4 tiles = 512x512 display area)
 
-# Zoom level to pyramid level mapping
+# RGB pyramids are stored per-viewport at: viewports/{viewport_id}/pyramids/{year}/level_N.tif
+
+# Zoom level to pyramid level mapping for embedding pyramids
 # Leaflet requests tiles at z=0 to z=28
-# We have pyramid levels 0-5
+# We have pyramid levels 0-5 (6 levels)
 # Map z=13-18 → level 0 (full res)
 #     z=11-12 → level 1 (2x coarsening)
 #     z=9-10  → level 2
@@ -60,10 +62,30 @@ TILE_SIZE = 2048  # Large tiles for near-native resolution
 #     z=5-6   → level 4
 #     z=0-4   → level 5 (32x coarsening)
 def zoom_to_pyramid_level(z: int, max_pyramid_level: int = 5) -> int:
-    """Map Leaflet zoom level to pyramid level."""
+    """Map Leaflet zoom level to pyramid level for embedding pyramids."""
     # Each 2 zoom levels = 1 pyramid level
     pyramid_level = (18 - z) // 2
     return max(0, min(max_pyramid_level, pyramid_level))
+
+
+def zoom_to_rgb_pyramid_level(z: int, max_pyramid_level: int = 4) -> int:
+    """
+    Map Leaflet zoom level to RGB pyramid level.
+
+    RGB pyramids have 5 levels (0-4) where each level zooms out by √10 ≈ 3.162x
+    Level 0: 1m/pixel (highest zoom)
+    Level 1: 3.16m/pixel
+    Level 2: 10m/pixel
+    Level 3: 31.6m/pixel
+    Level 4: 100m/pixel (lowest zoom)
+
+    Each level change ≈ 1.66 Leaflet zoom levels (log2(3.162) ≈ 1.66)
+    """
+    # Map Leaflet zoom to pyramid level
+    # At higher z values, use lower (finer) pyramid levels
+    # z=18 → level 0, z=16.34 → level 1, z=14.68 → level 2, etc.
+    pyramid_level = max(0, int((18 - z) / 1.66))
+    return min(max_pyramid_level, pyramid_level)
 
 
 def tile_to_bbox(x: int, y: int, z: int) -> tuple:
@@ -242,6 +264,55 @@ async def get_embeddings_tile(viewport_id: str, year: int, z: int, x: int, y: in
         return Response(content=f"Error: {e}", status_code=500)
 
 
+@app.get("/api/tiles/rgb/{viewport_id}/{year}/{z}/{x}/{y}.png")
+async def get_rgb_pyramid_tile(viewport_id: str, year: int, z: int, x: int, y: int):
+    """Serve RGB pyramid tile from viewport-specific pyramids."""
+    try:
+        # Map zoom level to pyramid level
+        pyramid_level = zoom_to_rgb_pyramid_level(z)
+
+        # Get pyramid level file from viewport-specific directory
+        tif_path = DATA_DIR / viewport_id / "pyramids" / str(year) / f"level_{pyramid_level}.tif"
+
+        if not tif_path.exists():
+            # Return transparent tile if file doesn't exist
+            img = Image.new('RGBA', (TILE_SIZE, TILE_SIZE), (0, 0, 0, 0))
+            buf = io.BytesIO()
+            img.save(buf, format='PNG')
+            buf.seek(0)
+            logger.debug(f"RGB pyramid file not found: {tif_path}")
+            return Response(content=buf.getvalue(), media_type="image/png")
+
+        # Get tile bounds
+        bbox = tile_to_bbox(x, y, z)
+
+        try:
+            # Read tile from GeoTIFF
+            img = get_rgb_tile(tif_path, bbox, TILE_SIZE)
+
+            # Save to buffer
+            buf = io.BytesIO()
+            img.save(buf, format='PNG')
+            buf.seek(0)
+
+            logger.debug(f"Served RGB tile {viewport_id}/level_{pyramid_level}/{z}/{x}/{y}")
+
+            return Response(content=buf.getvalue(), media_type="image/png")
+
+        except Exception as e:
+            logger.warning(f"Error reading RGB tile {viewport_id}/level_{pyramid_level}/{z}/{x}/{y}: {e}")
+            # Return transparent tile on error
+            img = Image.new('RGBA', (TILE_SIZE, TILE_SIZE), (0, 0, 0, 0))
+            buf = io.BytesIO()
+            img.save(buf, format='PNG')
+            buf.seek(0)
+            return Response(content=buf.getvalue(), media_type="image/png")
+
+    except Exception as e:
+        logger.error(f"Error serving RGB tile: {e}")
+        return Response(content=f"Error: {e}", status_code=500)
+
+
 @app.get("/api/tiles/bounds/{viewport_id}/{year}")
 async def get_tile_bounds(viewport_id: str, year: int):
     """Get bounds for a viewport and year."""
@@ -288,9 +359,11 @@ async def root():
         'endpoints': {
             'sentinel2': '/api/tiles/sentinel2/{viewport_id}/{year}/{z}/{x}/{y}.png',
             'embeddings': '/api/tiles/embeddings/{viewport_id}/{year}/{z}/{x}/{y}.png',
+            'rgb_pyramids': '/api/tiles/rgb/{viewport_id}/{year}/{z}/{x}/{y}.png',
             'bounds': '/api/tiles/bounds/{viewport_id}/{year}',
             'health': '/api/tiles/health'
-        }
+        },
+        'note': 'RGB pyramids: 5 levels (0-4) with √10 zoom factor between levels. Stored per-viewport.'
     }
 
 
@@ -302,8 +375,16 @@ if __name__ == "__main__":
     logger.info("Available endpoints:")
     logger.info("  - http://localhost:8001/api/tiles/sentinel2/{viewport_id}/{year}/{z}/{x}/{y}.png")
     logger.info("  - http://localhost:8001/api/tiles/embeddings/{viewport_id}/{year}/{z}/{x}/{y}.png")
+    logger.info("  - http://localhost:8001/api/tiles/rgb/{viewport_id}/{year}/{z}/{x}/{y}.png (viewport-specific RGB pyramids)")
     logger.info("  - http://localhost:8001/api/tiles/bounds/{viewport_id}/{year}")
     logger.info("  - http://localhost:8001/api/tiles/health")
+    logger.info("\nRGB pyramid structure:")
+    logger.info("  - Level 0: 1m/pixel (highest zoom)")
+    logger.info("  - Level 1: 3.16m/pixel")
+    logger.info("  - Level 2: 10m/pixel")
+    logger.info("  - Level 3: 31.6m/pixel")
+    logger.info("  - Level 4: 100m/pixel (lowest zoom)")
+    logger.info("  Each level zooms out by √10 ≈ 3.162x")
     logger.info("\nStarting server on http://localhost:8001\n")
 
     uvicorn.run(app, host="0.0.0.0", port=8001)

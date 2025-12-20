@@ -16,7 +16,8 @@
     let processingProgress = 0;
     let taskId: string | null = null;
     let errorMessage = '';
-    const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000';
+    // Use environment variable or fall back to the same host as the frontend
+    const API_BASE_URL = import.meta.env.VITE_API_URL || (typeof window !== 'undefined' ? window.location.origin : 'http://localhost:8000');
 
     let centerLng = 0.1218; // Cambridge, UK
     let centerLat = 52.2053;
@@ -197,7 +198,7 @@
 
         const poll = async () => {
             try {
-                const response = await fetch(`${API_BASE_URL}/api/viewports/${currentTaskId}/status`);
+                const response = await fetch(`${API_BASE_URL}/api/tasks/${currentTaskId}/status`);
 
                 if (!response.ok) {
                     throw new Error(`Failed to get status: ${response.statusText}`);
@@ -208,20 +209,14 @@
                 processingState = status.state;
                 processingProgress = status.progress;
 
-                console.log(`Task status: ${status.state} (${status.progress}%)`);
+                console.log(`Task status: ${status.state} (${status.progress}%): ${status.message}`);
 
                 if (status.state === 'complete') {
-                    // Load explorer with processed data
-                    const config: ViewportConfig = {
-                        center: [centerLng, centerLat],
-                        bounds,
-                        sizeKm: VIEWPORT_SIZE_KM,
-                        viewportId: status.viewport_id
-                    };
-
-                    dispatch('load', config);
+                    console.log('✅ Download complete! Redirecting to viewer...');
+                    // Redirect to simple viewer
+                    window.location.href = '/viewer.html';
                 } else if (status.state === 'error') {
-                    errorMessage = status.error || 'Processing failed';
+                    errorMessage = status.error || 'Download failed';
                     processingState = 'error';
                 } else {
                     // Continue polling
@@ -238,7 +233,8 @@
     }
 
     function handleLoadExplorer() {
-        handleProcessViewport();
+        // Redirect to blore 3-panel viewer (not the TEE ThreePaneView which is deprecated)
+        window.location.href = '/bangalore_viewer_3panel_blore.html';
     }
 
     function handleReset() {
@@ -249,8 +245,13 @@
     async function handleSaveViewport() {
         const bounds = calculateBounds(centerLng, centerLat, VIEWPORT_SIZE_KM);
 
+        processingState = 'requesting';
+        errorMessage = '';
+
         try {
-            const response = await fetch(`${API_BASE_URL}/api/save-viewport`, {
+            // Step 1: Save viewport
+            console.log('Saving viewport...');
+            const saveResponse = await fetch(`${API_BASE_URL}/api/save-viewport`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
@@ -260,14 +261,54 @@
                 })
             });
 
-            if (!response.ok) {
-                throw new Error(`Failed to save viewport: ${response.statusText}`);
+            if (!saveResponse.ok) {
+                throw new Error(`Failed to save viewport: ${saveResponse.statusText}`);
             }
 
-            alert(`✓ Viewport saved!\n\nCenter: ${centerLat.toFixed(4)}°N, ${centerLng.toFixed(4)}°E\nSize: ${VIEWPORT_SIZE_KM}km × ${VIEWPORT_SIZE_KM}km`);
+            const saveData = await saveResponse.json();
+            const isNewViewport = saveData.is_new;
+
+            if (!isNewViewport) {
+                // Viewport already exists with data and pyramids
+                console.log(`✓ Using existing viewport: ${saveData.viewport_id}`);
+                processingState = 'complete';
+                setTimeout(() => {
+                    window.location.href = '/viewer.html';
+                }, 500);
+                return;
+            }
+
+            console.log('✓ New viewport created, starting embeddings download...');
+
+            // Step 2: Download embeddings and create pyramids (only for new viewports)
+            processingState = 'downloading';
+            console.log('Starting embeddings download...');
+
+            const downloadResponse = await fetch(`${API_BASE_URL}/api/download-embeddings?year=2024`, {
+                method: 'POST'
+            });
+
+            if (!downloadResponse.ok) {
+                throw new Error(`Failed to start download: ${downloadResponse.statusText}`);
+            }
+
+            const downloadData = await downloadResponse.json();
+
+            if (!downloadData.success) {
+                throw new Error(downloadData.error || 'Download request failed');
+            }
+
+            taskId = downloadData.task_id;
+            console.log(`✓ Download started with task ID: ${taskId}`);
+
+            // Step 3: Poll for completion
+            if (taskId) {
+                await pollTaskStatus(taskId, bounds);
+            }
         } catch (error) {
-            alert(`Error saving viewport: ${error.message}`);
-            console.error('Save error:', error);
+            processingState = 'error';
+            errorMessage = error.message || 'Unknown error';
+            console.error('Error:', error);
         }
     }
 
@@ -285,7 +326,7 @@
 <div class="viewport-selector">
     <header>
         <h1>TESSERA Embedding Explorer</h1>
-        <h2>Select 20km × 20km Viewport</h2>
+        <h2>Select 1km × 1km Viewport</h2>
     </header>
 
     <div class="controls">
@@ -330,11 +371,8 @@
         </div>
 
         <div class="actions">
-            <button class="btn-primary" on:click={handleLoadExplorer}>
-                Viewer
-            </button>
             <button class="btn-save" on:click={handleSaveViewport}>
-                Save Viewport
+                🔄 Save Viewport & Load Embeddings
             </button>
             <button class="btn-secondary" on:click={handleReset}>
                 Reset

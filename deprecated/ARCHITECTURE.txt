@@ -1,0 +1,280 @@
+╔════════════════════════════════════════════════════════════════════════════╗
+║                    TEE COMPLETE ARCHITECTURE OVERVIEW                      ║
+╚════════════════════════════════════════════════════════════════════════════╝
+
+┌─────────────────────────────────────────────────────────────────────────────┐
+│ LAYER 1: VIEWPORT SELECTION & CONFIGURATION                                │
+├─────────────────────────────────────────────────────────────────────────────┤
+│                                                                              │
+│  Frontend (Svelte)                    Backend (FastAPI)        Storage       │
+│  ┌─────────────────────┐             ┌──────────────────┐   ┌────────────┐  │
+│  │ ViewportSelector    │─── POST ────→ /api/save-      │──→ │viewport   │  │
+│  │ .svelte             │ /api/save-   │ viewport        │   │.txt       │  │
+│  │                     │  viewport    │                │   └────────────┘  │
+│  │ • Map picker        │             │ • Receives      │   Stores:         │
+│  │ • Click to select   │             │   center, bounds│   • Center lat/   │
+│  │ • Save button       │             │ • Writes to txt │     lon           │
+│  │ • Preset locations  │             │ • Returns ok    │   • Min/Max lat   │
+│  └─────────────────────┘             └──────────────────┘   │     lon       │
+│                                                               │   • Size (km)│
+│  Alternative: Manual edit viewport.txt directly             └────────────┘
+│                                                                              │
+└─────────────────────────────────────────────────────────────────────────────┘
+
+                          viewport.txt (Configuration)
+                              ↓ ↓ ↓ ↓ ↓
+                     (All scripts read from here)
+
+┌─────────────────────────────────────────────────────────────────────────────┐
+│ LAYER 2: DATA ACQUISITION                                                   │
+├─────────────────────────────────────────────────────────────────────────────┤
+│                                                                              │
+│   ┌──────────────────────┐  ┌──────────────────────┐  ┌──────────────────┐ │
+│   │ Embeddings Download  │  │ Satellite RGB        │  │ Google Earth RGB │ │
+│   │                      │  │ Download             │  │ Download         │ │
+│   │ Script: download_    │  │                      │  │                  │ │
+│   │ embeddings_blore.py  │  │ Script: download_    │  │ Script: download_│ │
+│   │                      │  │ satellite_rgb_blore  │  │ google_earth_    │ │
+│   │ Source: GeoTessera   │  │ .py                  │  │ blore.py         │ │
+│   │ API                  │  │                      │  │                  │ │
+│   │                      │  │ Source: Planetary    │  │ Source: Google   │ │
+│   │ ✓ Reads viewport.txt │  │ Computer             │  │ Earth Engine     │ │
+│   │ ✓ Extracts BBOX      │  │                      │  │                  │ │
+│   │ ✓ Downloads years    │  │ ✓ Reads viewport.txt │  │ ✓ Reads viewport.│ │
+│   │   2017-2024          │  │ ✓ Extracts BBOX      │  │   txt            │ │
+│   │ ✓ Saves multiple     │  │ ✓ Downloads 2024     │  │ ✓ Extracts BBOX  │ │
+│   │   tifs               │  │   composite          │  │ ✓ Downloads 2024 │ │
+│   │                      │  │ ✓ Saves to           │  │ ✓ Saves to       │ │
+│   │ Output Files:        │  │   satellite_rgb.tif  │  │ google_earth_    │ │
+│   │ mosaics/            │  │                      │  │ rgb.tif          │ │
+│   │ ├─ bangalore_2017.tif│  │ Output Files:        │  │                  │ │
+│   │ ├─ bangkok_2018.tif │  │ mosaics/            │  │ Output Files:    │ │
+│   │ ├─ ...              │  │ └─ satellite_rgb.tif │  │ mosaics/        │ │
+│   │ └─ bangalore_2024.tif│  │                      │  │ └─ google_earth_ │ │
+│   │                      │  │                      │  │    rgb.tif       │ │
+│   └──────────────────────┘  └──────────────────────┘  └──────────────────┘ │
+│                                                                              │
+└─────────────────────────────────────────────────────────────────────────────┘
+
+                    mosaics/ (All downloaded data)
+                    ↓ (Single input directory)
+
+┌─────────────────────────────────────────────────────────────────────────────┐
+│ LAYER 3: PYRAMID CREATION                                                   │
+├─────────────────────────────────────────────────────────────────────────────┤
+│                                                                              │
+│              ┌────────────────────────────────────────┐                     │
+│              │ create_pyramids_blore.py               │                     │
+│              │                                        │                     │
+│              │ Input: mosaics/                        │                     │
+│              │ ├─ bangalore_2017.tif                 │                     │
+│              │ ├─ bangkok_2018.tif                   │                     │
+│              │ ├─ ...                                │                     │
+│              │ ├─ bangalore_2024.tif                 │                     │
+│              │ └─ satellite_rgb.tif                  │                     │
+│              │                                        │                     │
+│              │ Processing:                            │                     │
+│              │ For each year/satellite:               │                     │
+│              │  1. Extract first 3 bands as RGB      │                     │
+│              │  2. Normalize to 0-255                │                     │
+│              │  3. Create 6 levels:                  │                     │
+│              │     Level 0: Full resolution          │                     │
+│              │     Level 1: 1/2 resolution           │                     │
+│              │     Level 2: 1/4 resolution           │                     │
+│              │     Level 3: 1/8 resolution           │                     │
+│              │     Level 4: 1/16 resolution          │                     │
+│              │     Level 5: 1/32 resolution          │                     │
+│              │  4. Save as GeoTIFF with LZW compress │                     │
+│              │                                        │                     │
+│              │ Output: pyramids/                      │                     │
+│              │ ├─ 2017/                              │                     │
+│              │ │  ├─ level_0.tif                    │                     │
+│              │ │  ├─ level_1.tif                    │                     │
+│              │ │  ├─ ...                             │                     │
+│              │ │  └─ level_5.tif                    │                     │
+│              │ ├─ 2018/ ... ├─ 2024/                │                     │
+│              │ └─ satellite/                         │                     │
+│              │    ├─ level_0.tif                    │                     │
+│              │    ├─ level_1.tif                    │                     │
+│              │    ├─ ...                             │                     │
+│              │    └─ level_5.tif                    │                     │
+│              └────────────────────────────────────────┘                     │
+│                                                                              │
+└─────────────────────────────────────────────────────────────────────────────┘
+
+                    pyramids/ (Multi-resolution tiles)
+                    ↓ (Ready for serving)
+
+┌─────────────────────────────────────────────────────────────────────────────┐
+│ LAYER 4: TILE SERVING (Flask Server)                                        │
+├─────────────────────────────────────────────────────────────────────────────┤
+│                                                                              │
+│         ┌────────────────────────────────────────────────────────┐          │
+│         │ tile_server_blore.py                                   │          │
+│         │ (Flask Application running on port 5125)              │          │
+│         │                                                        │          │
+│         │ 1. STARTUP:                                           │          │
+│         │    └─ Scans pyramids/ directory                      │          │
+│         │    └─ Auto-detects available years (2017-2024)      │          │
+│         │    └─ Auto-detects satellite directory              │          │
+│         │    └─ Logs available maps                           │          │
+│         │                                                        │          │
+│         │ 2. ENDPOINTS:                                         │          │
+│         │    ├─ GET /tiles/{year}/{z}/{x}/{y}.png            │          │
+│         │    │  └─ Maps web zoom to pyramid level             │          │
+│         │    │  └─ Reads tile from appropriate GeoTIFF        │          │
+│         │    │  └─ Returns PNG for browser rendering          │          │
+│         │    ├─ GET /bounds/{year}                            │          │
+│         │    │  └─ Returns geographic bounds and center       │          │
+│         │    │  └─ Used by viewer to center maps              │          │
+│         │    └─ GET /health                                   │          │
+│         │       └─ Returns list of available maps             │          │
+│         │                                                        │          │
+│         │ 3. FEATURES:                                          │          │
+│         │    ✓ CORS enabled (for browser access)              │          │
+│         │    ✓ Dynamic pyramid detection                      │          │
+│         │    ✓ Graceful error handling                        │          │
+│         │    ✓ Reader caching for performance                │          │
+│         │    ✓ 2048×2048 high-resolution tiles               │          │
+│         │                                                        │          │
+│         └────────────────────────────────────────────────────────┘          │
+│                                                                              │
+└─────────────────────────────────────────────────────────────────────────────┘
+
+                  http://localhost:5125/tiles/...
+                    ↓ (Tile requests from browser)
+
+┌─────────────────────────────────────────────────────────────────────────────┐
+│ LAYER 5: VISUALIZATION (Browser)                                            │
+├─────────────────────────────────────────────────────────────────────────────┤
+│                                                                              │
+│                   ┌──────────────────────────────┐                          │
+│                   │ bangalore_viewer_blore.html  │                          │
+│                   │ (Leaflet-based viewer)       │                          │
+│                   └──────────────────────────────┘                          │
+│                                      │                                       │
+│              ┌────────────────────────┼────────────────────────┐            │
+│              ↓                        ↓                        ↓            │
+│         ┌──────────┐          ┌──────────────┐         ┌──────────────┐   │
+│         │ Fetch    │          │ Fetch Bounds │         │ Create 9     │   │
+│         │ Center   │          │              │         │ Leaflet Maps │   │
+│         │ from     │          │ GET /bounds/ │         │              │   │
+│         │ /bounds/ │          │ satellite    │         │ Layout:      │   │
+│         │ satellite│          │              │         │ 2017 2018    │   │
+│         │          │          │ Sets map     │         │ 2019 2020    │   │
+│         │ Returns: │          │ center       │         │ 2021 2022    │   │
+│         │ center   │          │              │         │ 2023 2024    │   │
+│         │ [lat,    │          │ Also used    │         │ satellite    │   │
+│         │  lon]    │          │ by           │         │              │   │
+│         │          │          │ initializeMaps
+│         └──────────┘          └──────────────┘         └──────────────┘   │
+│              │                        │                        │            │
+│              └────────────────────────┴────────────────────────┘            │
+│                                      │                                       │
+│                           ┌──────────▼──────────┐                          │
+│                           │ Synchronize All 9  │                          │
+│                           │ Maps               │                          │
+│                           │                    │                          │
+│                           │ When user zooms/   │                          │
+│                           │ pans on reference  │                          │
+│                           │ (satellite) map:   │                          │
+│                           │ → All other maps   │                          │
+│                           │   follow with same │                          │
+│                           │   zoom/center      │                          │
+│                           └────────────────────┘                          │
+│                                      │                                       │
+│           ┌──────────────────────────┴──────────────────────────┐          │
+│           │ Each Map Loads Tiles                                │          │
+│           │ GET /tiles/{year}/{z}/{x}/{y}.png                  │          │
+│           │                                                     │          │
+│           │ Tile Requests Flow:                               │          │
+│           │ Browser → Tile Server → GeoTIFF → PNG → Display   │          │
+│           │                                                     │          │
+│           │ Example: /tiles/2024/8/128/128.png                │          │
+│           │ ├─ z=8: Zoom level 8                              │          │
+│           │ ├─ x=128, y=128: Tile coordinates                │          │
+│           │ └─ Returns: 2048×2048 PNG tile                   │          │
+│           └──────────────────────────────────────────────────┘          │
+│                                      │                                       │
+│                      ┌───────────────▼──────────────┐                      │
+│                      │ User Interaction             │                      │
+│                      │                              │                      │
+│                      │ • Click on map to add label │                      │
+│                      │ • Drag to pan all maps      │                      │
+│                      │ • Scroll to zoom all maps   │                      │
+│                      │ • Export labels as JSON     │                      │
+│                      │ • Persistent storage via    │                      │
+│                      │   localStorage              │                      │
+│                      │   (key: tessera_labels)     │                      │
+│                      └────────────────────────────┘                      │
+│                                                                              │
+└─────────────────────────────────────────────────────────────────────────────┘
+
+
+╔════════════════════════════════════════════════════════════════════════════╗
+║                            DATA FLOW SUMMARY                                ║
+╚════════════════════════════════════════════════════════════════════════════╝
+
+  viewport.txt (Configuration)
+      ↓ (read by all download scripts)
+      
+  ├─→ download_embeddings_blore.py ────→ embeddings/ + mosaics/bangalore_*.tif
+  ├─→ download_satellite_rgb_blore.py ──→ mosaics/satellite_rgb.tif
+  └─→ download_google_earth_blore.py ───→ mosaics/google_earth_rgb.tif
+      
+  mosaics/ (all downloaded data)
+      ↓ (read by pyramid creator)
+      
+  create_pyramids_blore.py ──→ pyramids/{year,satellite}/level_{0-5}.tif
+      
+  pyramids/ (multi-resolution tiles)
+      ↓ (served by Flask server)
+      
+  tile_server_blore.py (Port 5125)
+  ├─→ /tiles/{year}/{z}/{x}/{y}.png
+  ├─→ /bounds/{year}
+  └─→ /health
+      
+  ↓ (consumed by browser)
+  
+  bangalore_viewer_blore.html
+  ├─→ Fetches /bounds/satellite for center
+  ├─→ Requests /tiles/{year}/{z}/{x}/{y}.png for each map
+  └─→ Displays 9 synchronized Leaflet maps
+
+
+╔════════════════════════════════════════════════════════════════════════════╗
+║                        FEATURE AVAILABILITY MATRIX                          ║
+╚════════════════════════════════════════════════════════════════════════════╝
+
+                          Current Status
+                          ──────────────
+
+Component               Status    Viewport-Aware   Auto-Detect   Notes
+─────────────────────────────────────────────────────────────────────────────
+ViewportSelector        ✓ READY   Yes (GUI)        N/A          Frontend picker
+/api/save-viewport      ✓ READY   Yes              N/A          Writes to file
+viewport.txt            ✓ READY   N/A              N/A          Current: SA 1.71°N
+Embeddings Download     ✓ READY   Yes              N/A          Reads viewport.txt
+Satellite Download      ✓ READY   Yes              N/A          Reads viewport.txt
+Earth Download          ✓ READY   Yes              N/A          Reads viewport.txt
+Pyramid Creation        ✓ READY   Yes (indirect)   N/A          Uses mosaics/
+Tile Server             ✓ READY   N/A              Yes          Auto-detects pyramids
+HTML Viewer             ✓ READY   Yes              Yes          Dynamic centering
+Browser Sync            ✓ READY   N/A              N/A          9 maps synchronized
+
+
+╔════════════════════════════════════════════════════════════════════════════╗
+║                        QUICK REFERENCE - KEY PORTS                          ║
+╚════════════════════════════════════════════════════════════════════════════╝
+
+Service                 Port      URL
+──────────────────────────────────────────────────────────────────────────────
+Frontend (Vite)         3000+     http://localhost:3000 (or 3001, 5173, etc)
+Backend API (FastAPI)   8000      http://localhost:8000
+Tile Server (Flask)     5125      http://localhost:5125
+File Server (Python)    8080      http://localhost:8080
+
+
+All systems functional and verified! ✅
+

@@ -1,0 +1,626 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>TESSERA Viewer</title>
+
+    <!-- Leaflet CSS -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <!-- Leaflet GeoTIFF plugin -->
+    <script src="https://unpkg.com/geotiff@2.0.7/dist/geotiff.min.js"></script>
+    <script src="https://unpkg.com/leaflet-geotiff/leaflet-geotiff.js"></script>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet-geotiff/leaflet-geotiff.css" />
+
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            background: #f5f5f5;
+            overflow: hidden;
+        }
+
+        #app {
+            width: 100vw;
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
+        }
+
+        header {
+            background: linear-gradient(135deg, #2c3e50 0%, #34495e 100%);
+            color: white;
+            padding: 15px 20px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+            z-index: 100;
+        }
+
+        header h1 {
+            font-size: 22px;
+            margin-bottom: 5px;
+        }
+
+        header .info {
+            font-size: 13px;
+            opacity: 0.9;
+        }
+
+        .map-wrapper {
+            flex: 1;
+            display: flex;
+            gap: 0;
+            overflow: hidden;
+        }
+
+        .map-panel {
+            flex: 1;
+            position: relative;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .panel-label {
+            background: rgba(0,0,0,0.7);
+            color: white;
+            padding: 8px 12px;
+            font-size: 12px;
+            font-weight: 600;
+            z-index: 10;
+            text-align: center;
+        }
+
+        .map-container {
+            flex: 1;
+            position: relative;
+            min-width: 512px;
+            min-height: 512px;
+        }
+
+        .map {
+            width: 100%;
+            height: 100%;
+        }
+
+        .divider {
+            width: 2px;
+            background: #ddd;
+            cursor: col-resize;
+            z-index: 50;
+        }
+
+        .divider:hover {
+            background: #999;
+        }
+
+        .loading-overlay {
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(255,255,255,0.95);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 500;
+            flex-direction: column;
+            gap: 20px;
+        }
+
+        .loading-overlay.hidden {
+            display: none;
+        }
+
+        .spinner {
+            width: 50px;
+            height: 50px;
+            border: 4px solid #e0e0e0;
+            border-top: 4px solid #2196F3;
+            border-radius: 50%;
+            animation: spin 0.8s linear infinite;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        .loading-text {
+            font-size: 16px;
+            color: #333;
+            text-align: center;
+        }
+
+        .error-message {
+            position: fixed;
+            top: 70px;
+            right: 20px;
+            background: #d32f2f;
+            color: white;
+            padding: 16px 20px;
+            border-radius: 4px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.2);
+            z-index: 1000;
+            max-width: 400px;
+            animation: slideIn 0.3s ease;
+        }
+
+        @keyframes slideIn {
+            from {
+                transform: translateX(450px);
+                opacity: 0;
+            }
+            to {
+                transform: translateX(0);
+                opacity: 1;
+            }
+        }
+
+        .controls {
+            position: absolute;
+            top: 10px;
+            left: 10px;
+            background: white;
+            border-radius: 4px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+            z-index: 400;
+            overflow: hidden;
+        }
+
+        .control-group {
+            padding: 10px;
+            border-bottom: 1px solid #eee;
+        }
+
+        .control-group:last-child {
+            border-bottom: none;
+        }
+
+        .control-label {
+            font-size: 11px;
+            color: #999;
+            text-transform: uppercase;
+            font-weight: 600;
+            margin-bottom: 6px;
+        }
+
+        .control-buttons {
+            display: flex;
+            gap: 6px;
+            flex-wrap: wrap;
+        }
+
+        button {
+            padding: 6px 10px;
+            border: none;
+            border-radius: 3px;
+            background: #f5f5f5;
+            color: #333;
+            cursor: pointer;
+            font-size: 11px;
+            font-weight: 600;
+            transition: all 0.2s ease;
+            border: 1px solid #ddd;
+        }
+
+        button:hover {
+            background: #efefef;
+            border-color: #999;
+        }
+
+        button.active {
+            background: #2196F3;
+            color: white;
+            border-color: #1976D2;
+        }
+
+        .legend {
+            position: absolute;
+            bottom: 10px;
+            right: 10px;
+            background: white;
+            padding: 12px;
+            border-radius: 4px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+            z-index: 400;
+            font-size: 11px;
+            max-width: 200px;
+        }
+
+        .legend-title {
+            font-weight: 600;
+            margin-bottom: 8px;
+        }
+
+        .legend-item {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            margin-bottom: 6px;
+        }
+
+        .legend-item:last-child {
+            margin-bottom: 0;
+        }
+
+        .legend-color {
+            width: 16px;
+            height: 16px;
+            border-radius: 2px;
+            border: 1px solid #ddd;
+        }
+
+        .leaflet-control-attribution {
+            background-color: rgba(255,255,255,0.8);
+            font-size: 10px;
+        }
+    </style>
+</head>
+<body>
+    <div id="app">
+        <header>
+            <h1>🌍 TESSERA Embedding Viewer</h1>
+            <div class="info">
+                <span id="viewport-info">Loading viewport information...</span>
+            </div>
+        </header>
+
+        <div class="map-wrapper">
+            <!-- RGB Panel -->
+            <div class="map-panel">
+                <div class="panel-label">Embeddings (RGB)</div>
+                <div class="map-container">
+                    <div id="map-rgb" class="map"></div>
+                    <div class="loading-overlay" id="loading-rgb">
+                        <div class="spinner"></div>
+                        <div class="loading-text">Loading RGB...</div>
+                    </div>
+
+                    <div class="controls">
+                        <div class="control-group">
+                            <div class="control-label">Actions</div>
+                            <div class="control-buttons">
+                                <button id="back-btn">← Back</button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="legend">
+                        <div class="legend-title">RGB Embeddings</div>
+                        <div class="legend-item">
+                            <div class="legend-color" style="background: linear-gradient(45deg, #ff0000, #0000ff);"></div>
+                            <span>First 3 embedding bands</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Divider -->
+            <div class="divider" id="divider"></div>
+
+            <!-- OSM Panel -->
+            <div class="map-panel">
+                <div class="panel-label">OpenStreetMap</div>
+                <div class="map-container">
+                    <div id="map-osm" class="map"></div>
+                    <div class="loading-overlay" id="loading-osm">
+                        <div class="spinner"></div>
+                        <div class="loading-text">Loading map...</div>
+                    </div>
+
+                    <div class="legend">
+                        <div class="legend-title">Base Map</div>
+                        <div class="legend-item">
+                            <span>OpenStreetMap</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Leaflet JS -->
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+
+    <script>
+        // Use the same host/port as this page is being served from
+        const API_BASE_URL = window.location.origin;
+
+        let mapRGB = null;
+        let mapOSM = null;
+        let viewportBounds = null;
+        let viewportCenter = null;
+        let viewportId = null;  // Store viewport ID for tile server
+        let isDragging = false;
+        let isSyncing = false;  // Prevent infinite recursion
+
+        // Initialize maps
+        function initMaps() {
+            // RGB map
+            mapRGB = L.map('map-rgb').setView([52.2, 0.1], 14);
+
+            // OSM map
+            mapOSM = L.map('map-osm').setView([52.2, 0.1], 14);
+            L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+                attribution: '© OpenStreetMap contributors',
+                maxZoom: 19
+            }).addTo(mapOSM);
+
+            // Synchronize maps
+            mapRGB.on('move', syncMaps);
+            mapOSM.on('move', syncMaps);
+
+            // Divider dragging
+            const divider = document.getElementById('divider');
+            const wrapper = document.querySelector('.map-wrapper');
+
+            divider.addEventListener('mousedown', () => {
+                isDragging = true;
+                wrapper.style.cursor = 'col-resize';
+            });
+
+            document.addEventListener('mouseup', () => {
+                isDragging = false;
+                wrapper.style.cursor = 'default';
+            });
+
+            document.addEventListener('mousemove', (e) => {
+                if (!isDragging) return;
+
+                const rect = wrapper.getBoundingClientRect();
+                const newX = e.clientX - rect.left;
+                const percent = (newX / rect.width) * 100;
+
+                if (percent > 20 && percent < 80) {
+                    const panels = wrapper.querySelectorAll('.map-panel');
+                    panels[0].style.flex = `0 0 ${percent}%`;
+                    panels[1].style.flex = `0 0 ${100 - percent}%`;
+
+                    setTimeout(() => {
+                        mapRGB.invalidateSize();
+                        mapOSM.invalidateSize();
+                    }, 0);
+                }
+            });
+        }
+
+        function syncMaps() {
+            if (!isDragging && !isSyncing) {
+                isSyncing = true;
+                const center = mapRGB.getCenter();
+                const zoom = mapRGB.getZoom();
+                mapOSM.setView(center, zoom);
+                setTimeout(() => { isSyncing = false; }, 10);
+            }
+        }
+
+        // Load viewport info
+        async function loadViewport() {
+            try {
+                const response = await fetch(`${API_BASE_URL}/api/viewport-info`);
+                const data = await response.json();
+
+                if (!data.exists) {
+                    showError('No viewport selected. Please go back and select a viewport first.');
+                    return;
+                }
+
+                viewportBounds = data.bounds;
+                viewportCenter = data.center;
+                viewportId = data.viewport_id;  // Store viewport ID for tile server
+
+                // Update header
+                if (viewportCenter) {
+                    document.getElementById('viewport-info').textContent =
+                        `Center: ${viewportCenter[1].toFixed(4)}°N, ${viewportCenter[0].toFixed(4)}°E`;
+                }
+
+                // Center maps on viewport
+                if (viewportCenter) {
+                    mapRGB.setView([viewportCenter[1], viewportCenter[0]], 14);
+                    mapOSM.setView([viewportCenter[1], viewportCenter[0]], 14);
+                } else if (viewportBounds) {
+                    const bounds = [
+                        [viewportBounds.minLat, viewportBounds.minLon],
+                        [viewportBounds.maxLat, viewportBounds.maxLon]
+                    ];
+                    mapRGB.fitBounds(bounds);
+                    mapOSM.fitBounds(bounds);
+                }
+
+                // Load RGB embeddings
+                await loadRGB();
+            } catch (error) {
+                showError(`Error loading viewport: ${error.message}`);
+                console.error(error);
+            }
+        }
+
+        // Load RGB GeoTIFF and convert to image overlay
+        async function loadRGB() {
+            try {
+                const rgbUrl = '/public/data/viewports/rgb_2024.tif';
+
+                // Get actual GeoTIFF bounds from backend
+                console.log('Loading RGB from:', rgbUrl);
+
+                let rgbBounds = viewportBounds;
+                try {
+                    const boundsResponse = await fetch(`${API_BASE_URL}/api/embeddings-bounds?year=2024`);
+                    if (boundsResponse.ok) {
+                        const boundsData = await boundsResponse.json();
+                        if (boundsData.exists) {
+                            rgbBounds = boundsData.bounds;
+                            logger.info(`✓ Using GeoTIFF bounds: (${rgbBounds.minLon}, ${rgbBounds.minLat}) → (${rgbBounds.maxLon}, ${rgbBounds.maxLat})`);
+                        }
+                    }
+                } catch (e) {
+                    console.warn('Could not fetch GeoTIFF bounds, using viewport bounds:', e);
+                }
+
+                if (rgbBounds) {
+                    const bounds = [
+                        [rgbBounds.minLat, rgbBounds.minLon],
+                        [rgbBounds.maxLat, rgbBounds.maxLon]
+                    ];
+
+                    try {
+                        // Use RGB pyramid tiles from tile server
+                        if (viewportId) {
+                            const tileUrl = `${API_BASE_URL}/api/tiles/rgb/${viewportId}/2024/{z}/{x}/{y}.png`;
+                            console.log('Adding tile layer with URL:', tileUrl);
+
+                            const tileLayer = L.tileLayer(tileUrl, {
+                                attribution: 'RGB Pyramids',
+                                opacity: 1.0,
+                                maxZoom: 18,
+                                minZoom: 6,
+                                tileSize: 256,
+                                errorTile: false,
+                                crossOrigin: true
+                            });
+
+                            tileLayer.on('tileerror', function(error) {
+                                console.error('Tile error:', error.tile.src);
+                            });
+
+                            tileLayer.on('load', function() {
+                                console.log('✓ Tile layer loaded');
+                            });
+
+                            tileLayer.addTo(mapRGB);
+                            console.log('✓ RGB tile layer added to map for viewport:', viewportId);
+                        } else {
+                            console.error('Viewport ID not found - cannot load RGB pyramids');
+                            showError('Viewport ID not found. Cannot load RGB pyramids.');
+                        }
+
+                        console.log('✓ RGB loading complete');
+                    } catch (tiffError) {
+                        console.warn('Could not load GeoTIFF tiles:', tiffError);
+                        // Fall back to showing bounds rectangle
+                        L.rectangle(bounds, {
+                            color: '#FF6B6B',
+                            weight: 2,
+                            opacity: 0.8,
+                            fillOpacity: 0.2,
+                            fillColor: '#FF6B6B'
+                        }).addTo(mapRGB);
+                    }
+
+                    // Add GEOTIFF bounds (actual downloaded data)
+                    L.rectangle(bounds, {
+                        color: '#999',
+                        weight: 2,
+                        opacity: 0.5,
+                        fillOpacity: 0,
+                        dashArray: '3, 3'
+                    }).bindPopup('GeoTIFF bounds (actual downloaded data)').addTo(mapRGB);
+
+                    // Add VIEWPORT bounds (requested area) - in yellow
+                    if (viewportBounds) {
+                        const viewportBoundsLeaflet = [
+                            [viewportBounds.minLat, viewportBounds.minLon],
+                            [viewportBounds.maxLat, viewportBounds.maxLon]
+                        ];
+                        L.rectangle(viewportBoundsLeaflet, {
+                            color: '#FFEB3B',
+                            weight: 3,
+                            opacity: 1,
+                            fillOpacity: 0.05,
+                            fillColor: '#FFEB3B',
+                            dashArray: '5, 5'
+                        }).bindPopup('Viewport bounds (requested area)').addTo(mapRGB);
+                    }
+
+                    // Add center marker
+                    if (viewportCenter) {
+                        L.circleMarker([viewportCenter[1], viewportCenter[0]], {
+                            radius: 6,
+                            fillColor: '#FFEB3B',
+                            color: '#FFF',
+                            weight: 2,
+                            opacity: 1,
+                            fillOpacity: 0.9
+                        }).bindPopup('Viewport center').addTo(mapRGB);
+                    }
+
+                    // Show info message about bounds difference
+                    const boundsMatch = rgbBounds.minLon === viewportBounds.minLon &&
+                                       rgbBounds.maxLon === viewportBounds.maxLon &&
+                                       rgbBounds.minLat === viewportBounds.minLat &&
+                                       rgbBounds.maxLat === viewportBounds.maxLat;
+
+                    if (!boundsMatch) {
+                        const msg = `Note: GeoTIFF bounds differ from viewport. The yellow square shows your requested viewport (1km × 1km). Gray dashed line shows actual downloaded data (tile-aligned). This is normal - tiles are discrete units.`;
+                        console.info(msg);
+                    }
+                }
+
+                // Add boundary to OSM for reference
+                if (viewportBounds) {
+                    const bounds = [
+                        [viewportBounds.minLat, viewportBounds.minLon],
+                        [viewportBounds.maxLat, viewportBounds.maxLon]
+                    ];
+
+                    L.rectangle(bounds, {
+                        color: '#2196F3',
+                        weight: 2,
+                        opacity: 0.8,
+                        fillOpacity: 0.1,
+                        fillColor: '#2196F3'
+                    }).addTo(mapOSM);
+
+                    if (viewportCenter) {
+                        L.circleMarker([viewportCenter[1], viewportCenter[0]], {
+                            radius: 4,
+                            fillColor: '#2196F3',
+                            color: '#FFF',
+                            weight: 2,
+                            opacity: 1,
+                            fillOpacity: 0.9
+                        }).addTo(mapOSM);
+                    }
+                }
+
+                hideLoading('loading-rgb');
+                hideLoading('loading-osm');
+            } catch (error) {
+                showError(`Error loading RGB: ${error.message}`);
+                console.error(error);
+                hideLoading('loading-rgb');
+                hideLoading('loading-osm');
+            }
+        }
+
+        function showError(message) {
+            const errorDiv = document.createElement('div');
+            errorDiv.className = 'error-message';
+            errorDiv.textContent = message;
+            document.body.appendChild(errorDiv);
+            setTimeout(() => errorDiv.remove(), 5000);
+        }
+
+        function hideLoading(elementId) {
+            document.getElementById(elementId).classList.add('hidden');
+        }
+
+        // Event listeners
+        document.getElementById('back-btn').addEventListener('click', () => {
+            window.location.href = '/';
+        });
+
+        // Initialize
+        document.addEventListener('DOMContentLoaded', () => {
+            initMaps();
+            loadViewport();
+        });
+    </script>
+</body>
+</html>

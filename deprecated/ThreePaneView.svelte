@@ -1,4 +1,19 @@
 <script lang="ts">
+	/**
+	 * ⚠️ DEPRECATED - Do not use this component
+	 *
+	 * This component is deprecated and should not be used.
+	 * Use /bangalore_viewer_3panel_blore.html (3-panel viewer from blore project) instead.
+	 *
+	 * The blore 3-panel viewer is:
+	 * - More stable and tested
+	 * - Better synchronized
+	 * - Simpler and cleaner code
+	 * - Fully integrated with viewport.txt
+	 * - No zoom issues
+	 *
+	 * All ViewportSelector buttons now redirect to bangalore_viewer_3panel_blore.html
+	 */
 	import { onMount } from 'svelte';
 	import L from 'leaflet';
 
@@ -86,8 +101,8 @@
 			touchZoom: false  // Disable touch zoom to prevent accidental zoom
 		});
 
-		L.tileLayer(`/api/tiles/embeddings/${viewportId}/${currentEmbeddingYear}/{z}/{x}/{y}.png`, {
-			attribution: 'Tessera Embeddings',
+		L.tileLayer(`/api/tiles/rgb/${viewportId}/${currentEmbeddingYear}/{z}/{x}/{y}.png`, {
+			attribution: 'RGB Pyramids',
 			opacity: 1.0,
 			maxZoom: 17,
 			minZoom: 6,
@@ -298,8 +313,8 @@
 			}
 		});
 
-		L.tileLayer(`/api/tiles/embeddings/${viewportId}/${currentEmbeddingYear}/{z}/{x}/{y}.png`, {
-			attribution: 'Tessera Embeddings',
+		L.tileLayer(`/api/tiles/rgb/${viewportId}/${currentEmbeddingYear}/{z}/{x}/{y}.png`, {
+			attribution: 'RGB Pyramids',
 			opacity: 1.0,
 			maxZoom: 17,
 			minZoom: 6,

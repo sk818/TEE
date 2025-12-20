@@ -1,235 +1,187 @@
 # TESSERA Embedding Explorer (TEE)
 
-An interactive web-based viewer for exploring TESSERA embeddings, Sentinel-2 composites, and OpenStreetMap data over a 20km × 20km viewport with real-time cosine similarity clustering and multi-temporal analysis.
+A streamlined web-based viewer for exploring TESSERA embeddings via multi-resolution image pyramids and tile-based visualization.
 
-## Features
+## Workflow
 
-- **Interactive Viewport Selection**: Select any 20km × 20km region on a world map
-- **Real-time Similarity Computing**: GPU-accelerated cosine similarity using WebGPU
-- **Multi-temporal Analysis**: Explore embeddings from 2017-2024
-- **Visual Similarity Search**: Click on any pixel to find similar locations
-- **Dynamic Threshold Control**: Adjust sensitivity in real-time
-- **Location Search**: Find locations by name using Nominatim
-- **Preset Locations**: Quick access to study areas
+The TEE project implements a simple, focused workflow:
 
-## Technology Stack
+1. **Select Viewport** → Choose a geographic area (1km × 1km or larger)
+2. **Download Embeddings** → Fetch TESSERA embeddings for the selected area
+3. **Create Pyramids** → Generate multi-resolution RGB image pyramids
+4. **Serve Tiles** → Serve pyramid levels via tile server
+5. **View** → Visualize with synchronized 2-panel viewer (RGB + OSM)
 
-- **Frontend**: Svelte 4
-- **GPU Compute**: WebGPU with WGSL compute shaders
-- **Visualization**: Deck.gl with WebGL2
-- **Mapping**: MapLibre GL JS
-- **Build Tool**: Vite
-- **Language**: TypeScript
+## Quick Start
 
-## Project Structure
+### Prerequisites
 
-```
-tessera-explorer/
-├── preprocessing/           # Python data preprocessing scripts
-│   ├── download_data.py
-│   ├── prepare_embeddings.py
-│   ├── prepare_sentinel2.py
-│   ├── compute_pca.py
-│   └── requirements.txt
-├── public/
-│   └── data/               # Data files served statically
-│       ├── embeddings/
-│       ├── sentinel2/
-│       ├── pca/
-│       └── osm/
-├── src/
-│   ├── lib/
-│   │   ├── gpu/            # GPU compute context and shaders
-│   │   │   ├── WebGPUContext.ts
-│   │   │   ├── SimilarityCompute.ts
-│   │   │   └── shaders/
-│   │   │       ├── similarity.wgsl
-│   │   │       └── threshold.wgsl
-│   │   ├── data/           # Data loaders
-│   │   │   ├── EmbeddingLoader.ts
-│   │   │   ├── SentinelLoader.ts
-│   │   │   └── DataTypes.ts
-│   │   ├── layers/         # Deck.gl visualization layers
-│   │   └── utils/          # Utility functions
-│   │       ├── coordinates.ts
-│   │       └── colormaps.ts
-│   ├── components/         # Svelte components
-│   │   ├── ViewportSelector.svelte
-│   │   ├── ExplorerView.svelte
-│   │   ├── ThresholdControl.svelte
-│   │   ├── YearSelector.svelte
-│   │   └── StatsPanel.svelte
-│   ├── App.svelte
-│   └── main.ts
-├── index.html
-├── package.json
-├── tsconfig.json
-├── vite.config.ts
-└── README.md
-```
+- Python 3.8+
+- Node.js 16+
+- Modern browser (Chrome, Edge, Safari)
 
-## Installation
+### Installation
 
-1. Clone the repository:
 ```bash
-git clone <repo-url>
-cd tessera-explorer
-```
+# Install Python dependencies
+pip install -r backend/requirements.txt
 
-2. Install dependencies:
-```bash
+# Install Node dependencies
 npm install
 ```
 
-3. Prepare data (Python preprocessing):
+### Running the System
+
+**Terminal 1 - Start Backend API:**
 ```bash
-cd preprocessing
-pip install -r requirements.txt
-python prepare_embeddings.py --input <path> --output ../public/data/embeddings --bounds <min_lon> <min_lat> <max_lon> <max_lat>
-python compute_pca.py --input ../public/data/embeddings --output ../public/data/pca/pca.bin --bounds <min_lon> <min_lat> <max_lon> <max_lat>
+cd backend
+python main.py
+# Runs on http://localhost:8000
 ```
 
-## Development
+**Terminal 2 - Start Tile Server:**
+```bash
+cd backend
+python tile_server.py
+# Runs on http://localhost:8001
+```
 
-Start the development server:
+**Terminal 3 - Start Frontend:**
 ```bash
 npm run dev
+# Runs on http://localhost:5173
 ```
 
-The application will be available at `http://localhost:3000`
-
-## Building for Production
-
-```bash
-npm run build
-npm run preview
-```
-
-## Browser Requirements
-
-- **Chrome/Edge**: 113+ (WebGPU support)
-- **Firefox**: Experimental (enable `dom.webgpu.enabled`)
-- **Safari**: 17.4+ (WebGPU in Technology Preview)
-
-## Performance Targets
-
-- Initial load: < 3 seconds
-- Click to similarity: < 10ms
-- Threshold adjustment: < 1ms
-- Year switching: < 50ms
-- Render FPS: 60 FPS
-- Memory usage: < 6GB
-
-## Data Formats
-
-### TESSERA Embeddings (Binary Format)
-- **Magic**: "TESS" (4 bytes)
-- **Header**: 64 bytes (version, year, dimensions, bounds)
-- **Data**: float16, row-major order
-- **Dimensions**: 128-dimensional embeddings (uint8 normalized to float16)
-
-### Sentinel-2 Composites (Zarr Format)
-- **Shape**: (years, quarters, height, width, bands)
-- **Compression**: Blosc (zstd, level 5)
-- **Value range**: 0-10000 (reflectance × 10000)
-
-### PCA Components (Binary Format)
-- **Magic**: "PCA3" (4 bytes)
-- **Components**: 3 principal components for RGB
-- **Data**: float32, normalized to 0-1
-
-## Key Components
-
-### ViewportSelector
-Interactive world map interface for selecting a 20km × 20km study area.
-
-**Features**:
-- Click to place viewport center
-- Drag to reposition (planned)
-- Location search via Nominatim
-- Preset study areas
-- Data availability overlay
-
-### ExplorerView
-Main visualization interface showing embeddings and similarity results.
-
-**Features**:
-- Year selector (2017-2024)
-- Threshold slider for similarity control
-- Real-time statistics panel
-- GPU-accelerated similarity computation
-
-### GPU Compute Pipeline
-Two-stage computation using WebGPU:
-
-1. **Similarity Compute** (similarity.wgsl): Cosine similarity between query pixel and all pixels
-2. **Threshold Filter** (threshold.wgsl): Apply threshold and colormap visualization
+Then open http://localhost:5173 in your browser.
 
 ## Usage
 
 1. **Select Viewport**:
-   - Click on the map to place viewport center
-   - Use search to find specific locations
-   - Select from preset study areas
+   - Click the map to place viewport center
+   - System generates UUID for viewport
 
-2. **Explore Embeddings**:
-   - Select a year (2017-2024)
-   - Click on any pixel to compute similarity
-   - Adjust threshold slider to explore different similarity ranges
+2. **Download Embeddings**:
+   - Click "Download Embeddings" button
+   - System downloads TESSERA embeddings
+   - Automatically extracts RGB from embeddings
 
-3. **Analyze Results**:
-   - View statistics panel showing number of similar pixels
-   - Observe similarity distribution visualization
-   - Switch years to compare temporal changes
+3. **Automatic Pyramid Creation**:
+   - Pyramids created automatically after RGB extraction
+   - 5 levels: 1m → 3.16m → 10m → 31.6m → 100m/pixel
+   - Cached by default (skips recreation if unchanged)
 
-## Future Enhancements
+4. **View in 2-Panel Viewer**:
+   - Left panel: RGB image pyramids (from tile server)
+   - Right panel: OpenStreetMap basemap
+   - Synchronized zoom/pan across both panels
 
-- Export functionality (similarity masks, ROIs)
-- Multi-pixel selection and comparison
-- Temporal animation through years
-- Advanced statistical tools
-- Web Worker-based data streaming
-- Mobile-optimized interface
-- Additional colormaps
-- Performance profiling tools
+## Project Structure
+
+```
+tee/
+├── backend/
+│   ├── main.py                      # FastAPI backend
+│   ├── tile_server.py               # Tile serving (port 8001)
+│   ├── processing/
+│   │   ├── download_embeddings.py   # TESSERA downloader
+│   │   ├── extract_rgb.py           # RGB extraction
+│   │   └── create_rgb_pyramids.py   # Pyramid builder
+│   └── requirements.txt
+├── src/
+│   ├── components/
+│   │   └── ViewportSelector.svelte  # Viewport selection UI
+│   └── App.svelte                   # Main app
+├── public/
+│   ├── viewer.html                  # 2-panel viewer
+│   └── data/                        # Viewport data
+│       └── viewports/
+│           └── {viewport_id}/
+│               ├── embeddings_2024.tif
+│               ├── rgb_2024.tif
+│               └── pyramids/
+│                   └── 2024/
+│                       ├── level_0.tif (1m/pixel)
+│                       ├── level_1.tif (3.16m/pixel)
+│                       ├── level_2.tif (10m/pixel)
+│                       ├── level_3.tif (31.6m/pixel)
+│                       └── level_4.tif (100m/pixel)
+└── deprecated/                      # Old files and unused code
+```
+
+## Pyramid Structure
+
+Each pyramid has 5 levels with √10 (≈ 3.162x) zoom factor:
+
+| Level | Resolution | Use Case |
+|-------|-------------|----------|
+| 0 | 1m/pixel | Highest zoom (fine detail) |
+| 1 | 3.16m/pixel | Intermediate zoom |
+| 2 | 10m/pixel | Medium zoom (typical view) |
+| 3 | 31.6m/pixel | Zoomed out |
+| 4 | 100m/pixel | Lowest zoom (overview) |
+
+**Display Characteristics:**
+- At highest zoom: 400×400 screen pixels = 40×40 embeddings = 400m×400m area
+- 1 screen pixel = 1m ground coverage at max zoom
+- Each zoom level transitions smoothly with √10 factor
+
+## API Endpoints
+
+### Backend (port 8000)
+
+- `POST /api/save-viewport` - Save viewport bounds and create directory
+- `POST /api/download-embeddings` - Start embeddings download task
+- `GET /api/tasks/{task_id}/status` - Check download progress
+- `GET /api/viewport-info` - Get current viewport info
+
+### Tile Server (port 8001)
+
+- `GET /api/tiles/rgb/{viewport_id}/{year}/{z}/{x}/{y}.png` - RGB pyramid tiles
+- `GET /api/tiles/embeddings/{viewport_id}/{year}/{z}/{x}/{y}.png` - Embedding pyramid tiles
+- `GET /api/tiles/bounds/{viewport_id}/{year}` - Get viewport bounds
+
+## Performance
+
+- Viewport selection: < 100ms
+- Embedding download: 30-60 seconds (depending on size)
+- Pyramid creation: 5-10 seconds (cached on repeat)
+- Tile serving: < 100ms per tile
+- Map pan/zoom: 60 FPS
+
+## Caching
+
+- **Embeddings**: Cached by viewport bounds (skips re-download if unchanged)
+- **RGB**: Cached alongside embeddings
+- **Pyramids**: Cached by checking source file modification time
+  - If embeddings unchanged, pyramid generation skipped
+  - Metadata saved in `pyramid_metadata.json`
 
 ## Troubleshooting
 
-### WebGPU Not Available
-- Check browser version (Chrome 113+, Edge 113+, Safari 17.4+)
-- Enable experimental features in browser flags
-- Update GPU drivers
-- Check if GPU is supported by your device
+### No tiles showing in viewer
+- Check tile server is running (port 8001)
+- Verify viewport has been created and embeddings downloaded
+- Check browser console for network errors
 
-### Memory Issues
-- Reduce viewport size to 15km × 15km
-- Load fewer temporal snapshots
+### Slow tile loading
+- Ensure tile server has access to pyramid files
+- Check network bandwidth
+- Monitor server CPU/memory usage
+
+### Out of memory
+- Reduce viewport size
+- Close other browser tabs
 - Clear browser cache
-- Use private browsing mode
 
-### Slow Performance
-- Check GPU utilization with browser DevTools
-- Verify WebGPU shader compilation succeeds
-- Profile JavaScript execution
-- Ensure network is not the bottleneck
+## Files
 
-## Documentation
-
-See the full technical specification for detailed implementation details, data formats, and architecture decisions.
+See `deprecated/README.md` for information about old code and experimental features.
 
 ## License
 
 MIT
 
-## Support
-
-For questions and issues:
-- Check the troubleshooting guide
-- Review browser console for errors
-- Verify data files are in correct format
-- Ensure WebGPU is properly initialized
-
 ---
 
-**Version**: 1.0.0
+**Version**: 2.0.0 (Streamlined)
 **Last Updated**: December 2024
