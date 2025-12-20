@@ -48,7 +48,28 @@ app.add_middleware(
 
 # Configuration
 DATA_DIR = Path(__file__).parent.parent / "public" / "data" / "viewports"
-TILE_SIZE = 256  # Standard tile size (4 tiles = 512x512 display area)
+DEFAULT_TILE_SIZE = 256  # Default tile size for high zoom levels
+
+
+def get_tile_size_for_zoom(z: int) -> int:
+    """
+    Determine tile size based on zoom level for better quality at zoomed-out views.
+
+    Higher zoom levels (zoomed in) use smaller tiles.
+    Lower zoom levels (zoomed out) use larger tiles for more detail.
+
+    Args:
+        z: Leaflet zoom level (0-28)
+
+    Returns:
+        Tile size in pixels
+    """
+    if z >= 14:
+        return 256    # High zoom: standard size, more tiles
+    elif z >= 12:
+        return 512    # Medium zoom: 2x larger, fewer tiles, more detail
+    else:
+        return 1024   # Low zoom: 4x larger, crisp when zoomed out
 
 # RGB pyramids are stored per-viewport at: viewports/{viewport_id}/pyramids/{year}/level_N.tif
 
@@ -108,7 +129,7 @@ def tile_to_bbox(x: int, y: int, z: int) -> tuple:
 def get_rgb_tile(
     tif_path: Path,
     bbox: tuple,
-    tile_size: int = TILE_SIZE,
+    tile_size: int = DEFAULT_TILE_SIZE,
     band_indices: Optional[list] = None
 ) -> Image.Image:
     """
@@ -266,8 +287,11 @@ async def get_embeddings_tile(viewport_id: str, year: int, z: int, x: int, y: in
 
 @app.get("/api/tiles/rgb/{viewport_id}/{year}/{z}/{x}/{y}.png")
 async def get_rgb_pyramid_tile(viewport_id: str, year: int, z: int, x: int, y: int):
-    """Serve RGB pyramid tile from viewport-specific pyramids."""
+    """Serve RGB pyramid tile from viewport-specific pyramids with dynamic tile sizes."""
     try:
+        # Determine tile size based on zoom level for better quality
+        tile_size = get_tile_size_for_zoom(z)
+
         # Map zoom level to pyramid level
         pyramid_level = zoom_to_rgb_pyramid_level(z)
 
@@ -276,7 +300,7 @@ async def get_rgb_pyramid_tile(viewport_id: str, year: int, z: int, x: int, y: i
 
         if not tif_path.exists():
             # Return transparent tile if file doesn't exist
-            img = Image.new('RGBA', (TILE_SIZE, TILE_SIZE), (0, 0, 0, 0))
+            img = Image.new('RGBA', (tile_size, tile_size), (0, 0, 0, 0))
             buf = io.BytesIO()
             img.save(buf, format='PNG')
             buf.seek(0)
@@ -287,22 +311,22 @@ async def get_rgb_pyramid_tile(viewport_id: str, year: int, z: int, x: int, y: i
         bbox = tile_to_bbox(x, y, z)
 
         try:
-            # Read tile from GeoTIFF
-            img = get_rgb_tile(tif_path, bbox, TILE_SIZE)
+            # Read tile from GeoTIFF with dynamic size
+            img = get_rgb_tile(tif_path, bbox, tile_size)
 
             # Save to buffer
             buf = io.BytesIO()
             img.save(buf, format='PNG')
             buf.seek(0)
 
-            logger.debug(f"Served RGB tile {viewport_id}/level_{pyramid_level}/{z}/{x}/{y}")
+            logger.debug(f"Served RGB tile {viewport_id}/level_{pyramid_level}/{z}/{x}/{y} ({tile_size}×{tile_size})")
 
             return Response(content=buf.getvalue(), media_type="image/png")
 
         except Exception as e:
             logger.warning(f"Error reading RGB tile {viewport_id}/level_{pyramid_level}/{z}/{x}/{y}: {e}")
             # Return transparent tile on error
-            img = Image.new('RGBA', (TILE_SIZE, TILE_SIZE), (0, 0, 0, 0))
+            img = Image.new('RGBA', (tile_size, tile_size), (0, 0, 0, 0))
             buf = io.BytesIO()
             img.save(buf, format='PNG')
             buf.seek(0)

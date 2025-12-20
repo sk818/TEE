@@ -472,43 +472,80 @@
                     ];
 
                     try {
-                        // Use RGB pyramid tiles from tile server
+                        // Use RGB pyramid tiles from tile server with variable tile sizes
                         if (viewportId) {
                             const tileUrl = `${TILE_SERVER_URL}/api/tiles/rgb/${viewportId}/2024/{z}/{x}/{y}.png`;
-                            console.log('Adding tile layer with URL:', tileUrl);
+                            console.log('Setting up variable tile size layers for URL:', tileUrl);
 
-                            const tileLayer = L.tileLayer(tileUrl, {
-                                attribution: 'RGB Pyramids',
-                                opacity: 1.0,
-                                maxZoom: 18,
-                                minZoom: 6,
-                                tileSize: 256,
-                                crossOrigin: true
+                            // Create tile layers with different tile sizes for different zoom ranges
+                            // This provides better quality at all zoom levels
+                            const tileLayers = [
+                                {
+                                    config: {
+                                        attribution: 'RGB Pyramids (256px)',
+                                        opacity: 1.0,
+                                        maxZoom: 18,
+                                        minZoom: 14,
+                                        tileSize: 256,
+                                        crossOrigin: true
+                                    },
+                                    zoomRange: '14-18'
+                                },
+                                {
+                                    config: {
+                                        attribution: 'RGB Pyramids (512px)',
+                                        opacity: 1.0,
+                                        maxZoom: 13,
+                                        minZoom: 12,
+                                        tileSize: 512,
+                                        crossOrigin: true
+                                    },
+                                    zoomRange: '12-13'
+                                },
+                                {
+                                    config: {
+                                        attribution: 'RGB Pyramids (1024px)',
+                                        opacity: 1.0,
+                                        maxZoom: 11,
+                                        minZoom: 6,
+                                        tileSize: 1024,
+                                        crossOrigin: true
+                                    },
+                                    zoomRange: '6-11'
+                                }
+                            ];
+
+                            let totalTileCount = 0;
+                            let totalErrorCount = 0;
+
+                            // Add all layers to map
+                            tileLayers.forEach(layer => {
+                                const tileLayer = L.tileLayer(tileUrl, layer.config);
+
+                                // Track tile events
+                                tileLayer.on('tileload', function(event) {
+                                    totalTileCount++;
+                                    console.log(`Tile loaded (${layer.zoomRange}): ${event.tile.src}`);
+                                });
+
+                                tileLayer.on('tileerror', function(error) {
+                                    totalErrorCount++;
+                                    console.error(`Tile error (${layer.zoomRange}): ${error.tile.src}`);
+                                });
+
+                                tileLayer.on('load', function() {
+                                    console.log(`✓ Tile layer (${layer.zoomRange}) fully loaded`);
+                                });
+
+                                tileLayer.addTo(mapRGB);
+                                console.log(`✓ Added tile layer for zoom ${layer.zoomRange} (${layer.config.tileSize}×${layer.config.tileSize} tiles)`);
                             });
 
-                            // Track tile requests and responses
-                            let tileCount = 0;
-                            let errorCount = 0;
-
-                            tileLayer.on('tileload', function(event) {
-                                tileCount++;
-                                console.log(`Tile loaded: ${event.tile.src} (${tileCount} total)`);
-                            });
-
-                            tileLayer.on('tileerror', function(error) {
-                                errorCount++;
-                                console.error(`Tile error (${errorCount}): ${error.tile.src}`);
-                            });
-
-                            tileLayer.on('load', function() {
-                                console.log(`✓ Tile layer fully loaded (${tileCount} tiles)`);
-                            });
-
-                            tileLayer.addTo(mapRGB);
-                            console.log('✓ RGB tile layer added to map');
-                            console.log(`  URL: ${tileUrl}`);
-                            console.log(`  Viewport: ${viewportId}`);
-                            console.log(`  Current map view: zoom=${mapRGB.getZoom()}, center=${mapRGB.getCenter()}`);
+                            console.log('✓ RGB tile layers configured with variable sizes');
+                            console.log(`  Zoom 14+: 256px tiles`);
+                            console.log(`  Zoom 12-13: 512px tiles`);
+                            console.log(`  Zoom <12: 1024px tiles`);
+                            console.log(`  Current zoom: ${mapRGB.getZoom()}`);
                         } else {
                             console.error('Viewport ID not found - cannot load RGB pyramids');
                             showError('Viewport ID not found. Cannot load RGB pyramids.');
