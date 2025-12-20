@@ -427,14 +427,6 @@
                     console.log(`🎯 Setting map view to center: [${viewportCenter[1]}, ${viewportCenter[0]}] (lat, lon)`);
                     mapRGB.setView([viewportCenter[1], viewportCenter[0]], 14);
                     mapOSM.setView([viewportCenter[1], viewportCenter[0]], 14);
-
-                    // Log map state after centering
-                    setTimeout(() => {
-                        const rgbCenter = mapRGB.getCenter();
-                        const osmCenter = mapOSM.getCenter();
-                        console.log(`✓ RGB map centered at: [${rgbCenter.lat}, ${rgbCenter.lng}], zoom: ${mapRGB.getZoom()}`);
-                        console.log(`✓ OSM map centered at: [${osmCenter.lat}, ${osmCenter.lng}], zoom: ${mapOSM.getZoom()}`);
-                    }, 100);
                 } else if (viewportBounds) {
                     console.log(`🎯 Fitting bounds: (${viewportBounds.minLat}, ${viewportBounds.minLon}) to (${viewportBounds.maxLat}, ${viewportBounds.maxLon})`);
                     const bounds = [
@@ -445,7 +437,20 @@
                     mapOSM.fitBounds(bounds);
                 }
 
-                // Load RGB embeddings
+                // Wait for map to finish moving/centering before loading tiles
+                // This ensures tiles are loaded from the correct location
+                await new Promise(resolve => {
+                    const checkCentered = () => {
+                        const rgbCenter = mapRGB.getCenter();
+                        const osmCenter = mapOSM.getCenter();
+                        console.log(`✓ RGB map centered at: [${rgbCenter.lat.toFixed(6)}, ${rgbCenter.lng.toFixed(6)}], zoom: ${mapRGB.getZoom()}`);
+                        console.log(`✓ OSM map centered at: [${osmCenter.lat.toFixed(6)}, ${osmCenter.lng.toFixed(6)}], zoom: ${mapOSM.getZoom()}`);
+                        resolve();
+                    };
+                    setTimeout(checkCentered, 200);  // Give Leaflet time to finish centering
+                });
+
+                // NOW load RGB embeddings after map is properly centered
                 await loadRGB();
             } catch (error) {
                 showError(`Error loading viewport: ${error.message}`);
