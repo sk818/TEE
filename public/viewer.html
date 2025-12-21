@@ -563,7 +563,9 @@
 
                     // Add center marker
                     if (viewportCenter) {
-                        L.circleMarker([viewportCenter[1], viewportCenter[0]], {
+                        const rgbMarkerCoords = [viewportCenter[1], viewportCenter[0]];
+                        console.log(`📍 RGB marker placed at: [${rgbMarkerCoords[0]}, ${rgbMarkerCoords[1]}] (lat, lng)`);
+                        L.circleMarker(rgbMarkerCoords, {
                             radius: 6,
                             fillColor: '#FFEB3B',
                             color: '#FFF',
@@ -601,7 +603,9 @@
                     }).addTo(mapOSM);
 
                     if (viewportCenter) {
-                        L.circleMarker([viewportCenter[1], viewportCenter[0]], {
+                        const osmMarkerCoords = [viewportCenter[1], viewportCenter[0]];
+                        console.log(`📍 OSM marker placed at: [${osmMarkerCoords[0]}, ${osmMarkerCoords[1]}] (lat, lng)`);
+                        L.circleMarker(osmMarkerCoords, {
                             radius: 4,
                             fillColor: '#2196F3',
                             color: '#FFF',
