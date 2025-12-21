@@ -324,7 +324,6 @@
         let viewportBounds = null;
         let viewportCenter = null;
         let viewportId = null;
-        let isSyncing = false;  // Prevent infinite sync loops
 
         // Create all maps
         function createMaps() {
@@ -351,49 +350,9 @@
                 maxZoom: 19
             }).addTo(mapOSM);
 
-            // Synchronize: OSM is reference, embedding syncs to OSM
-            syncMaps();
-
             // Back button
             document.getElementById('back-btn').addEventListener('click', () => {
                 window.location.href = '/';
-            });
-        }
-
-        // Synchronize maps - keep geographic position in sync
-        // Note: zoom levels differ due to tileSize/zoomOffset on embedding layer
-        // Embedding at display zoom Z requests z=Z-3
-        // To show same geographic area, OSM needs z=Z-3, so display zoom is (Z-3)
-        // Therefore: OSM_zoom = Embedding_zoom - 3
-        function syncMaps() {
-            mapEmbedding.on('moveend', function() {
-                if (isSyncing) return;  // Prevent infinite recursion
-                isSyncing = true;
-
-                const center = mapEmbedding.getCenter();
-                const zoom = mapEmbedding.getZoom();
-
-                // OSM needs to be 3 zoom levels lower to show same geographic area
-                const osmZoom = Math.max(mapOSM.getMinZoom(), zoom - 3);
-
-                mapOSM.setView(center, osmZoom, {animate: false});
-
-                setTimeout(() => { isSyncing = false; }, 10);
-            });
-
-            mapOSM.on('moveend', function() {
-                if (isSyncing) return;  // Prevent infinite recursion
-                isSyncing = true;
-
-                const center = mapOSM.getCenter();
-                const zoom = mapOSM.getZoom();
-
-                // Embedding needs to be 3 zoom levels higher
-                const embeddingZoom = Math.min(mapEmbedding.getMaxZoom(), zoom + 3);
-
-                mapEmbedding.setView(center, embeddingZoom, {animate: false});
-
-                setTimeout(() => { isSyncing = false; }, 10);
             });
         }
 
@@ -418,13 +377,11 @@
                         `Center: ${viewportCenter[1].toFixed(4)}°N, ${viewportCenter[0].toFixed(4)}°E | Size: 5km × 5km`;
                 }
 
-                // Center maps on viewport
-                // Note: OSM needs 3 zoom levels lower due to embedding's tileSize/zoomOffset
+                // Center maps on viewport at their respective initial zoom levels
                 if (viewportCenter) {
-                    const osmInitialZoom = Math.max(mapOSM.getMinZoom(), INITIAL_ZOOM - 3);
-                    console.log(`🎯 Setting embedding to zoom ${INITIAL_ZOOM}, OSM to zoom ${osmInitialZoom}`);
+                    console.log(`🎯 Setting maps to center: [${viewportCenter[1]}, ${viewportCenter[0]}]`);
                     mapEmbedding.setView([viewportCenter[1], viewportCenter[0]], INITIAL_ZOOM);
-                    mapOSM.setView([viewportCenter[1], viewportCenter[0]], osmInitialZoom);
+                    mapOSM.setView([viewportCenter[1], viewportCenter[0]], INITIAL_ZOOM);
                 }
 
                 // Wait for maps to settle
