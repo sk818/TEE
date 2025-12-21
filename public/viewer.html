@@ -347,7 +347,9 @@
 
             L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
                 attribution: '© OpenStreetMap contributors',
-                maxZoom: 19
+                maxZoom: 19,
+                tileSize: TILE_SIZE,
+                zoomOffset: ZOOM_OFFSET
             }).addTo(mapOSM);
 
             // Synchronize: OSM is reference, embedding syncs to OSM
