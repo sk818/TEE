@@ -537,6 +537,7 @@
                     }
 
                     // Add GEOTIFF bounds (actual downloaded data)
+                    console.log(`📦 RGB GeoTIFF bounds: (${rgbBounds.minLon.toFixed(6)}, ${rgbBounds.minLat.toFixed(6)}) to (${rgbBounds.maxLon.toFixed(6)}, ${rgbBounds.maxLat.toFixed(6)})`);
                     L.rectangle(bounds, {
                         color: '#999',
                         weight: 2,
@@ -547,6 +548,7 @@
 
                     // Add VIEWPORT bounds (requested area) - in yellow
                     if (viewportBounds) {
+                        console.log(`📦 Viewport bounds: (${viewportBounds.minLon.toFixed(6)}, ${viewportBounds.minLat.toFixed(6)}) to (${viewportBounds.maxLon.toFixed(6)}, ${viewportBounds.maxLat.toFixed(6)})`);
                         const viewportBoundsLeaflet = [
                             [viewportBounds.minLat, viewportBounds.minLon],
                             [viewportBounds.maxLat, viewportBounds.maxLon]
@@ -589,6 +591,7 @@
 
                 // Add boundary to OSM for reference
                 if (viewportBounds) {
+                    console.log(`📦 OSM viewport bounds: (${viewportBounds.minLon.toFixed(6)}, ${viewportBounds.minLat.toFixed(6)}) to (${viewportBounds.maxLon.toFixed(6)}, ${viewportBounds.maxLat.toFixed(6)})`);
                     const bounds = [
                         [viewportBounds.minLat, viewportBounds.minLon],
                         [viewportBounds.maxLat, viewportBounds.maxLon]
