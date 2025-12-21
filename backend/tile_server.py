@@ -48,7 +48,7 @@ app.add_middleware(
 
 # Configuration
 DATA_DIR = Path(__file__).parent.parent / "public" / "data" / "viewports"
-DEFAULT_TILE_SIZE = 1024  # Consistent tile size for all zoom levels
+DEFAULT_TILE_SIZE = 256  # Standard Leaflet tile size
 
 
 

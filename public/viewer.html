@@ -492,14 +492,13 @@
                             const tileUrl = `${TILE_SERVER_URL}/api/tiles/rgb/${viewportId}/2024/{z}/{x}/{y}.png`;
                             console.log('Setting up RGB tile layer with 1024px tiles:', tileUrl);
 
-                            // Create single tile layer with large tiles for better visual quality
-                            // Pyramid level transitions are adjusted for smoother quality across zoom levels
+                            // Create tile layer with standard 256×256px tiles
+                            // Using standard tile size ensures correct Leaflet tile coordinate calculation
                             const tileLayer = L.tileLayer(tileUrl, {
-                                attribution: 'RGB Pyramids (1024×1024px)',
+                                attribution: 'RGB Pyramids',
                                 opacity: 1.0,
                                 maxZoom: 18,
                                 minZoom: 6,
-                                tileSize: 1024,
                                 crossOrigin: true
                             });
 
