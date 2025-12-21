@@ -324,6 +324,7 @@
         let viewportBounds = null;
         let viewportCenter = null;
         let viewportId = null;
+        let isSyncing = false;  // Prevent infinite sync loops
 
         // Create all maps
         function createMaps() {
@@ -366,6 +367,9 @@
         // Therefore: OSM_zoom = Embedding_zoom - 3
         function syncMaps() {
             mapEmbedding.on('moveend', function() {
+                if (isSyncing) return;  // Prevent infinite recursion
+                isSyncing = true;
+
                 const center = mapEmbedding.getCenter();
                 const zoom = mapEmbedding.getZoom();
 
@@ -373,9 +377,14 @@
                 const osmZoom = Math.max(mapOSM.getMinZoom(), zoom - 3);
 
                 mapOSM.setView(center, osmZoom, {animate: false});
+
+                setTimeout(() => { isSyncing = false; }, 10);
             });
 
             mapOSM.on('moveend', function() {
+                if (isSyncing) return;  // Prevent infinite recursion
+                isSyncing = true;
+
                 const center = mapOSM.getCenter();
                 const zoom = mapOSM.getZoom();
 
@@ -383,6 +392,8 @@
                 const embeddingZoom = Math.min(mapEmbedding.getMaxZoom(), zoom + 3);
 
                 mapEmbedding.setView(center, embeddingZoom, {animate: false});
+
+                setTimeout(() => { isSyncing = false; }, 10);
             });
         }
 
