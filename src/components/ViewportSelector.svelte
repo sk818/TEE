@@ -326,7 +326,7 @@
 <div class="viewport-selector">
     <header>
         <h1>TESSERA Embedding Explorer</h1>
-        <h2>Select 1km × 1km Viewport</h2>
+        <h2>Select 5km × 5km Viewport</h2>
     </header>
 
     <div class="controls">

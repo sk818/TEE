@@ -4,7 +4,7 @@
 
 import type { Bounds } from '../data/DataTypes';
 
-export const VIEWPORT_SIZE_KM = 1;
+export const VIEWPORT_SIZE_KM = 5;
 
 /**
  * Convert km to degrees at a given latitude
