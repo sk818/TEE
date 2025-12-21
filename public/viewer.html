@@ -3,14 +3,10 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>TESSERA Viewer</title>
+    <title>TESSERA Embedding Viewer</title>
 
     <!-- Leaflet CSS -->
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
-    <!-- Leaflet GeoTIFF plugin -->
-    <script src="https://unpkg.com/geotiff@2.0.7/dist/geotiff.min.js"></script>
-    <script src="https://unpkg.com/leaflet-geotiff/leaflet-geotiff.js"></script>
-    <link rel="stylesheet" href="https://unpkg.com/leaflet-geotiff/leaflet-geotiff.css" />
 
     <style>
         * {
@@ -52,16 +48,17 @@
 
         .map-wrapper {
             flex: 1;
-            display: flex;
+            display: grid;
+            grid-template-columns: 1fr 1fr;
             gap: 0;
             overflow: hidden;
         }
 
         .map-panel {
-            width: 512px;
             position: relative;
             display: flex;
             flex-direction: column;
+            background: #eee;
         }
 
         .panel-label {
@@ -75,25 +72,13 @@
         }
 
         .map-container {
-            width: 512px;
-            height: 512px;
+            flex: 1;
             position: relative;
         }
 
         .map {
             width: 100%;
             height: 100%;
-        }
-
-        .divider {
-            width: 2px;
-            background: #ddd;
-            cursor: col-resize;
-            z-index: 50;
-        }
-
-        .divider:hover {
-            background: #999;
         }
 
         .loading-overlay {
@@ -270,14 +255,14 @@
         </header>
 
         <div class="map-wrapper">
-            <!-- RGB Panel -->
+            <!-- Embedding Panel -->
             <div class="map-panel">
                 <div class="panel-label">Embeddings (RGB)</div>
                 <div class="map-container">
-                    <div id="map-rgb" class="map"></div>
-                    <div class="loading-overlay" id="loading-rgb">
+                    <div id="map-embedding" class="map"></div>
+                    <div class="loading-overlay" id="loading-embedding">
                         <div class="spinner"></div>
-                        <div class="loading-text">Loading RGB...</div>
+                        <div class="loading-text">Loading embeddings...</div>
                     </div>
 
                     <div class="controls">
@@ -290,17 +275,14 @@
                     </div>
 
                     <div class="legend">
-                        <div class="legend-title">RGB Embeddings</div>
+                        <div class="legend-title">Tessera Embeddings</div>
                         <div class="legend-item">
                             <div class="legend-color" style="background: linear-gradient(45deg, #ff0000, #0000ff);"></div>
-                            <span>First 3 embedding bands</span>
+                            <span>First 3 embedding bands (RGB)</span>
                         </div>
                     </div>
                 </div>
             </div>
-
-            <!-- Divider -->
-            <div class="divider" id="divider"></div>
 
             <!-- OSM Panel -->
             <div class="map-panel">
@@ -327,78 +309,67 @@
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 
     <script>
-        // Use the same host as this page, but tiles come from tile server on port 8001
+        // Configuration matching blore project approach
         const API_BASE_URL = window.location.origin;
         const TILE_SERVER_URL = window.location.hostname ?
             `${window.location.protocol}//${window.location.hostname}:8001` :
             'http://localhost:8001';
 
-        let mapRGB = null;
+        const TILE_SIZE = 2048;
+        const ZOOM_OFFSET = -3;
+        const INITIAL_ZOOM = 14;
+
+        let mapEmbedding = null;
         let mapOSM = null;
         let viewportBounds = null;
         let viewportCenter = null;
-        let viewportId = null;  // Store viewport ID for tile server
-        let isDragging = false;
-        let isSyncing = false;  // Prevent infinite recursion
+        let viewportId = null;
 
-        // Initialize maps
-        function initMaps() {
-            // RGB map
-            mapRGB = L.map('map-rgb').setView([52.2, 0.1], 14);
+        // Create all maps
+        function createMaps() {
+            // Embedding Map
+            mapEmbedding = L.map('map-embedding', {
+                center: [52.2, 0.1],
+                zoom: INITIAL_ZOOM,
+                zoomControl: true,
+                minZoom: 6,
+                maxZoom: 17
+            });
 
-            // OSM map
-            mapOSM = L.map('map-osm').setView([52.2, 0.1], 14);
+            // OSM Map
+            mapOSM = L.map('map-osm', {
+                center: [52.2, 0.1],
+                zoom: INITIAL_ZOOM,
+                zoomControl: true,
+                minZoom: 6,
+                maxZoom: 18
+            });
+
             L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
                 attribution: '© OpenStreetMap contributors',
                 maxZoom: 19
             }).addTo(mapOSM);
 
-            // Synchronize maps
-            mapRGB.on('move', syncMaps);
-            mapOSM.on('move', syncMaps);
+            // Synchronize: OSM is reference, embedding syncs to OSM
+            syncMaps();
 
-            // Divider dragging
-            const divider = document.getElementById('divider');
-            const wrapper = document.querySelector('.map-wrapper');
-
-            divider.addEventListener('mousedown', () => {
-                isDragging = true;
-                wrapper.style.cursor = 'col-resize';
-            });
-
-            document.addEventListener('mouseup', () => {
-                isDragging = false;
-                wrapper.style.cursor = 'default';
-            });
-
-            document.addEventListener('mousemove', (e) => {
-                if (!isDragging) return;
-
-                const rect = wrapper.getBoundingClientRect();
-                const newX = e.clientX - rect.left;
-                const percent = (newX / rect.width) * 100;
-
-                if (percent > 20 && percent < 80) {
-                    const panels = wrapper.querySelectorAll('.map-panel');
-                    panels[0].style.flex = `0 0 ${percent}%`;
-                    panels[1].style.flex = `0 0 ${100 - percent}%`;
-
-                    setTimeout(() => {
-                        mapRGB.invalidateSize();
-                        mapOSM.invalidateSize();
-                    }, 0);
-                }
+            // Back button
+            document.getElementById('back-btn').addEventListener('click', () => {
+                window.location.href = '/';
             });
         }
 
+        // Synchronize maps - OSM is the reference
         function syncMaps() {
-            if (!isDragging && !isSyncing) {
-                isSyncing = true;
-                const center = mapRGB.getCenter();
-                const zoom = mapRGB.getZoom();
-                mapOSM.setView(center, zoom);
-                setTimeout(() => { isSyncing = false; }, 10);
-            }
+            const refMap = mapOSM;
+
+            refMap.on('zoomend moveend', function() {
+                const refCenter = refMap.getCenter();
+                const refZoom = refMap.getZoom();
+
+                // Sync embedding to OSM
+                mapEmbedding.setView(refCenter, refZoom, {animate: false});
+            });
         }
 
         // Load viewport info
@@ -414,217 +385,79 @@
 
                 viewportBounds = data.bounds;
                 viewportCenter = data.center;
-                viewportId = data.viewport_id;  // Store viewport ID for tile server
+                viewportId = data.viewport_id;
 
                 // Update header
                 if (viewportCenter) {
                     document.getElementById('viewport-info').textContent =
-                        `Center: ${viewportCenter[1].toFixed(4)}°N, ${viewportCenter[0].toFixed(4)}°E`;
+                        `Center: ${viewportCenter[1].toFixed(4)}°N, ${viewportCenter[0].toFixed(4)}°E | Size: 5km × 5km`;
                 }
 
                 // Center maps on viewport
                 if (viewportCenter) {
-                    console.log(`🎯 Setting map view to center: [${viewportCenter[1]}, ${viewportCenter[0]}] (lat, lon)`);
-                    mapRGB.setView([viewportCenter[1], viewportCenter[0]], 14);
-                    mapOSM.setView([viewportCenter[1], viewportCenter[0]], 14);
-                } else if (viewportBounds) {
-                    console.log(`🎯 Fitting bounds: (${viewportBounds.minLat}, ${viewportBounds.minLon}) to (${viewportBounds.maxLat}, ${viewportBounds.maxLon})`);
-                    const bounds = [
-                        [viewportBounds.minLat, viewportBounds.minLon],
-                        [viewportBounds.maxLat, viewportBounds.maxLon]
-                    ];
-                    mapRGB.fitBounds(bounds);
-                    mapOSM.fitBounds(bounds);
+                    console.log(`🎯 Setting maps to center: [${viewportCenter[1]}, ${viewportCenter[0]}], zoom: ${INITIAL_ZOOM}`);
+                    mapEmbedding.setView([viewportCenter[1], viewportCenter[0]], INITIAL_ZOOM);
+                    mapOSM.setView([viewportCenter[1], viewportCenter[0]], INITIAL_ZOOM);
                 }
 
-                // Wait for map to finish moving/centering before loading tiles
-                // This ensures tiles are loaded from the correct location
+                // Wait for maps to settle
                 await new Promise(resolve => {
-                    const checkCentered = () => {
-                        const rgbCenter = mapRGB.getCenter();
+                    setTimeout(() => {
+                        const embCenter = mapEmbedding.getCenter();
                         const osmCenter = mapOSM.getCenter();
-                        console.log(`✓ RGB map centered at: [${rgbCenter.lat.toFixed(6)}, ${rgbCenter.lng.toFixed(6)}], zoom: ${mapRGB.getZoom()}`);
-                        console.log(`✓ OSM map centered at: [${osmCenter.lat.toFixed(6)}, ${osmCenter.lng.toFixed(6)}], zoom: ${mapOSM.getZoom()}`);
+                        console.log(`✓ Embedding map: [${embCenter.lat.toFixed(6)}, ${embCenter.lng.toFixed(6)}], zoom: ${mapEmbedding.getZoom()}`);
+                        console.log(`✓ OSM map: [${osmCenter.lat.toFixed(6)}, ${osmCenter.lng.toFixed(6)}], zoom: ${mapOSM.getZoom()}`);
                         resolve();
-                    };
-                    setTimeout(checkCentered, 200);  // Give Leaflet time to finish centering
+                    }, 200);
                 });
 
-                // NOW load RGB embeddings after map is properly centered
-                await loadRGB();
+                // Load embedding tiles
+                await loadEmbeddings();
             } catch (error) {
                 showError(`Error loading viewport: ${error.message}`);
                 console.error(error);
             }
         }
 
-        // Load RGB GeoTIFF and convert to image overlay
-        async function loadRGB() {
+        // Load embedding tiles
+        async function loadEmbeddings() {
             try {
-                const rgbUrl = '/public/data/viewports/rgb_2024.tif';
-
-                // Get actual GeoTIFF bounds from backend
-                console.log('Loading RGB from:', rgbUrl);
-
-                let rgbBounds = viewportBounds;
-                try {
-                    const boundsResponse = await fetch(`${API_BASE_URL}/api/embeddings-bounds?year=2024`);
-                    if (boundsResponse.ok) {
-                        const boundsData = await boundsResponse.json();
-                        if (boundsData.exists) {
-                            rgbBounds = boundsData.bounds;
-                            logger.info(`✓ Using GeoTIFF bounds: (${rgbBounds.minLon}, ${rgbBounds.minLat}) → (${rgbBounds.maxLon}, ${rgbBounds.maxLat})`);
-                        }
-                    }
-                } catch (e) {
-                    console.warn('Could not fetch GeoTIFF bounds, using viewport bounds:', e);
+                if (!viewportId) {
+                    showError('Viewport ID not found');
+                    return;
                 }
 
-                if (rgbBounds) {
-                    const bounds = [
-                        [rgbBounds.minLat, rgbBounds.minLon],
-                        [rgbBounds.maxLat, rgbBounds.maxLon]
-                    ];
+                const tileUrl = `${TILE_SERVER_URL}/api/tiles/rgb/${viewportId}/2024/{z}/{x}/{y}.png`;
+                console.log(`Setting up embedding tile layer: ${tileUrl}`);
 
-                    try {
-                        // Use RGB pyramid tiles from tile server with consistent 1024px tiles
-                        if (viewportId) {
-                            const tileUrl = `${TILE_SERVER_URL}/api/tiles/rgb/${viewportId}/2024/{z}/{x}/{y}.png`;
-                            console.log('Setting up RGB tile layer with 1024px tiles:', tileUrl);
+                // Add tile layer with blore parameters
+                const tileLayer = L.tileLayer(tileUrl, {
+                    attribution: 'Tessera Embeddings',
+                    opacity: 1.0,
+                    maxZoom: 17,
+                    minZoom: 6,
+                    tileSize: TILE_SIZE,
+                    zoomOffset: ZOOM_OFFSET,
+                    crossOrigin: true
+                });
 
-                            // Create tile layer with standard 256×256px tiles
-                            // Using standard tile size ensures correct Leaflet tile coordinate calculation
-                            const tileLayer = L.tileLayer(tileUrl, {
-                                attribution: 'RGB Pyramids',
-                                opacity: 1.0,
-                                maxZoom: 18,
-                                minZoom: 6,
-                                crossOrigin: true
-                            });
+                tileLayer.on('tileload', function(e) {
+                    console.log(`✓ Tile loaded: ${e.tile.src.split('/').slice(-3).join('/')}`);
+                });
 
-                            // Track tile events
-                            tileLayer.on('tileload', function(event) {
-                                console.log(`✓ Tile loaded: ${event.tile.src}`);
-                            });
+                tileLayer.on('tileerror', function(e) {
+                    console.error(`✗ Tile error: ${e.tile.src}`);
+                });
 
-                            tileLayer.on('tileerror', function(error) {
-                                console.error(`✗ Tile error: ${error.tile.src}`);
-                            });
+                tileLayer.addTo(mapEmbedding);
+                console.log(`✓ Embedding tile layer configured (tileSize=${TILE_SIZE}, zoomOffset=${ZOOM_OFFSET})`);
 
-                            tileLayer.on('load', function() {
-                                console.log(`✓ Tile layer fully loaded`);
-                            });
-
-                            tileLayer.addTo(mapRGB);
-                            console.log('✓ RGB tile layer configured with 1024×1024px tiles');
-                            console.log(`  Current zoom: ${mapRGB.getZoom()}`);
-                        } else {
-                            console.error('Viewport ID not found - cannot load RGB pyramids');
-                            showError('Viewport ID not found. Cannot load RGB pyramids.');
-                        }
-
-                        console.log('✓ RGB loading complete');
-                    } catch (tiffError) {
-                        console.warn('Could not load GeoTIFF tiles:', tiffError);
-                        // Fall back to showing bounds rectangle
-                        L.rectangle(bounds, {
-                            color: '#FF6B6B',
-                            weight: 2,
-                            opacity: 0.8,
-                            fillOpacity: 0.2,
-                            fillColor: '#FF6B6B'
-                        }).addTo(mapRGB);
-                    }
-
-                    // Add GEOTIFF bounds (actual downloaded data)
-                    console.log(`📦 RGB GeoTIFF bounds: (${rgbBounds.minLon.toFixed(6)}, ${rgbBounds.minLat.toFixed(6)}) to (${rgbBounds.maxLon.toFixed(6)}, ${rgbBounds.maxLat.toFixed(6)})`);
-                    L.rectangle(bounds, {
-                        color: '#999',
-                        weight: 2,
-                        opacity: 0.5,
-                        fillOpacity: 0,
-                        dashArray: '3, 3'
-                    }).bindPopup('GeoTIFF bounds (actual downloaded data)').addTo(mapRGB);
-
-                    // Add VIEWPORT bounds (requested area) - in yellow
-                    if (viewportBounds) {
-                        console.log(`📦 Viewport bounds: (${viewportBounds.minLon.toFixed(6)}, ${viewportBounds.minLat.toFixed(6)}) to (${viewportBounds.maxLon.toFixed(6)}, ${viewportBounds.maxLat.toFixed(6)})`);
-                        const viewportBoundsLeaflet = [
-                            [viewportBounds.minLat, viewportBounds.minLon],
-                            [viewportBounds.maxLat, viewportBounds.maxLon]
-                        ];
-                        L.rectangle(viewportBoundsLeaflet, {
-                            color: '#FFEB3B',
-                            weight: 3,
-                            opacity: 1,
-                            fillOpacity: 0.05,
-                            fillColor: '#FFEB3B',
-                            dashArray: '5, 5'
-                        }).bindPopup('Viewport bounds (requested area)').addTo(mapRGB);
-                    }
-
-                    // Add center marker
-                    if (viewportCenter) {
-                        const rgbMarkerCoords = [viewportCenter[1], viewportCenter[0]];
-                        console.log(`📍 RGB marker placed at: [${rgbMarkerCoords[0]}, ${rgbMarkerCoords[1]}] (lat, lng)`);
-                        L.circleMarker(rgbMarkerCoords, {
-                            radius: 6,
-                            fillColor: '#FFEB3B',
-                            color: '#FFF',
-                            weight: 2,
-                            opacity: 1,
-                            fillOpacity: 0.9
-                        }).bindPopup('Viewport center').addTo(mapRGB);
-                    }
-
-                    // Show info message about bounds difference
-                    const boundsMatch = rgbBounds.minLon === viewportBounds.minLon &&
-                                       rgbBounds.maxLon === viewportBounds.maxLon &&
-                                       rgbBounds.minLat === viewportBounds.minLat &&
-                                       rgbBounds.maxLat === viewportBounds.maxLat;
-
-                    if (!boundsMatch) {
-                        const msg = `Note: GeoTIFF bounds differ from viewport. The yellow square shows your requested viewport (1km × 1km). Gray dashed line shows actual downloaded data (tile-aligned). This is normal - tiles are discrete units.`;
-                        console.info(msg);
-                    }
-                }
-
-                // Add boundary to OSM for reference
-                if (viewportBounds) {
-                    console.log(`📦 OSM viewport bounds: (${viewportBounds.minLon.toFixed(6)}, ${viewportBounds.minLat.toFixed(6)}) to (${viewportBounds.maxLon.toFixed(6)}, ${viewportBounds.maxLat.toFixed(6)})`);
-                    const bounds = [
-                        [viewportBounds.minLat, viewportBounds.minLon],
-                        [viewportBounds.maxLat, viewportBounds.maxLon]
-                    ];
-
-                    L.rectangle(bounds, {
-                        color: '#2196F3',
-                        weight: 2,
-                        opacity: 0.8,
-                        fillOpacity: 0.1,
-                        fillColor: '#2196F3'
-                    }).addTo(mapOSM);
-
-                    if (viewportCenter) {
-                        const osmMarkerCoords = [viewportCenter[1], viewportCenter[0]];
-                        console.log(`📍 OSM marker placed at: [${osmMarkerCoords[0]}, ${osmMarkerCoords[1]}] (lat, lng)`);
-                        L.circleMarker(osmMarkerCoords, {
-                            radius: 4,
-                            fillColor: '#2196F3',
-                            color: '#FFF',
-                            weight: 2,
-                            opacity: 1,
-                            fillOpacity: 0.9
-                        }).addTo(mapOSM);
-                    }
-                }
-
-                hideLoading('loading-rgb');
+                hideLoading('loading-embedding');
                 hideLoading('loading-osm');
             } catch (error) {
-                showError(`Error loading RGB: ${error.message}`);
+                showError(`Error loading embeddings: ${error.message}`);
                 console.error(error);
-                hideLoading('loading-rgb');
+                hideLoading('loading-embedding');
                 hideLoading('loading-osm');
             }
         }
@@ -641,14 +474,9 @@
             document.getElementById(elementId).classList.add('hidden');
         }
 
-        // Event listeners
-        document.getElementById('back-btn').addEventListener('click', () => {
-            window.location.href = '/';
-        });
-
         // Initialize
         document.addEventListener('DOMContentLoaded', () => {
-            initMaps();
+            createMaps();
             loadViewport();
         });
     </script>

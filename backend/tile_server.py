@@ -48,7 +48,7 @@ app.add_middleware(
 
 # Configuration
 DATA_DIR = Path(__file__).parent.parent / "public" / "data" / "viewports"
-DEFAULT_TILE_SIZE = 256  # Standard Leaflet tile size
+DEFAULT_TILE_SIZE = 2048  # Large tiles for smooth rendering (matching blore approach)
 
 
 
@@ -70,24 +70,19 @@ def zoom_to_pyramid_level(z: int, max_pyramid_level: int = 5) -> int:
     return max(0, min(max_pyramid_level, pyramid_level))
 
 
-def zoom_to_rgb_pyramid_level(z: int, max_pyramid_level: int = 4) -> int:
+def zoom_to_rgb_pyramid_level(z: int, max_pyramid_level: int = 5) -> int:
     """
-    Map Leaflet zoom level to RGB pyramid level.
+    Map Leaflet zoom level to RGB pyramid level (blore approach).
 
-    RGB pyramids have 5 levels (0-4) where each level zooms out by √10 ≈ 3.162x
-    Level 0: 1m/pixel (highest zoom)
-    Level 1: 3.16m/pixel
-    Level 2: 10m/pixel
-    Level 3: 31.6m/pixel
-    Level 4: 100m/pixel (lowest zoom)
+    With tileSize=2048 and zoomOffset=-3, Leaflet requests z=3 to z=14.
+    Map z=14 → level 0 (most detail), progressively lower zoom levels → higher level numbers (less detail).
 
-    Each 2 zoom levels = 1 pyramid level (same as embeddings endpoint for consistency).
+    This matches the blore project approach which achieves perfect alignment.
     """
-    # Map Leaflet zoom to pyramid level
     # Each 2 zoom levels = 1 pyramid level
-    # z=18 → level 0, z=16 → level 1, z=14 → level 2, z=12 → level 3, z=10 → level 4
-    pyramid_level = (18 - z) // 2
-    return max(0, min(max_pyramid_level, pyramid_level))
+    # z=14 → level 0, z=12 → level 1, z=10 → level 2, z=8 → level 3, z=6 → level 4, z=4 → level 5
+    pyramid_level = max(0, (14 - z) // 2)
+    return min(max_pyramid_level, pyramid_level)
 
 
 def tile_to_bbox(x: int, y: int, z: int) -> tuple:
@@ -268,12 +263,12 @@ async def get_embeddings_tile(viewport_id: str, year: int, z: int, x: int, y: in
 
 @app.get("/api/tiles/rgb/{viewport_id}/{year}/{z}/{x}/{y}.png")
 async def get_rgb_pyramid_tile(viewport_id: str, year: int, z: int, x: int, y: int):
-    """Serve RGB pyramid tile from viewport-specific pyramids with consistent 1024px tiles."""
+    """Serve RGB pyramid tile from viewport-specific pyramids (blore approach with 2048px tiles)."""
     try:
-        # Use consistent tile size for all zoom levels (hybrid approach)
+        # Use 2048px tiles for smooth rendering (blore approach)
         tile_size = DEFAULT_TILE_SIZE
 
-        # Map zoom level to pyramid level with less aggressive transitions
+        # Map zoom level to pyramid level
         pyramid_level = zoom_to_rgb_pyramid_level(z)
 
         # Get pyramid level file from viewport-specific directory
