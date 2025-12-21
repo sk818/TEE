@@ -72,7 +72,7 @@ def zoom_to_pyramid_level(z: int, max_pyramid_level: int = 5) -> int:
 
 def zoom_to_rgb_pyramid_level(z: int, max_pyramid_level: int = 4) -> int:
     """
-    Map Leaflet zoom level to RGB pyramid level (hybrid approach).
+    Map Leaflet zoom level to RGB pyramid level.
 
     RGB pyramids have 5 levels (0-4) where each level zooms out by √10 ≈ 3.162x
     Level 0: 1m/pixel (highest zoom)
@@ -81,14 +81,13 @@ def zoom_to_rgb_pyramid_level(z: int, max_pyramid_level: int = 4) -> int:
     Level 3: 31.6m/pixel
     Level 4: 100m/pixel (lowest zoom)
 
-    Hybrid approach: Less aggressive level transitions (every 2.5 zoom levels instead of 1.66)
-    for smoother quality across all zoom levels while keeping consistent 1024px tile sizes.
+    Each 2 zoom levels = 1 pyramid level (same as embeddings endpoint for consistency).
     """
-    # Map Leaflet zoom to pyramid level with less aggressive transitions
-    # Each 2.5 zoom levels = 1 pyramid level
-    # z=18 → level 0, z=15.5 → level 1, z=13 → level 2, z=10.5 → level 3, z=8 → level 4
-    pyramid_level = max(0, int((18 - z) / 2.5))
-    return min(max_pyramid_level, pyramid_level)
+    # Map Leaflet zoom to pyramid level
+    # Each 2 zoom levels = 1 pyramid level
+    # z=18 → level 0, z=16 → level 1, z=14 → level 2, z=12 → level 3, z=10 → level 4
+    pyramid_level = (18 - z) // 2
+    return max(0, min(max_pyramid_level, pyramid_level))
 
 
 def tile_to_bbox(x: int, y: int, z: int) -> tuple:
