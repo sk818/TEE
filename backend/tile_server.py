@@ -74,14 +74,16 @@ def zoom_to_rgb_pyramid_level(z: int, max_pyramid_level: int = 5) -> int:
     """
     Map Leaflet zoom level to RGB pyramid level (blore approach).
 
-    With tileSize=2048 and zoomOffset=-3, Leaflet requests z=3 to z=14.
-    Map z=14 → level 0 (most detail), progressively lower zoom levels → higher level numbers (less detail).
+    With tileSize=2048 and zoomOffset=-3:
+    - Displayed zoom 12 → requests z=9 → level 1
+    - Displayed zoom 14 → requests z=11 → level 0
+    - Displayed zoom 16 → requests z=13 → level 0 (clamped)
 
-    This matches the blore project approach which achieves perfect alignment.
+    Each 2 zoom levels = 1 pyramid level, with base at z=12.
     """
-    # Each 2 zoom levels = 1 pyramid level
-    # z=14 → level 0, z=12 → level 1, z=10 → level 2, z=8 → level 3, z=6 → level 4, z=4 → level 5
-    pyramid_level = max(0, (14 - z) // 2)
+    # Map zoom to pyramid level: (12 - z) // 2
+    # z=12 → level 0, z=10 → level 1, z=8 → level 2, z=6 → level 3, z=4 → level 4, z=2 → level 5
+    pyramid_level = max(0, (12 - z) // 2)
     return min(max_pyramid_level, pyramid_level)
 
 
