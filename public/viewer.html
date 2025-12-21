@@ -347,9 +347,7 @@
 
             L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
                 attribution: '© OpenStreetMap contributors',
-                maxZoom: 19,
-                tileSize: TILE_SIZE,
-                zoomOffset: ZOOM_OFFSET
+                maxZoom: 19
             }).addTo(mapOSM);
 
             // Synchronize: OSM is reference, embedding syncs to OSM
@@ -361,16 +359,30 @@
             });
         }
 
-        // Synchronize maps - OSM is the reference
+        // Synchronize maps - keep geographic position in sync
+        // Note: zoom levels differ due to tileSize/zoomOffset on embedding layer
+        // Embedding at display zoom Z requests z=Z-3
+        // To show same geographic area, OSM needs z=Z-3, so display zoom is (Z-3)
+        // Therefore: OSM_zoom = Embedding_zoom - 3
         function syncMaps() {
-            const refMap = mapOSM;
+            mapEmbedding.on('moveend', function() {
+                const center = mapEmbedding.getCenter();
+                const zoom = mapEmbedding.getZoom();
 
-            refMap.on('zoomend moveend', function() {
-                const refCenter = refMap.getCenter();
-                const refZoom = refMap.getZoom();
+                // OSM needs to be 3 zoom levels lower to show same geographic area
+                const osmZoom = Math.max(mapOSM.getMinZoom(), zoom - 3);
 
-                // Sync embedding to OSM
-                mapEmbedding.setView(refCenter, refZoom, {animate: false});
+                mapOSM.setView(center, osmZoom, {animate: false});
+            });
+
+            mapOSM.on('moveend', function() {
+                const center = mapOSM.getCenter();
+                const zoom = mapOSM.getZoom();
+
+                // Embedding needs to be 3 zoom levels higher
+                const embeddingZoom = Math.min(mapEmbedding.getMaxZoom(), zoom + 3);
+
+                mapEmbedding.setView(center, embeddingZoom, {animate: false});
             });
         }
 
@@ -396,10 +408,12 @@
                 }
 
                 // Center maps on viewport
+                // Note: OSM needs 3 zoom levels lower due to embedding's tileSize/zoomOffset
                 if (viewportCenter) {
-                    console.log(`🎯 Setting maps to center: [${viewportCenter[1]}, ${viewportCenter[0]}], zoom: ${INITIAL_ZOOM}`);
+                    const osmInitialZoom = Math.max(mapOSM.getMinZoom(), INITIAL_ZOOM - 3);
+                    console.log(`🎯 Setting embedding to zoom ${INITIAL_ZOOM}, OSM to zoom ${osmInitialZoom}`);
                     mapEmbedding.setView([viewportCenter[1], viewportCenter[0]], INITIAL_ZOOM);
-                    mapOSM.setView([viewportCenter[1], viewportCenter[0]], INITIAL_ZOOM);
+                    mapOSM.setView([viewportCenter[1], viewportCenter[0]], osmInitialZoom);
                 }
 
                 // Wait for maps to settle
