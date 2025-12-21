@@ -32,7 +32,7 @@ def create_pyramid_level(input_file: Path, output_file: Path, level: int) -> dic
     Create a pyramid level using blore approach:
     - 2x2 averaging (Lanczos downsampling)
     - Upscale back to constant 4408×4408 output
-    - This maintains visual quality and smooth zoom transitions
+    - Preserve georeference by scaling existing transform (not recalculating from bounds)
 
     Args:
         input_file: Source GeoTIFF (level 0 or previous level)
@@ -69,16 +69,12 @@ def create_pyramid_level(input_file: Path, output_file: Path, level: int) -> dic
 
         final_data = np.stack(upsampled_bands, axis=0)
 
-        # Calculate new transform
-        # Each pixel now represents a larger geographic area
-        bounds = src.bounds
-        transform = Affine(
-            (bounds.right - bounds.left) / CONSTANT_OUTPUT_SIZE,
-            0.0,
-            bounds.left,
-            0.0,
-            -(bounds.top - bounds.bottom) / CONSTANT_OUTPUT_SIZE,
-            bounds.top
+        # Update transform to reflect the effective resolution change
+        # Scale the existing transform rather than recalculating from bounds (preserves precision)
+        # This matches the blore approach
+        transform = src.transform * src.transform.scale(
+            (src.width / intermediate_width) * (intermediate_width / CONSTANT_OUTPUT_SIZE),
+            (src.height / intermediate_height) * (intermediate_height / CONSTANT_OUTPUT_SIZE)
         )
 
         # Write output
@@ -196,7 +192,9 @@ def create_rgb_pyramids(
         with rasterio.open(rgb_file) as src:
             profile = src.profile.copy()
             data = src.read()
-            bounds = src.bounds
+            original_transform = src.transform
+            original_height = src.height
+            original_width = src.width
 
             # Ensure output is constant size - upscale if needed
             if src.height != CONSTANT_OUTPUT_SIZE or src.width != CONSTANT_OUTPUT_SIZE:
@@ -208,15 +206,12 @@ def create_rgb_pyramids(
                     upscaled_bands.append(np.array(img_upscaled))
                 data = np.stack(upscaled_bands, axis=0)
 
-            # Create transform for constant size
-            transform = Affine(
-                (bounds.right - bounds.left) / CONSTANT_OUTPUT_SIZE,
-                0.0,
-                bounds.left,
-                0.0,
-                -(bounds.top - bounds.bottom) / CONSTANT_OUTPUT_SIZE,
-                bounds.top
-            )
+                # Scale transform to match new size (preserves georeference precision)
+                scale_x = original_width / CONSTANT_OUTPUT_SIZE
+                scale_y = original_height / CONSTANT_OUTPUT_SIZE
+                transform = original_transform * Affine.scale(scale_x, scale_y)
+            else:
+                transform = original_transform
 
             profile.update({
                 'height': CONSTANT_OUTPUT_SIZE,
