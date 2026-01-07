@@ -11,8 +11,9 @@ from pathlib import Path
 # from tqdm import tqdm  # Disabled to reduce output
 
 # Configuration
-MOSAICS_DIR = Path("mosaics")
-OUTPUT_DIR = Path("mosaics/pca")
+DATA_DIR = Path.home() / "blore_data"
+MOSAICS_DIR = DATA_DIR / "mosaics"
+OUTPUT_DIR = DATA_DIR / "mosaics" / "pca"
 YEARS = range(2024, 2025)  # 2024 only
 N_COMPONENTS = 3  # RGB
 CHUNK_SIZE = 1000  # Process in chunks to save memory

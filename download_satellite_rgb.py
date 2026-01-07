@@ -25,7 +25,8 @@ from lib.viewport_utils import get_active_viewport, check_cache
 # Configuration
 YEAR = 2024
 RESOLUTION = 10  # meters per pixel
-OUTPUT_FILE = Path("mosaics/bangalore_satellite_rgb.tif")
+DATA_DIR = Path.home() / "blore_data"
+OUTPUT_FILE = DATA_DIR / "mosaics" / "bangalore_satellite_rgb.tif"
 
 def download_satellite_rgb():
     """Download RGB satellite imagery for current viewport using Planetary Computer."""

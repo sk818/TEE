@@ -27,10 +27,11 @@ from pathlib import Path
 from PIL import Image
 
 # Configuration
-MOSAICS_DIR = Path("mosaics")
-PCA_MOSAICS_DIR = Path("mosaics/pca")
-PYRAMIDS_DIR = Path("pyramids")
-PCA_PYRAMIDS_DIR = Path("pyramids/pca")
+DATA_DIR = Path.home() / "blore_data"
+MOSAICS_DIR = DATA_DIR / "mosaics"
+PCA_MOSAICS_DIR = DATA_DIR / "mosaics" / "pca"
+PYRAMIDS_DIR = DATA_DIR / "pyramids"
+PCA_PYRAMIDS_DIR = DATA_DIR / "pyramids" / "pca"
 YEARS = range(2024, 2025)  # 2024 only
 NUM_ZOOM_LEVELS = 6  # 6 useful zoom levels (skip the very zoomed-out tiny levels)
 

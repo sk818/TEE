@@ -20,8 +20,9 @@ from lib.viewport_utils import get_active_viewport, check_cache
 
 # Configuration
 YEARS = range(2024, 2025)  # 2024 only for faster download
-EMBEDDINGS_DIR = Path("embeddings")
-MOSAICS_DIR = Path("mosaics")
+DATA_DIR = Path.home() / "blore_data"
+EMBEDDINGS_DIR = DATA_DIR / "embeddings"
+MOSAICS_DIR = DATA_DIR / "mosaics"
 
 def download_embeddings():
     """Download Tessera embeddings for current viewport."""

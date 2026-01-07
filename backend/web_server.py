@@ -37,6 +37,12 @@ logger = logging.getLogger(__name__)
 app = Flask(__name__, static_folder=str(Path(__file__).parent.parent / 'public'))
 CORS(app)
 
+# Data directories
+DATA_DIR = Path.home() / "blore_data"
+MOSAICS_DIR = DATA_DIR / "mosaics"
+PYRAMIDS_DIR = DATA_DIR / "pyramids"
+FAISS_INDICES_DIR = DATA_DIR / "faiss_indices"
+
 # Task tracking for downloads
 tasks = {}
 tasks_lock = threading.Lock()
@@ -274,7 +280,7 @@ def run_download_process(task_id):
         bounds = viewport['bounds']
         BOUNDS_TOLERANCE = 0.0001
 
-        pyramids_dir = project_root / 'pyramids' / '2024'
+        pyramids_dir = PYRAMIDS_DIR / '2024'
         pyramid_metadata = pyramids_dir / 'pyramid_metadata.json'
 
         # If pyramid metadata exists, skip downloads and processing
@@ -304,9 +310,8 @@ def run_download_process(task_id):
         # Check if mosaics already exist with matching bounds
         update_progress(8, "Checking for existing mosaic files...")
 
-        mosaics_dir = project_root / 'mosaics'
-        embeddings_mosaic = mosaics_dir / 'bangalore_2024.tif'
-        satellite_mosaic = mosaics_dir / 'bangalore_satellite_rgb.tif'
+        embeddings_mosaic = MOSAICS_DIR / 'bangalore_2024.tif'
+        satellite_mosaic = MOSAICS_DIR / 'bangalore_satellite_rgb.tif'
 
         skip_downloads = False
         if embeddings_mosaic.exists() and satellite_mosaic.exists():
@@ -412,7 +417,7 @@ def run_download_process(task_id):
             try:
                 # Check if FAISS index already exists for current viewport
                 viewport_id = get_active_viewport_name()
-                faiss_dir = project_root / 'faiss_indices' / viewport_id
+                faiss_dir = FAISS_INDICES_DIR / viewport_id
                 metadata_file = faiss_dir / 'metadata.json'
 
                 if faiss_dir.exists() and metadata_file.exists():
@@ -582,9 +587,8 @@ def api_delete_viewport():
 
         # Delete associated mosaic files
         if bounds:
-            mosaics_dir = Path(__file__).parent.parent / 'mosaics'
-            if mosaics_dir.exists():
-                for mosaic_file in mosaics_dir.glob('*.tif'):
+            if MOSAICS_DIR.exists():
+                for mosaic_file in MOSAICS_DIR.glob('*.tif'):
                     try:
                         with rasterio.open(mosaic_file) as src:
                             cached_bounds = src.bounds
@@ -602,7 +606,7 @@ def api_delete_viewport():
                         logger.warning(f"Error checking mosaic {mosaic_file}: {e}")
 
         # Delete pyramid files (all .tif files in pyramids directory)
-        pyramids_dir = Path(__file__).parent.parent / 'pyramids' / '2024'
+        pyramids_dir = PYRAMIDS_DIR / '2024'
         if pyramids_dir.exists():
             try:
                 # Delete all pyramid files for this viewport
@@ -649,8 +653,7 @@ def api_extract_embedding():
         lon = float(data.get('lon'))
 
         # Open the embedding mosaic file
-        project_root = Path(__file__).parent.parent
-        mosaic_file = project_root / 'mosaics' / 'bangalore_2024.tif'
+        mosaic_file = MOSAICS_DIR / 'bangalore_2024.tif'
 
         if not mosaic_file.exists():
             return jsonify({
@@ -768,7 +771,7 @@ def api_search_similar_embeddings():
         logger.info(f"[SEARCH] Query: threshold={threshold}, viewport={viewport_id}")
 
         # Check if FAISS index exists
-        faiss_dir = project_root / 'faiss_indices' / viewport_id
+        faiss_dir = FAISS_INDICES_DIR / viewport_id
         if not faiss_dir.exists():
             logger.warning(f"[SEARCH] FAISS index not found: {faiss_dir}")
             return jsonify({

@@ -16,7 +16,8 @@ import numpy as np
 app = Flask(__name__)
 CORS(app)
 
-PYRAMIDS_DIR = Path("pyramids")
+DATA_DIR = Path.home() / "blore_data"
+PYRAMIDS_DIR = DATA_DIR / "pyramids"
 YEARS = [str(y) for y in range(2017, 2025)] + ['satellite']
 
 # Cache for tile readers

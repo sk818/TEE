@@ -11,7 +11,8 @@ from PIL import Image
 import rasterio
 from rasterio.warp import transform_bounds
 
-PYRAMIDS_DIR = Path("pyramids")
+DATA_DIR = Path.home() / "blore_data"
+PYRAMIDS_DIR = DATA_DIR / "pyramids"
 YEARS = list(range(2017, 2025))
 OUTPUT_HTML = Path("bangalore_viewer.html")
 INITIAL_ZOOM = 12  # Leaflet zoom level

@@ -29,8 +29,9 @@ sys.path.insert(0, str(Path(__file__).parent))
 from lib.viewport_utils import get_active_viewport
 
 # Configuration
-MOSAICS_DIR = Path("mosaics")
-FAISS_INDICES_DIR = Path("faiss_indices")
+DATA_DIR = Path.home() / "blore_data"
+MOSAICS_DIR = DATA_DIR / "mosaics"
+FAISS_INDICES_DIR = DATA_DIR / "faiss_indices"
 SAMPLING_FACTOR = 4  # Every 4×4 pixels (reduces 19M → 1.2M vectors)
 EMBEDDING_DIM = 128
 

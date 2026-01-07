@@ -25,7 +25,8 @@ from lib.viewport_utils import get_active_viewport, check_cache
 # Configuration
 YEAR = 2024
 MAX_RESOLUTION_M = 5  # Target maximum 5m resolution
-OUTPUT_FILE = Path("mosaics/bangalore_highres_rgb.tif")
+DATA_DIR = Path.home() / "blore_data"
+OUTPUT_FILE = DATA_DIR / "mosaics" / "bangalore_highres_rgb.tif"
 
 def init_ee():
     """Initialize Earth Engine."""

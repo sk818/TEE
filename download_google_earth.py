@@ -24,7 +24,8 @@ from lib.viewport_utils import get_active_viewport, check_cache
 # Configuration
 YEAR = 2024  # Most recent year
 SCALE = 10  # meters per pixel (Sentinel-2 resolution)
-OUTPUT_FILE = Path("mosaics/bangalore_google_earth.tif")
+DATA_DIR = Path.home() / "blore_data"
+OUTPUT_FILE = DATA_DIR / "mosaics" / "bangalore_google_earth.tif"
 
 def authenticate_ee():
     """Authenticate with Google Earth Engine."""
