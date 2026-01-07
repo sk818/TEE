@@ -1,0 +1,20 @@
+Viewport Configuration
+=====================
+
+Viewport ID: tile_aligned
+
+Center (degrees):
+  Latitude:  13.0500°
+  Longitude: 77.5500°
+
+Bounds (degrees):
+  Min Latitude:  12.9990°
+  Max Latitude:  13.1010°
+  Min Longitude: 77.4990°
+  Max Longitude: 77.6011°
+
+Size: 10.0km × 10.0km
+
+Description: Tile-aligned bounds from Tessera embeddings (default)
+
+Generated: 2026-01-06T00:00:00

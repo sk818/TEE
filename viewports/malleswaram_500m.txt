@@ -1,0 +1,20 @@
+Viewport Configuration
+=====================
+
+Viewport ID: malleswaram_500m
+
+Center (degrees):
+  Latitude:  13.0084°
+  Longitude: 77.5705°
+
+Bounds (degrees):
+  Min Latitude:  13.0039°
+  Max Latitude:  13.0129°
+  Min Longitude: 77.5659°
+  Max Longitude: 77.5751°
+
+Size: 10.0km × 10.0km
+
+Description: 500m × 500m area centered at 34, 16th Cross Road, Malleswaram, Bangalore
+
+Generated: 2026-01-06T00:00:00

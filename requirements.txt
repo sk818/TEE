@@ -1,0 +1,24 @@
+# Geotessera and dependencies
+geotessera
+numpy
+rasterio
+geopandas
+matplotlib
+
+# Google Earth Engine
+earthengine-api
+
+# Alternative: Microsoft Planetary Computer
+pystac-client
+planetary-computer
+odc-stac
+rioxarray
+
+# Interactive visualization
+ipyleaflet
+ipywidgets
+ipykernel
+scikit-learn
+pyyaml
+tqdm
+Pillow

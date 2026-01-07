@@ -1,0 +1,1192 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Blore Viewport Manager</title>
+
+    <!-- Leaflet CSS -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css" />
+
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            background: #f5f5f5;
+            height: 100vh;
+            display: flex;
+        }
+
+        .container {
+            display: flex;
+            width: 100%;
+            height: 100vh;
+        }
+
+        /* Left Sidebar */
+        .sidebar {
+            width: 350px;
+            background: white;
+            border-right: 1px solid #ddd;
+            display: flex;
+            flex-direction: column;
+            overflow-y: auto;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+        }
+
+        .sidebar-header {
+            padding: 20px;
+            border-bottom: 1px solid #eee;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+        }
+
+        .sidebar-header h1 {
+            font-size: 20px;
+            margin-bottom: 4px;
+        }
+
+        .sidebar-header p {
+            font-size: 12px;
+            opacity: 0.9;
+        }
+
+        .sidebar-content {
+            flex: 1;
+            overflow-y: auto;
+            padding: 20px;
+        }
+
+        .section {
+            margin-bottom: 24px;
+        }
+
+        .section-title {
+            font-size: 12px;
+            font-weight: 600;
+            text-transform: uppercase;
+            color: #666;
+            margin-bottom: 12px;
+            letter-spacing: 0.5px;
+        }
+
+        /* Search Bar */
+        .search-container {
+            margin-bottom: 20px;
+        }
+
+        .search-container input {
+            width: 100%;
+            padding: 10px 12px;
+            border: 1px solid #ddd;
+            border-radius: 6px;
+            font-size: 14px;
+            font-family: inherit;
+        }
+
+        .search-container input:focus {
+            outline: none;
+            border-color: #667eea;
+            box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+        }
+
+        /* Viewports List */
+        .viewports-list {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+
+        .viewport-item {
+            padding: 12px;
+            border: 1px solid #eee;
+            border-radius: 6px;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            background: white;
+        }
+
+        .viewport-item:hover {
+            border-color: #667eea;
+            background: #f9f9ff;
+        }
+
+        .viewport-item.active {
+            border-color: #667eea;
+            background: #f0f4ff;
+            box-shadow: 0 0 0 2px rgba(102, 126, 234, 0.1);
+        }
+
+        .viewport-item-name {
+            font-weight: 600;
+            font-size: 13px;
+            color: #333;
+            margin-bottom: 4px;
+        }
+
+        .viewport-item-coords {
+            font-size: 11px;
+            color: #999;
+            font-family: 'Monaco', 'Courier New', monospace;
+        }
+
+        .viewport-item.active .viewport-item-name {
+            color: #667eea;
+        }
+
+        .viewport-item-actions {
+            display: flex;
+            gap: 6px;
+            margin-top: 8px;
+        }
+
+        .viewport-item-btn {
+            flex: 1;
+            padding: 4px 8px;
+            font-size: 10px;
+            border: 1px solid #ddd;
+            background: white;
+            color: #666;
+            border-radius: 3px;
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }
+
+        .viewport-item-btn:hover {
+            background: #f5f5f5;
+            border-color: #667eea;
+            color: #667eea;
+        }
+
+        .viewport-item-btn.delete:hover {
+            background: #ffebee;
+            border-color: #d32f2f;
+            color: #d32f2f;
+        }
+
+        /* Current Viewport Panel */
+        .current-viewport {
+            padding: 12px;
+            background: #f9f9ff;
+            border: 1px solid #e0e7ff;
+            border-radius: 6px;
+            margin-bottom: 16px;
+        }
+
+        .current-viewport-title {
+            font-size: 12px;
+            font-weight: 600;
+            color: #667eea;
+            text-transform: uppercase;
+            margin-bottom: 8px;
+        }
+
+        .current-viewport-name {
+            font-size: 14px;
+            font-weight: 600;
+            color: #333;
+            margin-bottom: 6px;
+        }
+
+        .current-viewport-bounds {
+            font-size: 11px;
+            color: #666;
+            font-family: 'Monaco', 'Courier New', monospace;
+            line-height: 1.4;
+        }
+
+        /* Create New Viewport Form */
+        .create-form {
+            padding: 12px;
+            background: #f5f5f5;
+            border-radius: 6px;
+            display: none;
+        }
+
+        .create-form.open {
+            display: block;
+        }
+
+        .form-group {
+            margin-bottom: 12px;
+        }
+
+        .form-group label {
+            display: block;
+            font-size: 12px;
+            font-weight: 600;
+            margin-bottom: 4px;
+            color: #333;
+        }
+
+        .form-group input,
+        .form-group.input {
+            width: 100%;
+            padding: 8px 10px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            font-size: 13px;
+            font-family: inherit;
+        }
+
+        .form-group input:focus,
+        .form-group.input:focus {
+            outline: none;
+            border-color: #667eea;
+            box-shadow: 0 0 0 2px rgba(102, 126, 234, 0.1);
+        }
+
+        .button-group {
+            display: flex;
+            gap: 8px;
+        }
+
+        .btn {
+            padding: 8px 12px;
+            border: none;
+            border-radius: 4px;
+            font-size: 12px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            font-family: inherit;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        .btn-primary {
+            background: #667eea;
+            color: white;
+            flex: 1;
+        }
+
+        .btn-primary:hover {
+            background: #5568d3;
+        }
+
+        .btn-secondary {
+            background: white;
+            color: #667eea;
+            border: 1px solid #667eea;
+            flex: 1;
+        }
+
+        .btn-secondary:hover {
+            background: #f9f9ff;
+        }
+
+        .btn-small {
+            padding: 6px 10px;
+            font-size: 11px;
+        }
+
+        .btn-toggle {
+            background: white;
+            color: #667eea;
+            border: 1px solid #ddd;
+            width: 100%;
+            margin-bottom: 12px;
+        }
+
+        .btn-toggle:hover {
+            background: #f9f9ff;
+        }
+
+        /* Download Section */
+        .downloads-section {
+            padding: 12px;
+            background: #fffaed;
+            border: 1px solid #ffe4b5;
+            border-radius: 6px;
+            margin-bottom: 16px;
+        }
+
+        .downloads-title {
+            font-size: 12px;
+            font-weight: 600;
+            color: #b8860b;
+            text-transform: uppercase;
+            margin-bottom: 10px;
+            letter-spacing: 0.5px;
+        }
+
+        .download-buttons {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+
+        .btn-download {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 10px 12px;
+            background: white;
+            color: #b8860b;
+            border: 1px solid #daa520;
+            border-radius: 4px;
+            font-size: 12px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            font-family: inherit;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        .btn-download:hover:not(:disabled) {
+            background: #fffaed;
+            border-color: #b8860b;
+        }
+
+        .btn-download:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+        }
+
+        .btn-download.downloading {
+            opacity: 0.8;
+            cursor: wait;
+        }
+
+        .download-status {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            font-size: 10px;
+        }
+
+        .download-icon {
+            display: inline-block;
+            width: 14px;
+            height: 14px;
+        }
+
+        /* Map Container */
+        .map-container {
+            flex: 1;
+            position: relative;
+        }
+
+        #map {
+            width: 100%;
+            height: 100%;
+        }
+
+        /* Status Messages */
+        .status {
+            padding: 8px 12px;
+            border-radius: 4px;
+            font-size: 12px;
+            margin-top: 12px;
+            text-align: center;
+        }
+
+        .status.loading {
+            background: #e3f2fd;
+            color: #1976d2;
+        }
+
+        .status.success {
+            background: #e8f5e9;
+            color: #388e3c;
+        }
+
+        .status.error {
+            background: #ffebee;
+            color: #d32f2f;
+        }
+
+        /* Info Panel on Map */
+        .map-info {
+            position: absolute;
+            bottom: 20px;
+            right: 20px;
+            background: white;
+            padding: 12px 16px;
+            border-radius: 6px;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+            font-size: 12px;
+            max-width: 200px;
+            z-index: 400;
+        }
+
+        .map-info-label {
+            font-weight: 600;
+            color: #667eea;
+            margin-bottom: 4px;
+        }
+
+        .map-info-value {
+            font-family: 'Monaco', 'Courier New', monospace;
+            color: #333;
+            font-size: 11px;
+            line-height: 1.4;
+        }
+
+        /* Loading spinner */
+        .spinner {
+            display: inline-block;
+            width: 12px;
+            height: 12px;
+            border: 2px solid rgba(102, 126, 234, 0.2);
+            border-radius: 50%;
+            border-top-color: #667eea;
+            animation: spin 0.8s linear infinite;
+        }
+
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <!-- Left Sidebar -->
+        <div class="sidebar">
+            <div class="sidebar-header">
+                <h1>Viewport Manager</h1>
+                <p>Blore Data Selection</p>
+            </div>
+
+            <div class="sidebar-content">
+                <!-- Current Viewport -->
+                <div class="section">
+                    <div class="current-viewport" id="currentViewport">
+                        <div class="current-viewport-title">Active Viewport</div>
+                        <div class="current-viewport-name" id="currentName">Loading...</div>
+                        <div class="current-viewport-bounds" id="currentBounds"></div>
+                    </div>
+                </div>
+
+                <!-- Downloads Section -->
+                <div class="section">
+                    <div class="downloads-section">
+                        <div class="downloads-title">📥 Download & Process</div>
+                        <button class="btn-download" id="downloadBtn" onclick="startDownloads()" style="width: 100%; margin-bottom: 12px;">
+                            <span>Download All & Process</span>
+                            <span class="download-status" id="downloadStatus"></span>
+                        </button>
+                        <button class="btn-download" id="viewerBtn" onclick="goToViewer()" style="width: 100%; margin-bottom: 12px; display: none; border-color: #667eea; color: #667eea; background: #f0f4ff;">
+                            <span>▶ Go to Viewer</span>
+                            <span class="download-status" id="viewerStatus"></span>
+                        </button>
+                        <div id="progressContainer" style="display: none;">
+                            <div style="font-size: 11px; color: #666; margin-bottom: 6px;">
+                                <span id="progressLabel">Starting downloads...</span>
+                            </div>
+                            <div style="width: 100%; height: 6px; background: #eee; border-radius: 3px; overflow: hidden;">
+                                <div id="progressBar" style="height: 100%; width: 0%; background: linear-gradient(90deg, #667eea, #764ba2); transition: width 0.3s ease;"></div>
+                            </div>
+                            <div style="font-size: 10px; color: #999; margin-top: 6px; text-align: right;">
+                                <span id="progressPercent">0%</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Search -->
+                <div class="section">
+                    <div class="section-title">Search Viewports</div>
+                    <div class="search-container">
+                        <input type="text" id="viewportSearch" placeholder="Search by name...">
+                    </div>
+                </div>
+
+                <!-- Available Viewports -->
+                <div class="section">
+                    <div class="section-title">Available Viewports</div>
+                    <div id="viewportsList" class="viewports-list">
+                        <p style="color: #999; font-size: 12px;">Loading viewports...</p>
+                    </div>
+                </div>
+
+                <!-- Create New Viewport -->
+                <div class="section">
+                    <button class="btn btn-toggle" onclick="toggleCreateForm()">+ Create New Viewport</button>
+
+                    <div class="create-form" id="createForm">
+                        <div style="font-size: 12px; color: #333; margin-bottom: 12px; padding: 10px; background: #e8f4f8; border-radius: 6px; border-left: 3px solid #667eea;">
+                            📍 <strong>Click on the map</strong> to create a 10km × 10km viewport centered at that location
+                        </div>
+                        <div id="formFields" style="display: none;">
+                            <div class="form-group">
+                                <label>Viewport Name (optional)</label>
+                                <input type="text" id="viewportName" placeholder="e.g., bangalore_south" class="form-group input">
+                            </div>
+                            <div class="button-group">
+                                <button class="btn btn-primary btn-small" onclick="confirmViewportCreation()">Create</button>
+                                <button class="btn btn-secondary btn-small" onclick="cancelViewportCreation()">Cancel</button>
+                            </div>
+                        </div>
+                        <div id="closeButton" style="text-align: center; padding: 20px 10px;">
+                            <button class="btn btn-secondary" onclick="toggleCreateForm()" style="width: auto;">Close</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Map Container -->
+        <div class="map-container">
+            <div id="map"></div>
+            <div class="map-info" id="mapInfo">
+                <div class="map-info-label" id="mapInfoLabel">Click on map</div>
+                <div class="map-info-value" id="mapInfoValue">to select viewport center</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Leaflet JS -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+
+    <script>
+        // Global state
+        let map;
+        let viewportBox;
+        let currentViewport = null;
+        let mapCenter = [13.0, 77.5]; // Bangalore
+        let mapZoom = 12;
+
+        // Viewport selection state
+        let previewBox = null;
+        let pendingViewportBounds = null;
+
+        // Constants
+        const VIEWPORT_SIZE_KM = 10;
+        const KM_PER_DEGREE = 111.32; // approximate at equator
+
+        // Convert 10km to degrees (approximate)
+        function kmToDegrees(km, latitude) {
+            const latOffset = km / KM_PER_DEGREE;
+            const lngOffset = km / (KM_PER_DEGREE * Math.cos(latitude * Math.PI / 180));
+            return { latOffset, lngOffset };
+        }
+
+        // Initialize map
+        function initMap() {
+            map = L.map('map').setView(mapCenter, mapZoom);
+
+            L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+                attribution: '© OpenStreetMap contributors',
+                maxZoom: 19
+            }).addTo(map);
+
+            // Add click handler for viewport creation
+            map.on('click', function(e) {
+                if (document.getElementById('createForm').classList.contains('open')) {
+                    createViewportFromClick(e.latlng);
+                }
+            });
+
+            // Add mousemove handler to show preview
+            map.on('mousemove', function(e) {
+                if (document.getElementById('createForm').classList.contains('open')) {
+                    showViewportPreview(e.latlng);
+                }
+            });
+
+            // Hide preview when mouse leaves map
+            map.getContainer().addEventListener('mouseout', function() {
+                if (previewBox) {
+                    map.removeLayer(previewBox);
+                    previewBox = null;
+                }
+            });
+        }
+
+        // Show preview of 10km × 10km viewport
+        function showViewportPreview(latlng) {
+            const offsets = kmToDegrees(VIEWPORT_SIZE_KM / 2, latlng.lat);
+
+            const bounds = [
+                [latlng.lat - offsets.latOffset, latlng.lng - offsets.lngOffset],
+                [latlng.lat + offsets.latOffset, latlng.lng + offsets.lngOffset]
+            ];
+
+            // Remove old preview
+            if (previewBox) {
+                map.removeLayer(previewBox);
+            }
+
+            // Create new preview
+            previewBox = L.rectangle(bounds, {
+                color: '#ff6b35',
+                weight: 2,
+                opacity: 0.7,
+                fill: true,
+                fillColor: '#ff6b35',
+                fillOpacity: 0.1,
+                interactive: false
+            }).addTo(map);
+
+            previewBox.bringToFront();
+        }
+
+        // Prepare viewport for naming (called when map is clicked)
+        function createViewportFromClick(latlng) {
+            const offsets = kmToDegrees(VIEWPORT_SIZE_KM / 2, latlng.lat);
+
+            const minLat = latlng.lat - offsets.latOffset;
+            const maxLat = latlng.lat + offsets.latOffset;
+            const minLon = latlng.lng - offsets.lngOffset;
+            const maxLon = latlng.lng + offsets.lngOffset;
+
+            // Store bounds for later creation
+            pendingViewportBounds = {
+                bounds: `${minLon.toFixed(6)},${minLat.toFixed(6)},${maxLon.toFixed(6)},${maxLat.toFixed(6)}`,
+                autoName: `viewport_${latlng.lat.toFixed(4)}_${latlng.lng.toFixed(4)}`
+            };
+
+            // Remove preview
+            if (previewBox) {
+                map.removeLayer(previewBox);
+                previewBox = null;
+            }
+
+            // Show the naming form
+            document.getElementById('formFields').style.display = 'block';
+            document.getElementById('closeButton').style.display = 'none';
+            document.getElementById('viewportName').value = '';
+            document.getElementById('viewportName').focus();
+
+            document.getElementById('mapInfoLabel').textContent = 'Name your viewport';
+            document.getElementById('mapInfoValue').textContent = '(optional)';
+        }
+
+        // Confirm and create the viewport with optional custom name
+        async function confirmViewportCreation() {
+            if (!pendingViewportBounds) return;
+
+            const customName = document.getElementById('viewportName').value.trim();
+            const name = customName || pendingViewportBounds.autoName;
+            const bounds = pendingViewportBounds.bounds;
+
+            // Hide form
+            document.getElementById('formFields').style.display = 'none';
+            document.getElementById('closeButton').style.display = 'block';
+
+            // Show loading state
+            document.getElementById('mapInfoLabel').textContent = 'Creating viewport...';
+            document.getElementById('mapInfoValue').textContent = '';
+
+            try {
+                // Create the viewport via API
+                const response = await fetch('/api/viewports/create', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ bounds, name, description: `${VIEWPORT_SIZE_KM}km × ${VIEWPORT_SIZE_KM}km` })
+                });
+
+                const data = await response.json();
+
+                if (data.success) {
+                    // Close the form
+                    document.getElementById('createForm').classList.remove('open');
+
+                    // Show success message
+                    document.getElementById('mapInfoLabel').textContent = '✓ Viewport created!';
+                    document.getElementById('mapInfoValue').textContent = name;
+
+                    // Reload viewports list
+                    loadViewports();
+                    loadCurrentViewport();
+
+                    // Restore viewport box after form closes
+                    drawViewportBox();
+
+                    // Reset message after 3 seconds
+                    setTimeout(() => {
+                        document.getElementById('mapInfoLabel').textContent = 'Click on map';
+                        document.getElementById('mapInfoValue').textContent = 'to select viewport center';
+                    }, 3000);
+
+                    // Clear pending bounds
+                    pendingViewportBounds = null;
+                } else {
+                    document.getElementById('mapInfoLabel').textContent = '✗ Error creating viewport';
+                    document.getElementById('mapInfoValue').textContent = data.error || 'Unknown error';
+
+                    // Close form on error
+                    setTimeout(() => {
+                        document.getElementById('createForm').classList.remove('open');
+                        drawViewportBox();
+                    }, 2000);
+                }
+            } catch (error) {
+                document.getElementById('mapInfoLabel').textContent = '✗ Error creating viewport';
+                document.getElementById('mapInfoValue').textContent = error.message;
+
+                // Close form on error
+                setTimeout(() => {
+                    document.getElementById('createForm').classList.remove('open');
+                    drawViewportBox();
+                    document.getElementById('mapInfoLabel').textContent = 'Click on map';
+                    document.getElementById('mapInfoValue').textContent = 'to select viewport center';
+                }, 2000);
+            }
+        }
+
+        // Cancel viewport creation
+        function cancelViewportCreation() {
+            document.getElementById('formFields').style.display = 'none';
+            document.getElementById('closeButton').style.display = 'block';
+            document.getElementById('viewportName').value = '';
+            pendingViewportBounds = null;
+
+            document.getElementById('mapInfoLabel').textContent = 'Click on map';
+            document.getElementById('mapInfoValue').textContent = 'to select viewport center';
+        }
+
+        // Load current viewport
+        async function loadCurrentViewport() {
+            try {
+                const response = await fetch('/api/viewports/current');
+                const data = await response.json();
+
+                if (data.success) {
+                    currentViewport = data.viewport;
+                    updateCurrentViewportDisplay();
+                    drawViewportBox();
+
+                    // Check if data exists for this viewport
+                    checkViewportData();
+                }
+            } catch (error) {
+                console.error('Error loading current viewport:', error);
+            }
+        }
+
+        // Check if pyramids exist for current viewport (with timeout)
+        async function checkViewportData() {
+            // Run check asynchronously without blocking page load
+            setTimeout(async () => {
+                try {
+                    // Check multiple possible locations for pyramid metadata
+                    const pyramidPaths = [
+                        'pyramids/2024/pyramid_metadata.json',
+                        'pyramids/pyramid_metadata.json',
+                        'pyramids/2024/level_0.tif'
+                    ];
+
+                    let hasData = false;
+
+                    // Check each path with a 2-second timeout
+                    for (const path of pyramidPaths) {
+                        try {
+                            const controller = new AbortController();
+                            const timeout = setTimeout(() => controller.abort(), 2000);
+
+                            const response = await fetch(path, {
+                                method: 'HEAD',
+                                signal: controller.signal
+                            });
+
+                            clearTimeout(timeout);
+
+                            if (response.ok) {
+                                hasData = true;
+                                break;
+                            }
+                        } catch (e) {
+                            // Continue to next path (timeout or network error)
+                        }
+                    }
+
+                    const downloadBtn = document.getElementById('downloadBtn');
+                    const viewerBtn = document.getElementById('viewerBtn');
+
+                    if (!downloadBtn || !viewerBtn) {
+                        return; // Buttons might not exist yet
+                    }
+
+                    if (hasData) {
+                        console.log('✓ Pyramid data found - showing viewer button');
+                        downloadBtn.style.display = 'none';
+                        viewerBtn.style.display = 'block';
+                    } else {
+                        console.log('✗ No pyramid data found - showing download button');
+                        downloadBtn.style.display = 'block';
+                        viewerBtn.style.display = 'none';
+                    }
+                } catch (error) {
+                    console.error('Error checking viewport data:', error);
+                    // If we can't determine, show download button
+                    const downloadBtn = document.getElementById('downloadBtn');
+                    const viewerBtn = document.getElementById('viewerBtn');
+                    if (downloadBtn && viewerBtn) {
+                        downloadBtn.style.display = 'block';
+                        viewerBtn.style.display = 'none';
+                    }
+                }
+            }, 100);
+        }
+
+        // Go directly to viewer
+        function goToViewer() {
+            window.location.href = 'bangalore_viewer_3panel.html';
+        }
+
+        // Delete a viewport
+        async function deleteViewport(name) {
+            if (!confirm(`Are you sure you want to delete the "${name}" viewport?`)) {
+                return;
+            }
+
+            try {
+                const response = await fetch('/api/viewports/delete', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ name })
+                });
+
+                const data = await response.json();
+
+                if (data.success) {
+                    console.log(`✓ Deleted viewport: ${name}`);
+                    loadViewports();
+
+                    // If deleted viewport was active, reload current
+                    if (currentViewport && currentViewport.name === name) {
+                        loadCurrentViewport();
+                    }
+                } else {
+                    alert(`Error deleting viewport: ${data.error}`);
+                }
+            } catch (error) {
+                alert(`Error deleting viewport: ${error.message}`);
+                console.error('Delete error:', error);
+            }
+        }
+
+        // Update current viewport display
+        function updateCurrentViewportDisplay() {
+            if (!currentViewport) return;
+
+            document.getElementById('currentName').textContent = currentViewport.name || currentViewport.viewport_id;
+
+            const bounds = currentViewport.bounds;
+            const boundsText = `
+Min Lat: ${bounds.minLat.toFixed(4)}°
+Max Lat: ${bounds.maxLat.toFixed(4)}°
+Min Lon: ${bounds.minLon.toFixed(4)}°
+Max Lon: ${bounds.maxLon.toFixed(4)}°
+            `.trim();
+
+            document.getElementById('currentBounds').textContent = boundsText;
+        }
+
+        // Draw viewport box on map
+        function drawViewportBox() {
+            if (!currentViewport) return;
+
+            const bounds = currentViewport.bounds;
+            const latLngBounds = [
+                [bounds.minLat, bounds.minLon],
+                [bounds.maxLat, bounds.maxLon]
+            ];
+
+            if (viewportBox) {
+                map.removeLayer(viewportBox);
+            }
+
+            viewportBox = L.rectangle(latLngBounds, {
+                color: '#667eea',
+                weight: 2,
+                opacity: 0.8,
+                fill: true,
+                fillColor: '#667eea',
+                fillOpacity: 0.1
+            }).addTo(map);
+
+            // Center map on viewport
+            const center = currentViewport.center;
+            map.setView([center[0], center[1]], 12);
+        }
+
+        // Load viewports list
+        async function loadViewports() {
+            try {
+                const response = await fetch('/api/viewports/list');
+                const data = await response.json();
+
+                if (data.success) {
+                    displayViewports(data.viewports);
+                }
+            } catch (error) {
+                console.error('Error loading viewports:', error);
+            }
+        }
+
+        // Display viewports in list
+        function displayViewports(viewports) {
+            const list = document.getElementById('viewportsList');
+
+            if (viewports.length === 0) {
+                list.innerHTML = '<p style="color: #999; font-size: 12px;">No viewports found</p>';
+                return;
+            }
+
+            list.innerHTML = viewports.map(vp => {
+                const isActive = vp.is_active ? 'active' : '';
+                const bounds = vp.bounds;
+                const coordsText = `${bounds.minLon.toFixed(4)}°, ${bounds.minLat.toFixed(4)}°`;
+
+                return `
+                    <div class="viewport-item ${isActive}">
+                        <div class="viewport-item-name" onclick="switchViewport('${vp.name}')" style="cursor: pointer;">${vp.name}</div>
+                        <div class="viewport-item-coords">${coordsText}</div>
+                        <div class="viewport-item-actions">
+                            <button class="viewport-item-btn" onclick="switchViewport('${vp.name}')">Select</button>
+                            <button class="viewport-item-btn delete" onclick="deleteViewport('${vp.name}')">Delete</button>
+                        </div>
+                    </div>
+                `;
+            }).join('');
+        }
+
+        // Switch to viewport
+        async function switchViewport(name) {
+            try {
+                const response = await fetch('/api/viewports/switch', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ name })
+                });
+
+                const data = await response.json();
+
+                if (data.success) {
+                    currentViewport = data.viewport;
+                    updateCurrentViewportDisplay();
+                    drawViewportBox();
+                    loadViewports(); // Refresh list to show active indicator
+                }
+            } catch (error) {
+                console.error('Error switching viewport:', error);
+            }
+        }
+
+        // Toggle create form
+        function toggleCreateForm() {
+            const form = document.getElementById('createForm');
+            form.classList.toggle('open');
+
+            // Remove viewport box when opening form for clear view
+            if (form.classList.contains('open')) {
+                if (viewportBox) {
+                    map.removeLayer(viewportBox);
+                }
+            } else {
+                // Restore viewport box when closing form
+                drawViewportBox();
+                document.getElementById('mapInfoLabel').textContent = 'Click on map';
+                document.getElementById('mapInfoValue').textContent = 'to select viewport center';
+
+                // Reset preview
+                if (previewBox) {
+                    map.removeLayer(previewBox);
+                    previewBox = null;
+                }
+            }
+        }
+
+        // Viewport creation now happens directly from map click in createViewportFromClick()
+
+        // Show status message
+        function showStatus(div, type, message) {
+            div.textContent = message;
+            div.className = `status ${type}`;
+            div.style.display = 'block';
+        }
+
+        // Disable UI during downloads
+        function disableUI() {
+            // Disable viewport list
+            const viewportItems = document.querySelectorAll('.viewport-item-btn, .viewport-item-name');
+            viewportItems.forEach(el => {
+                el.style.opacity = '0.5';
+                el.style.cursor = 'not-allowed';
+                el.style.pointerEvents = 'none';
+            });
+
+            // Disable create form button
+            const toggleBtn = document.querySelector('.btn-toggle');
+            if (toggleBtn) {
+                toggleBtn.style.opacity = '0.5';
+                toggleBtn.style.cursor = 'not-allowed';
+                toggleBtn.style.pointerEvents = 'none';
+            }
+
+            // Disable map clicking by disabling the click event
+            if (map) {
+                map.dragging.disable();
+                map.boxZoom.disable();
+                map.doubleClickZoom.disable();
+                map.scrollWheelZoom.disable();
+            }
+
+            // Add overlay message
+            const mapContainer = document.querySelector('.map-container');
+            if (mapContainer && !document.getElementById('downloadOverlay')) {
+                const overlay = document.createElement('div');
+                overlay.id = 'downloadOverlay';
+                overlay.style.position = 'absolute';
+                overlay.style.top = '0';
+                overlay.style.left = '0';
+                overlay.style.right = '0';
+                overlay.style.bottom = '0';
+                overlay.style.background = 'rgba(0, 0, 0, 0.3)';
+                overlay.style.display = 'flex';
+                overlay.style.alignItems = 'center';
+                overlay.style.justifyContent = 'center';
+                overlay.style.zIndex = '1000';
+                overlay.style.cursor = 'not-allowed';
+                overlay.innerHTML = '<div style="background: white; padding: 20px; border-radius: 8px; text-align: center; box-shadow: 0 4px 12px rgba(0,0,0,0.2);"><div style="font-weight: 600; color: #333; margin-bottom: 8px;">Downloading in progress...</div><div style="font-size: 12px; color: #666;">Please wait until the download completes</div></div>';
+                mapContainer.appendChild(overlay);
+            }
+        }
+
+        // Re-enable UI after downloads
+        function enableUI() {
+            // Re-enable viewport list
+            const viewportItems = document.querySelectorAll('.viewport-item-btn, .viewport-item-name');
+            viewportItems.forEach(el => {
+                el.style.opacity = '1';
+                el.style.cursor = 'pointer';
+                el.style.pointerEvents = 'auto';
+            });
+
+            // Re-enable create form button
+            const toggleBtn = document.querySelector('.btn-toggle');
+            if (toggleBtn) {
+                toggleBtn.style.opacity = '1';
+                toggleBtn.style.cursor = 'pointer';
+                toggleBtn.style.pointerEvents = 'auto';
+            }
+
+            // Re-enable map
+            if (map) {
+                map.dragging.enable();
+                map.boxZoom.enable();
+                map.doubleClickZoom.enable();
+                map.scrollWheelZoom.enable();
+            }
+
+            // Remove overlay
+            const overlay = document.getElementById('downloadOverlay');
+            if (overlay) {
+                overlay.remove();
+            }
+        }
+
+        // Start downloads and processing
+        async function startDownloads() {
+            const btn = document.getElementById('downloadBtn');
+            const progressContainer = document.getElementById('progressContainer');
+            const progressBar = document.getElementById('progressBar');
+            const progressLabel = document.getElementById('progressLabel');
+            const progressPercent = document.getElementById('progressPercent');
+            const statusEl = document.getElementById('downloadStatus');
+
+            btn.disabled = true;
+            progressContainer.style.display = 'block';
+
+            // Disable UI while downloading
+            disableUI();
+
+            try {
+                // Start the download process
+                const response = await fetch('/api/downloads/process', {
+                    method: 'POST'
+                });
+
+                const data = await response.json();
+
+                if (!data.success) {
+                    throw new Error(data.error || 'Failed to start downloads');
+                }
+
+                const taskId = data.task_id;
+
+                // Poll for progress
+                let completed = false;
+                let pollCount = 0;
+                const maxPolls = 1800; // 30 minutes with 1 second intervals
+
+                while (!completed && pollCount < maxPolls) {
+                    await new Promise(resolve => setTimeout(resolve, 1000));
+                    pollCount++;
+
+                    try {
+                        const progressResponse = await fetch(`/api/downloads/progress/${taskId}`);
+                        const progressData = await progressResponse.json();
+
+                        if (progressData.success) {
+                            const progress = progressData.progress || 0;
+                            const stage = progressData.stage || 'Processing...';
+
+                            progressBar.style.width = progress + '%';
+                            progressPercent.textContent = progress + '%';
+                            progressLabel.textContent = stage;
+
+                            if (progressData.completed) {
+                                completed = true;
+                            }
+                        }
+                    } catch (err) {
+                        console.error('Progress polling error:', err);
+                    }
+                }
+
+                if (completed) {
+                    progressBar.style.width = '100%';
+                    progressPercent.textContent = '100%';
+                    progressLabel.textContent = '✓ All data ready! Opening viewer...';
+                    statusEl.innerHTML = '✓ Done';
+
+                    // Reload viewports to show updated data
+                    loadViewports();
+                    loadCurrentViewport();
+
+                    // Redirect to viewer after a short delay
+                    setTimeout(() => {
+                        window.location.href = 'bangalore_viewer_3panel.html';
+                    }, 2000);
+                } else {
+                    throw new Error('Download process timeout');
+                }
+            } catch (error) {
+                progressLabel.textContent = '✗ Error: ' + error.message;
+                statusEl.innerHTML = '✗ Error';
+                btn.disabled = false;
+                enableUI(); // Re-enable UI on error
+                console.error('Download error:', error);
+            }
+        }
+
+        // Search viewports
+        document.getElementById('viewportSearch').addEventListener('input', function(e) {
+            const query = e.target.value.toLowerCase();
+            const items = document.querySelectorAll('.viewport-item');
+
+            items.forEach(item => {
+                const name = item.querySelector('.viewport-item-name').textContent.toLowerCase();
+                item.style.display = name.includes(query) ? '' : 'none';
+            });
+        });
+
+        // Initialize on page load
+        window.addEventListener('DOMContentLoaded', function() {
+            initMap();
+            loadCurrentViewport();
+            loadViewports();
+        });
+    </script>
+</body>
+</html>

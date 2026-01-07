@@ -1,0 +1,20 @@
+Viewport Configuration
+=====================
+
+Viewport ID: bangalore_10km
+
+Center (degrees):
+  Latitude:  12.9716°
+  Longitude: 77.5946°
+
+Bounds (degrees):
+  Min Latitude:  12.9216°
+  Max Latitude:  13.0216°
+  Min Longitude: 77.5446°
+  Max Longitude: 77.6446°
+
+Size: 10.0km × 10.0km
+
+Description: 10km × 10km area centered on Bangalore city center
+
+Generated: 2026-01-06T00:00:00

@@ -1,0 +1,9 @@
+# Ignore active viewport selection (user-specific)
+viewport.txt
+.active
+
+# Track preset viewports
+!tile_aligned.txt
+!malleswaram_500m.txt
+!bangalore_10km.txt
+!README.md

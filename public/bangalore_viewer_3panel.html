@@ -1,0 +1,1184 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <title>Bangalore 3-Panel Viewer - OSM | Embeddings | RGB</title>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Arial, sans-serif;
+            background: #1a1a1a;
+            color: #fff;
+            overflow: hidden;
+        }
+
+        #controls {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            background: #2a2a2a;
+            padding: 15px 20px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.5);
+            z-index: 1000;
+            display: flex;
+            align-items: center;
+            gap: 15px;
+        }
+
+        #controls h1 {
+            font-size: 18px;
+            font-weight: 600;
+            margin-right: 20px;
+        }
+
+        #controls label {
+            font-size: 14px;
+            margin-right: 5px;
+        }
+
+        #controls select,
+        #controls input {
+            padding: 8px 12px;
+            border: 1px solid #444;
+            border-radius: 4px;
+            background: #333;
+            color: #fff;
+            font-size: 14px;
+        }
+
+        #controls button {
+            padding: 8px 16px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-weight: 600;
+            font-size: 14px;
+            transition: background 0.2s;
+        }
+
+        .save-btn {
+            background: #28a745;
+            color: white;
+        }
+
+        .save-btn:hover {
+            background: #218838;
+        }
+
+        .clear-btn {
+            background: #dc3545;
+            color: white;
+        }
+
+        .clear-btn:hover {
+            background: #c82333;
+        }
+
+        .export-btn {
+            background: #007bff;
+            color: white;
+        }
+
+        .export-btn:hover {
+            background: #0056b3;
+        }
+
+        #label-count {
+            padding: 8px 12px;
+            background: #333;
+            border-radius: 4px;
+            font-weight: 600;
+        }
+
+        #map-container {
+            position: fixed;
+            top: 70px;
+            left: 0;
+            right: 0;
+            bottom: 40px;
+            display: grid;
+            grid-template-columns: 1fr 1fr 1fr;
+            gap: 2px;
+            background: #1a1a1a;
+        }
+
+        .panel {
+            position: relative;
+            background: #2a2a2a;
+        }
+
+        .panel-header {
+            position: absolute;
+            top: 10px;
+            left: 10px;
+            background: rgba(0, 0, 0, 0.7);
+            color: white;
+            padding: 8px 12px;
+            border-radius: 4px;
+            font-weight: 600;
+            font-size: 14px;
+            z-index: 400;
+            backdrop-filter: blur(5px);
+        }
+
+        .map {
+            width: 100%;
+            height: 100%;
+        }
+
+        #status {
+            position: fixed;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            background: #2a2a2a;
+            padding: 10px 20px;
+            font-size: 12px;
+            color: #999;
+            border-top: 1px solid #333;
+        }
+
+        .marker-popup {
+            font-size: 14px;
+            font-weight: bold;
+        }
+    </style>
+</head>
+<body>
+    <div id="controls">
+        <h1>Bangalore Viewer</h1>
+
+        <!-- Labeling Controls -->
+        <div style="display: flex; gap: 10px; align-items: center;">
+            <button style="background: #17a2b8; color: white; padding: 8px 12px; border: none; border-radius: 4px; cursor: pointer; font-weight: 600;" onclick="createLabelDialog()">+ Create Label</button>
+
+            <label style="margin: 0;">Active Label:</label>
+            <select id="active-label" style="padding: 8px 12px; border: 1px solid #444; border-radius: 4px; background: #333; color: #fff; font-size: 14px;">
+                <option value="">No labels yet</option>
+            </select>
+
+            <button id="start-label-btn" style="background: #28a745; color: white; padding: 8px 12px; border: none; border-radius: 4px; cursor: pointer; font-weight: 600;" onclick="startLabeling()">Start Labeling</button>
+            <button id="stop-label-btn" style="background: #dc3545; color: white; padding: 8px 12px; border: none; border-radius: 4px; cursor: pointer; font-weight: 600; display: none;" onclick="stopLabeling()">Stop Labeling</button>
+
+            <button style="background: #007bff; color: white; padding: 8px 12px; border: none; border-radius: 4px; cursor: pointer; font-weight: 600;" onclick="exportLabelsJSON()">Export Labels</button>
+
+            <!-- Similarity Search Controls -->
+            <div style="display: flex; gap: 10px; align-items: center; margin-left: 20px; border-left: 1px solid #444; padding-left: 20px;">
+                <label style="margin: 0;">Similarity:</label>
+                <input
+                    type="range"
+                    id="similarity-threshold"
+                    min="0"
+                    max="100"
+                    value="50"
+                    style="width: 120px; cursor: pointer;"
+                    oninput="updateThresholdDisplay()"
+                />
+                <span id="threshold-display" style="background: #333; padding: 4px 8px; border-radius: 3px; font-size: 13px; min-width: 40px; text-align: center;">0.50</span>
+
+                <button
+                    id="find-similar-btn"
+                    style="background: #17a2b8; color: white; padding: 8px 12px; border: none; border-radius: 4px; cursor: pointer; font-weight: 600;"
+                    onclick="findSimilarPixels()"
+                >
+                    Find Similar
+                </button>
+
+                <button
+                    id="commit-similar-btn"
+                    style="background: #28a745; color: white; padding: 8px 12px; border: none; border-radius: 4px; cursor: pointer; font-weight: 600; display: none;"
+                    onclick="commitSimilarPixels()"
+                >
+                    Commit & Relabel (<span id="similar-count">0</span>)
+                </button>
+
+                <button
+                    id="clear-similar-btn"
+                    style="background: #dc3545; color: white; padding: 8px 12px; border: none; border-radius: 4px; cursor: pointer; font-weight: 600; display: none;"
+                    onclick="clearSimilarPixels()"
+                >
+                    Clear Preview
+                </button>
+            </div>
+
+            <span id="label-count" style="padding: 8px 12px; background: #333; border-radius: 4px; font-weight: 600; margin-left: 20px;">Labels: 0 | Embeddings: 0</span>
+        </div>
+    </div>
+
+    <div id="map-container">
+        <div class="panel">
+            <div class="panel-header">OpenStreetMap</div>
+            <div id="map-osm" class="map"></div>
+        </div>
+        <div class="panel">
+            <div class="panel-header">Tessera Embeddings <span id="embedding-year">2024</span></div>
+            <div id="map-embedding" class="map"></div>
+        </div>
+        <div class="panel">
+            <div class="panel-header">Satellite RGB</div>
+            <div id="map-rgb" class="map"></div>
+        </div>
+    </div>
+
+    <div id="status">
+        <strong>Labeling Instructions:</strong> 1) Create label(s) with "+ Create Label" • 2) Select active label from dropdown • 3) Click "Start Labeling" • 4) Click on embeddings to label them (colors show labels) • 5) Click "Stop Labeling" when done • 6) Click "Export Labels" to save JSON • All maps are synchronized
+    </div>
+
+    <script>
+        const TILE_SERVER = 'http://localhost:5125';
+        const center = [12.97, 77.59];
+        const zoom = 12;
+
+        // Current embedding year
+        let currentEmbeddingYear = '2024';
+
+        // Storage for labels: {panel: [[lat, lon, label], ...]}
+        let labels = {
+            'osm': [],
+            'embedding': [],
+            'rgb': []
+        };
+
+        // Storage for marker objects: {panel: {key: marker}}
+        let markers = {
+            'osm': {},
+            'embedding': {},
+            'rgb': {}
+        };
+
+        // Map instances
+        let maps = {};
+
+        // Create all three maps
+        function createMaps() {
+            // OSM Map
+            maps.osm = L.map('map-osm', {
+                center: center,
+                zoom: zoom,
+                zoomControl: true,
+                minZoom: 6,
+                maxZoom: 18
+            });
+
+            L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+                attribution: '© OpenStreetMap contributors',
+                maxZoom: 19
+            }).addTo(maps.osm);
+
+            // Embedding Map (Tessera)
+            maps.embedding = L.map('map-embedding', {
+                center: center,
+                zoom: zoom,
+                zoomControl: true,
+                minZoom: 6,
+                maxZoom: 17
+            });
+
+            let embeddingLayer = L.tileLayer(`${TILE_SERVER}/tiles/${currentEmbeddingYear}/{z}/{x}/{y}.png`, {
+                attribution: 'Tessera Embeddings',
+                opacity: 1.0,
+                maxZoom: 17,
+                minZoom: 6,
+                tileSize: 2048,
+                zoomOffset: -3
+            }).addTo(maps.embedding);
+
+            // RGB Satellite Map
+            maps.rgb = L.map('map-rgb', {
+                center: center,
+                zoom: zoom,
+                zoomControl: true,
+                minZoom: 6,
+                maxZoom: 17
+            });
+
+            L.tileLayer(`${TILE_SERVER}/tiles/satellite/{z}/{x}/{y}.png`, {
+                attribution: 'Sentinel-2 RGB',
+                opacity: 1.0,
+                maxZoom: 17,
+                minZoom: 6,
+                tileSize: 2048,
+                zoomOffset: -3
+            }).addTo(maps.rgb);
+
+            // Add click handlers
+            Object.keys(maps).forEach(panel => {
+                maps[panel].on('click', function(e) {
+                    console.log(`[CLICK] Panel: ${panel}, labelingMode: ${labelingMode}, lat: ${e.latlng.lat}, lng: ${e.latlng.lng}`);
+
+                    // If on embedding panel and in labeling mode, extract embedding and label it
+                    if (panel === 'embedding' && labelingMode) {
+                        console.log('[CLICK] Routing to embeddings labeling handler');
+                        extractAndLabelEmbedding(e.latlng.lat, e.latlng.lng);
+                    } else {
+                        // Old behavior: add marker (for other panels)
+                        console.log(`[CLICK] Routing to old marker handler for ${panel}`);
+                        const label = document.getElementById('label-input')?.value || 'unlabeled';
+                        addMarker(panel, e.latlng.lat, e.latlng.lng, label);
+                    }
+                });
+            });
+
+            // Synchronize maps
+            syncMaps();
+
+            return embeddingLayer;
+        }
+
+        // Synchronize all maps
+        function syncMaps() {
+            // Use OSM as reference map
+            const refMap = maps.osm;
+
+            refMap.on('zoomend moveend', function() {
+                const refCenter = refMap.getCenter();
+                const refZoom = refMap.getZoom();
+
+                Object.keys(maps).forEach(panel => {
+                    if (panel !== 'osm') {
+                        maps[panel].setView(refCenter, refZoom, {animate: false});
+                    }
+                });
+            });
+        }
+
+        // Add marker
+        function addMarker(panel, lat, lon, label) {
+            const key = `${lat.toFixed(6)},${lon.toFixed(6)}`;
+
+            // Check if marker already exists (remove it)
+            if (markers[panel][key]) {
+                removeMarker(panel, lat, lon);
+                return;
+            }
+
+            // Create marker
+            const marker = L.marker([lat, lon], {
+                title: label
+            }).addTo(maps[panel]);
+
+            marker.bindPopup(`<div class="marker-popup">${label}</div>`);
+
+            // Store marker
+            markers[panel][key] = marker;
+            labels[panel].push([lat, lon, label]);
+
+            updateLabelCount();
+            console.log(`Added '${label}' at (${lat.toFixed(4)}, ${lon.toFixed(4)}) on ${panel} panel`);
+        }
+
+        // Remove marker
+        function removeMarker(panel, lat, lon) {
+            const key = `${lat.toFixed(6)},${lon.toFixed(6)}`;
+
+            if (markers[panel][key]) {
+                maps[panel].removeLayer(markers[panel][key]);
+                delete markers[panel][key];
+
+                // Remove from labels
+                labels[panel] = labels[panel].filter(
+                    ([la, lo]) => Math.abs(la - lat) > 0.00001 || Math.abs(lo - lon) > 0.00001
+                );
+
+                updateLabelCount();
+                console.log(`Removed marker at (${lat.toFixed(4)}, ${lon.toFixed(4)}) from ${panel} panel`);
+            }
+        }
+
+        // Update label count
+        function updateLabelCount() {
+            const total = Object.values(labels).reduce((sum, arr) => sum + arr.length, 0);
+            document.getElementById('label-count').textContent = `Labels: ${total}`;
+        }
+
+        // Save labels to localStorage
+        function saveLabels() {
+            const saveData = {
+                labels: labels,
+                embeddingYear: currentEmbeddingYear
+            };
+            localStorage.setItem('bangalore_labels_3panel', JSON.stringify(saveData));
+            const total = Object.values(labels).reduce((sum, arr) => sum + arr.length, 0);
+            alert(`Saved ${total} labels to browser storage`);
+        }
+
+        // Load labels from localStorage
+        function loadLabels() {
+            const stored = localStorage.getItem('bangalore_labels_3panel');
+            if (stored) {
+                const saveData = JSON.parse(stored);
+                Object.keys(saveData.labels).forEach(panel => {
+                    saveData.labels[panel].forEach(([lat, lon, label]) => {
+                        addMarker(panel, lat, lon, label);
+                    });
+                });
+                console.log(`Loaded ${Object.values(saveData.labels).reduce((sum, arr) => sum + arr.length, 0)} labels`);
+            }
+        }
+
+        // Clear all labels
+        function clearAllLabels() {
+            if (!confirm('Clear all labels?')) return;
+
+            Object.keys(markers).forEach(panel => {
+                Object.values(markers[panel]).forEach(marker => {
+                    maps[panel].removeLayer(marker);
+                });
+                markers[panel] = {};
+                labels[panel] = [];
+            });
+
+            updateLabelCount();
+            console.log('Cleared all labels');
+        }
+
+        // Export labels to JSON
+        function exportLabels() {
+            const exportData = {
+                embeddingYear: currentEmbeddingYear,
+                labels: labels,
+                timestamp: new Date().toISOString()
+            };
+            const dataStr = JSON.stringify(exportData, null, 2);
+            const dataBlob = new Blob([dataStr], {type: 'application/json'});
+            const url = URL.createObjectURL(dataBlob);
+            const link = document.createElement('a');
+            link.href = url;
+            link.download = `bangalore_labels_${currentEmbeddingYear}_${Date.now()}.json`;
+            link.click();
+            URL.revokeObjectURL(url);
+            console.log('Exported labels to JSON file');
+        }
+
+        // =====================================================================
+        // EMBEDDING LABELING SYSTEM
+        // =====================================================================
+
+        // Label management
+        let definedLabels = [];  // List of all defined labels
+        let embeddingLabels = {}; // {label: [[128-dim vector], [128-dim vector], ...]}
+        let labelingMode = false;
+        let labelPixels = {}; // {key: {label: 'road', coordinate: {lat, lon}}} for visualization
+
+        // Similarity search tracking
+        let similarPixels = {};          // {key: {label, coordinate, embedding, distance, rectangle, marker}}
+        let isSimilaritySearchActive = false;
+        let activeSearchLabel = null;
+
+        // Create a new label
+        function createLabelDialog() {
+            const labelName = prompt('Enter new label name (e.g., "road", "building", "tree"):');
+            if (labelName && labelName.trim()) {
+                const label = labelName.trim();
+                if (definedLabels.includes(label)) {
+                    alert(`Label "${label}" already exists!`);
+                    return;
+                }
+                definedLabels.push(label);
+                definedLabels.sort();
+                embeddingLabels[label] = [];
+
+                // Update dropdown
+                updateLabelDropdown();
+                console.log(`Created label: "${label}"`);
+            }
+        }
+
+        // Update the active label dropdown
+        function updateLabelDropdown() {
+            const select = document.getElementById('active-label');
+            select.innerHTML = '';
+            if (definedLabels.length === 0) {
+                select.innerHTML = '<option value="">No labels yet</option>';
+                select.disabled = true;
+            } else {
+                definedLabels.forEach(label => {
+                    const option = document.createElement('option');
+                    option.value = label;
+                    option.textContent = label;
+                    select.appendChild(option);
+                });
+                select.value = definedLabels[0];
+                select.disabled = false;
+            }
+        }
+
+        // Start labeling mode
+        function startLabeling() {
+            if (definedLabels.length === 0) {
+                alert('Please create at least one label first!');
+                return;
+            }
+            labelingMode = true;
+            document.getElementById('start-label-btn').style.display = 'none';
+            document.getElementById('stop-label-btn').style.display = 'block';
+            document.getElementById('map-embedding').style.cursor = 'crosshair';
+            console.log('Labeling mode: ON');
+        }
+
+        // Stop labeling mode
+        function stopLabeling() {
+            labelingMode = false;
+            document.getElementById('start-label-btn').style.display = 'block';
+            document.getElementById('stop-label-btn').style.display = 'none';
+            document.getElementById('map-embedding').style.cursor = 'grab';
+            console.log('Labeling mode: OFF');
+        }
+
+        // Extract embedding and associate with label
+        async function extractAndLabelEmbedding(lat, lon) {
+            console.log(`[LABELING] Click at (${lat.toFixed(6)}, ${lon.toFixed(6)}), labelingMode=${labelingMode}`);
+
+            if (!labelingMode) {
+                console.log('[LABELING] Labeling mode is OFF, ignoring click');
+                return;
+            }
+
+            const activeLabel = document.getElementById('active-label').value;
+            console.log(`[LABELING] Active label: "${activeLabel}"`);
+
+            if (!activeLabel) {
+                console.error('[LABELING] No active label selected!');
+                alert('Please select an active label!');
+                return;
+            }
+
+            try {
+                console.log(`[LABELING] Calling API to extract embedding at (${lat}, ${lon})...`);
+
+                // Call backend API to extract embedding
+                const response = await fetch('/api/embeddings/extract', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ lat, lon })
+                });
+
+                console.log(`[LABELING] API response status: ${response.status}`);
+
+                const data = await response.json();
+                console.log(`[LABELING] API response:`, data);
+
+                if (!data.success) {
+                    console.error(`[LABELING] API error: ${data.error}`);
+                    alert(`Error extracting embedding: ${data.error}`);
+                    return;
+                }
+
+                console.log(`[LABELING] Got embedding with ${data.embedding.length} dimensions`);
+
+                // Store embedding with label
+                embeddingLabels[activeLabel].push(data.embedding);
+
+                // Track pixel for visualization
+                const key = `${data.pixel.x},${data.pixel.y}`;
+                labelPixels[key] = {
+                    label: activeLabel,
+                    coordinate: {lat, lon},
+                    embedding: data.embedding,
+                    color: getColorForLabel(activeLabel)
+                };
+
+                // Update visualization (key already defined above)
+                highlightLabeledPixel(lat, lon, activeLabel, key);
+
+                // Update label count
+                updateLabelCount();
+
+                console.log(`✓ [LABELING] Successfully labeled pixel with "${activeLabel}" - stored embedding`);
+            } catch (error) {
+                console.error('[LABELING] Error extracting embedding:', error);
+                alert('Error extracting embedding. Check console for details.');
+            }
+        }
+
+        // Get a color for a label (for visualization)
+        function getColorForLabel(label) {
+            const colors = {
+                'road': '#FF6B6B',
+                'building': '#4ECDC4',
+                'tree': '#45B7D1',
+                'water': '#96CEB4',
+                'grass': '#FFEAA7',
+                'car': '#DDA15E',
+                'person': '#BC6C25'
+            };
+            // Generate consistent color from label name if not predefined
+            if (colors[label]) return colors[label];
+            let hash = 0;
+            for (let i = 0; i < label.length; i++) {
+                hash = label.charCodeAt(i) + ((hash << 5) - hash);
+            }
+            const color = '#' + (Math.abs(hash) % 0xFFFFFF).toString(16).padStart(6, '0');
+            return color;
+        }
+
+        // Invert RGB color: (R, G, B) -> (255-R, 255-G, 255-B)
+        function invertColor(hexColor) {
+            // Remove # if present
+            const color = hexColor.replace('#', '');
+            // Parse hex to RGB
+            const r = parseInt(color.substr(0, 2), 16);
+            const g = parseInt(color.substr(2, 2), 16);
+            const b = parseInt(color.substr(4, 2), 16);
+            // Invert: 255 - value
+            const invR = (255 - r).toString(16).padStart(2, '0');
+            const invG = (255 - g).toString(16).padStart(2, '0');
+            const invB = (255 - b).toString(16).padStart(2, '0');
+            return '#' + invR + invG + invB;
+        }
+
+        // Calculate pixel size in degrees (10m x 10m)
+        function calculatePixelBounds(lat, lon) {
+            // Each pixel is 10m x 10m
+            // 1 degree latitude = ~111.32 km = 111320 m
+            // 1 degree longitude = ~111.32 * cos(latitude) km at that latitude
+            const latPerMeter = 1 / 111320;
+            const lonPerMeter = 1 / (111320 * Math.cos(lat * Math.PI / 180));
+
+            const pixelSizeMeters = 10;  // 10m x 10m pixel
+            const latOffset = pixelSizeMeters * latPerMeter / 2;
+            const lonOffset = pixelSizeMeters * lonPerMeter / 2;
+
+            return [
+                [lat - latOffset, lon - lonOffset],  // Southwest
+                [lat + latOffset, lon + lonOffset]   // Northeast
+            ];
+        }
+
+        // Delete a labeled pixel
+        function deleteLabeledPixel(key, pixelData) {
+            // Confirm deletion
+            if (!confirm(`Delete labeled pixel "${pixelData.label}"?`)) {
+                return;
+            }
+
+            // Find and remove the embedding from the label's embedding array
+            const embeddingIndex = embeddingLabels[pixelData.label].findIndex(emb =>
+                JSON.stringify(emb) === JSON.stringify(pixelData.embedding)
+            );
+
+            if (embeddingIndex !== -1) {
+                embeddingLabels[pixelData.label].splice(embeddingIndex, 1);
+                console.log(`[DELETE] Removed embedding from label "${pixelData.label}"`);
+            }
+
+            // Remove the visual elements (rectangle and marker)
+            if (pixelData.rectangle) {
+                maps.embedding.removeLayer(pixelData.rectangle);
+            }
+            if (pixelData.marker) {
+                maps.embedding.removeLayer(pixelData.marker);
+            }
+
+            // Remove from tracking
+            delete labelPixels[key];
+
+            // Update label count
+            updateLabelCount();
+
+            console.log(`[DELETE] Deleted labeled pixel at key "${key}"`);
+        }
+
+        // Highlight labeled pixel on embedding map as rectangle with inverted color
+        function highlightLabeledPixel(lat, lon, label, key) {
+            const labelColor = getColorForLabel(label);
+            const invertedColor = invertColor(labelColor);  // Inverted outline
+            const bounds = calculatePixelBounds(lat, lon);
+
+            const rectangle = L.rectangle(bounds, {
+                color: invertedColor,  // Inverted color outline
+                weight: 2,  // Bold outline
+                opacity: 1.0,
+                fill: true,
+                fillColor: invertedColor,  // Inverted color fill
+                fillOpacity: 0.6,
+                className: 'labeled-pixel'
+            }).addTo(maps.embedding);
+
+            // Show label on hover
+            const popupContent = `<div style="font-weight: 600; color: ${labelColor}; font-size: 12px;">${label}</div>`;
+            rectangle.bindPopup(popupContent);
+
+            rectangle.on('mouseover', function() {
+                this.openPopup();
+                this.setStyle({fillOpacity: 0.85, weight: 3});  // Highlight on hover
+            });
+            rectangle.on('mouseout', function() {
+                this.closePopup();
+                this.setStyle({fillOpacity: 0.6, weight: 2});  // Reset
+            });
+
+            // Click to delete
+            rectangle.on('click', function() {
+                deleteLabeledPixel(key, labelPixels[key]);
+            });
+
+            // Add a pin/marker at the center of the labeled pixel for better visibility
+            const markerIcon = L.divIcon({
+                html: `<div style="
+                    width: 16px;
+                    height: 16px;
+                    background: ${labelColor};
+                    border: 2px solid ${invertedColor};
+                    border-radius: 50%;
+                    box-shadow: 0 0 8px rgba(0,0,0,0.5);
+                "></div>`,
+                iconSize: [16, 16],
+                className: 'labeled-pixel-marker'
+            });
+
+            const marker = L.marker([lat, lon], {
+                icon: markerIcon,
+                title: label
+            }).addTo(maps.embedding);
+
+            // Bind popup to marker
+            marker.bindPopup(popupContent);
+
+            // Hover behavior for marker
+            marker.on('mouseover', function() {
+                this.openPopup();
+            });
+            marker.on('mouseout', function() {
+                this.closePopup();
+            });
+
+            // Click to delete
+            marker.on('click', function(e) {
+                L.DomEvent.stopPropagation(e);  // Prevent map click
+                deleteLabeledPixel(key, labelPixels[key]);
+            });
+
+            // Store references to visual elements in labelPixels for deletion
+            labelPixels[key].rectangle = rectangle;
+            labelPixels[key].marker = marker;
+        }
+
+        // Update label count display
+        function updateLabelCount() {
+            let totalEmbeddings = 0;
+            Object.values(embeddingLabels).forEach(embs => {
+                totalEmbeddings += embs.length;
+            });
+            document.getElementById('label-count').textContent =
+                `Labels: ${definedLabels.length} | Embeddings: ${totalEmbeddings}`;
+        }
+
+        // Export labels to JSON file
+        function exportLabelsJSON() {
+            if (definedLabels.length === 0 || Object.values(embeddingLabels).every(e => e.length === 0)) {
+                alert('No labeled embeddings to export!');
+                return;
+            }
+
+            // Build export data sorted by label name
+            const exportData = definedLabels.map(label => ({
+                label: label,
+                embedding: embeddingLabels[label]
+            }));
+
+            const dataStr = JSON.stringify(exportData, null, 2);
+            const dataBlob = new Blob([dataStr], { type: 'application/json' });
+            const url = URL.createObjectURL(dataBlob);
+            const link = document.createElement('a');
+            link.href = url;
+            link.download = `embedding_labels_${Date.now()}.json`;
+            link.click();
+            URL.revokeObjectURL(url);
+
+            console.log(`✓ Exported ${definedLabels.length} labels with ${Object.values(embeddingLabels).reduce((sum, e) => sum + e.length, 0)} embeddings`);
+        }
+
+        // =====================================================================
+        // SIMILARITY SEARCH FUNCTIONS
+        // =====================================================================
+
+        // Update threshold display when slider changes
+        function updateThresholdDisplay() {
+            const slider = document.getElementById('similarity-threshold');
+            const display = document.getElementById('threshold-display');
+            const value = parseInt(slider.value) / 100;  // Convert 0-100 to 0.0-1.0
+            display.textContent = value.toFixed(2);
+        }
+
+        // Calculate average embedding from array of embeddings
+        function calculateAverageEmbedding(embeddings) {
+            if (embeddings.length === 0) return null;
+
+            const dim = embeddings[0].length;
+            const avgEmb = new Array(dim).fill(0);
+
+            // Sum all embeddings
+            for (let emb of embeddings) {
+                for (let i = 0; i < dim; i++) {
+                    avgEmb[i] += emb[i];
+                }
+            }
+
+            // Divide by count and round to uint8 [0-255], clamp to valid range
+            for (let i = 0; i < dim; i++) {
+                const avg = Math.round(avgEmb[i] / embeddings.length);
+                // Clamp to valid uint8 range [0, 255]
+                avgEmb[i] = Math.max(0, Math.min(255, avg));
+            }
+
+            return avgEmb;
+        }
+
+        // Find similar pixels using the active label
+        async function findSimilarPixels() {
+            const activeLabel = document.getElementById('active-label').value;
+
+            if (!activeLabel) {
+                alert('Please select an active label first!');
+                return;
+            }
+
+            // Check if label has any embeddings
+            if (!embeddingLabels[activeLabel] || embeddingLabels[activeLabel].length === 0) {
+                alert(`Label "${activeLabel}" has no manually labeled pixels yet. Please label at least one pixel first.`);
+                return;
+            }
+
+            // Clear any previous similarity search
+            clearSimilarPixels();
+
+            // Calculate average embedding
+            const avgEmbedding = calculateAverageEmbedding(embeddingLabels[activeLabel]);
+            console.log(`[SIMILARITY] Searching for pixels similar to "${activeLabel}" (${embeddingLabels[activeLabel].length} samples)`);
+
+            // Get threshold
+            const threshold = parseFloat(document.getElementById('threshold-display').textContent);
+
+            // Get viewport ID
+            try {
+                const viewportResponse = await fetch('/api/viewports/current');
+                const viewportData = await viewportResponse.json();
+                const viewportId = viewportData.viewport.name;
+
+                // Show loading state
+                document.getElementById('find-similar-btn').disabled = true;
+                document.getElementById('find-similar-btn').textContent = 'Searching...';
+
+                // Call backend API
+                const response = await fetch('/api/embeddings/search-similar', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        embedding: avgEmbedding,
+                        threshold: threshold,
+                        viewport_id: viewportId
+                    })
+                });
+
+                const data = await response.json();
+
+                if (!data.success) {
+                    alert(`Error: ${data.error}`);
+                    return;
+                }
+
+                console.log(`[SIMILARITY] Found ${data.matches.length} similar pixels (${data.query_stats.computation_time_ms.toFixed(0)}ms)`);
+
+                // Visualize results in preview mode
+                visualizeSimilarPixels(data.matches, activeLabel);
+
+                // Update UI
+                activeSearchLabel = activeLabel;
+                isSimilaritySearchActive = true;
+                document.getElementById('commit-similar-btn').style.display = 'block';
+                document.getElementById('clear-similar-btn').style.display = 'block';
+                document.getElementById('similar-count').textContent = data.matches.length;
+
+            } catch (error) {
+                console.error('[SIMILARITY] Error:', error);
+                alert('Error finding similar pixels. Check console for details.');
+            } finally {
+                document.getElementById('find-similar-btn').disabled = false;
+                document.getElementById('find-similar-btn').textContent = 'Find Similar';
+            }
+        }
+
+        // Visualize similar pixels in preview mode (with dashed outline, lower opacity)
+        function visualizeSimilarPixels(matches, label) {
+            const labelColor = getColorForLabel(label);
+            const invertedColor = invertColor(labelColor);
+
+            let visualizedCount = 0;
+            matches.forEach(match => {
+                const lat = match.lat;
+                const lon = match.lon;
+                const key = `${match.pixel.x},${match.pixel.y}`;
+
+                // Skip if already labeled (committed)
+                if (labelPixels[key]) {
+                    return;
+                }
+
+                // Create rectangle bounds (10m x 10m pixel)
+                const bounds = calculatePixelBounds(lat, lon);
+
+                // Create rectangle with preview styling
+                const rectangle = L.rectangle(bounds, {
+                    color: invertedColor,
+                    weight: 1,
+                    opacity: 0.8,
+                    dashArray: '3, 3',  // Dashed outline for preview
+                    fill: true,
+                    fillColor: invertedColor,
+                    fillOpacity: 0.3,   // Lower opacity for preview
+                    className: 'similar-pixel-preview'
+                }).addTo(maps.embedding);
+
+                // Show label and distance on hover
+                const popupContent = `<div style="font-weight: 600; color: ${labelColor}; font-size: 12px;">
+                    ${label} (similar)<br/>
+                    <span style="font-size: 10px;">Distance: ${match.distance.toFixed(3)}</span>
+                </div>`;
+                rectangle.bindPopup(popupContent);
+
+                rectangle.on('mouseover', function() {
+                    this.openPopup();
+                    this.setStyle({fillOpacity: 0.5, weight: 2});
+                });
+                rectangle.on('mouseout', function() {
+                    this.closePopup();
+                    this.setStyle({fillOpacity: 0.3, weight: 1});
+                });
+
+                // Store in temporary similarPixels structure
+                similarPixels[key] = {
+                    label: label,
+                    coordinate: {lat, lon},
+                    embedding: null,  // Will use average when committing
+                    distance: match.distance,
+                    pixel: match.pixel,
+                    rectangle: rectangle,
+                    marker: null
+                };
+
+                visualizedCount++;
+            });
+
+            console.log(`[SIMILARITY] Visualized ${visualizedCount} similar pixels in preview mode`);
+        }
+
+        // Clear similar pixels preview (cancel search)
+        function clearSimilarPixels() {
+            if (Object.keys(similarPixels).length === 0) return;
+
+            console.log(`[SIMILARITY] Clearing ${Object.keys(similarPixels).length} preview pixels`);
+
+            // Remove all preview visualizations
+            for (const [key, pixelData] of Object.entries(similarPixels)) {
+                if (pixelData.rectangle) {
+                    maps.embedding.removeLayer(pixelData.rectangle);
+                }
+                if (pixelData.marker) {
+                    maps.embedding.removeLayer(pixelData.marker);
+                }
+            }
+
+            similarPixels = {};
+            isSimilaritySearchActive = false;
+            activeSearchLabel = null;
+
+            // Update UI
+            document.getElementById('commit-similar-btn').style.display = 'none';
+            document.getElementById('clear-similar-btn').style.display = 'none';
+            document.getElementById('similar-count').textContent = '0';
+
+            console.log('[SIMILARITY] Preview cleared');
+        }
+
+        // Commit similar pixels and apply intelligent relabeling
+        async function commitSimilarPixels() {
+            if (!isSimilaritySearchActive || Object.keys(similarPixels).length === 0) {
+                alert('No similar pixels to commit!');
+                return;
+            }
+
+            const activeLabel = activeSearchLabel;
+            const pixelCount = Object.keys(similarPixels).length;
+
+            if (!confirm(`Commit ${pixelCount} similar pixels to label "${activeLabel}" and relabel existing pixels?`)) {
+                return;
+            }
+
+            console.log(`[SIMILARITY] Committing ${pixelCount} similar pixels to "${activeLabel}"`);
+
+            try {
+                // Get average embedding for the current label (before adding new pixels)
+                const avgEmbedding = calculateAverageEmbedding(embeddingLabels[activeLabel]);
+
+                // Step 1: Add similar pixels to embeddingLabels
+                for (const [key, pixelData] of Object.entries(similarPixels)) {
+                    embeddingLabels[activeLabel].push(avgEmbedding);
+                }
+
+                // Step 2: Visualize newly committed similar pixels with solid styling
+                const newlyCommitted = [];
+                for (const [key, pixelData] of Object.entries(similarPixels)) {
+                    const lat = pixelData.coordinate.lat;
+                    const lon = pixelData.coordinate.lon;
+
+                    labelPixels[key] = {
+                        label: activeLabel,
+                        coordinate: {lat, lon},
+                        embedding: avgEmbedding,
+                        color: getColorForLabel(activeLabel)
+                    };
+
+                    // Remove preview rectangle
+                    if (pixelData.rectangle) {
+                        maps.embedding.removeLayer(pixelData.rectangle);
+                    }
+
+                    // Re-visualize with committed styling
+                    highlightLabeledPixel(lat, lon, activeLabel, key);
+                    newlyCommitted.push(key);
+                }
+
+                console.log(`[SIMILARITY] ✓ Visualized ${newlyCommitted.length} newly committed pixels`);
+
+                // Step 3: Apply intelligent relabeling
+                console.log(`[SIMILARITY] Starting intelligent relabeling...`);
+
+                // Prepare data for relabeling endpoint
+                const relabelRequest = {
+                    label_embeddings: embeddingLabels,
+                    labeled_pixels: {}
+                };
+
+                // Build labeled_pixels object for relabeling
+                for (const [key, pixelData] of Object.entries(labelPixels)) {
+                    relabelRequest.labeled_pixels[key] = {
+                        label: pixelData.label,
+                        embedding: pixelData.embedding,
+                        lat: pixelData.coordinate.lat,
+                        lon: pixelData.coordinate.lon
+                    };
+                }
+
+                // Call relabeling endpoint
+                const relabelResponse = await fetch('/api/embeddings/relabel-by-similarity', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(relabelRequest)
+                });
+
+                const relabelData = await relabelResponse.json();
+
+                if (!relabelData.success) {
+                    console.warn(`[SIMILARITY] Relabeling failed: ${relabelData.error}`);
+                } else {
+                    console.log(`[SIMILARITY] Relabeling complete: ${relabelData.stats.relabeled_pixels} relabeled, ${relabelData.stats.unchanged_pixels} unchanged`);
+
+                    // Apply relabeling results
+                    if (relabelData.relabeled && relabelData.relabeled.length > 0) {
+                        console.log(`[SIMILARITY] Applying ${relabelData.relabeled.length} relabelings...`);
+
+                        for (const relabel of relabelData.relabeled) {
+                            const key = relabel.key;
+                            const oldLabel = relabel.old_label;
+                            const newLabel = relabel.new_label;
+                            const oldDistance = relabel.old_distance;
+                            const newDistance = relabel.new_distance;
+
+                            console.log(`[RELABEL] ${key}: ${oldLabel} (${oldDistance.toFixed(4)}) → ${newLabel} (${newDistance.toFixed(4)})`);
+
+                            // Update labelPixels
+                            if (labelPixels[key]) {
+                                // Remove old visualization
+                                if (labelPixels[key].rectangle) {
+                                    maps.embedding.removeLayer(labelPixels[key].rectangle);
+                                }
+                                if (labelPixels[key].marker) {
+                                    maps.embedding.removeLayer(labelPixels[key].marker);
+                                }
+
+                                // Update label and color
+                                labelPixels[key].label = newLabel;
+                                labelPixels[key].color = getColorForLabel(newLabel);
+
+                                // Re-visualize with new label's color
+                                highlightLabeledPixel(relabel.lat, relabel.lon, newLabel, key);
+                            }
+                        }
+
+                        // Show relabeling summary
+                        let summary = `Successfully committed ${pixelCount} similar pixels!\n\nRelabeling Summary:\n`;
+                        const relabelCounts = {};
+                        for (const relabel of relabelData.relabeled) {
+                            const transKey = `${relabel.old_label} → ${relabel.new_label}`;
+                            relabelCounts[transKey] = (relabelCounts[transKey] || 0) + 1;
+                        }
+                        for (const [transition, count] of Object.entries(relabelCounts)) {
+                            summary += `• ${count} pixel(s) relabeled: ${transition}\n`;
+                        }
+                        console.log(`[SIMILARITY] ${summary}`);
+                        alert(summary);
+                    } else {
+                        alert(`Successfully committed ${pixelCount} similar pixels!\nNo existing pixels needed relabeling.`);
+                    }
+                }
+
+            } catch (error) {
+                console.error('[SIMILARITY] Error during commit/relabel:', error);
+                alert('Error during commit/relabel. Check console for details.');
+                return;
+            }
+
+            // Step 4: Clear UI
+            similarPixels = {};
+            isSimilaritySearchActive = false;
+            activeSearchLabel = null;
+
+            document.getElementById('commit-similar-btn').style.display = 'none';
+            document.getElementById('clear-similar-btn').style.display = 'none';
+            document.getElementById('similar-count').textContent = '0';
+            updateLabelCount();
+
+            console.log(`[SIMILARITY] ✓ Commit and relabel complete!`);
+        }
+
+        // Auto-clear preview when active label changes
+        document.addEventListener('DOMContentLoaded', function() {
+            const activeLabel = document.getElementById('active-label');
+            if (activeLabel) {
+                activeLabel.addEventListener('change', function() {
+                    if (isSimilaritySearchActive) {
+                        console.log('[SIMILARITY] Active label changed - clearing preview');
+                        clearSimilarPixels();
+                    }
+                });
+            }
+        });
+
+        // Initialize
+        window.onload = function() {
+            createMaps();
+            loadLabels();
+
+            // Check tile server health
+            fetch(`${TILE_SERVER}/health`)
+                .then(resp => resp.json())
+                .then(data => {
+                    console.log('Tile server status:', data);
+                })
+                .catch(err => {
+                    console.warn('Tile server not responding:', err);
+                    alert('Warning: Tile server not responding. Make sure it is running on port 5125.');
+                });
+        };
+    </script>
+</body>
+</html>
