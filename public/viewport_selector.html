@@ -512,7 +512,7 @@
 
                     <div class="create-form" id="createForm">
                         <div style="font-size: 12px; color: #333; margin-bottom: 12px; padding: 10px; background: #e8f4f8; border-radius: 6px; border-left: 3px solid #667eea;">
-                            📍 <strong>Click on the map</strong> to create a 10km × 10km viewport centered at that location
+                            📍 <strong>Click on the map</strong> to create a 5km × 5km viewport centered at that location
                         </div>
                         <div id="formFields" style="display: none;">
                             <div class="form-group">
@@ -558,10 +558,10 @@
         let pendingViewportBounds = null;
 
         // Constants
-        const VIEWPORT_SIZE_KM = 10;
+        const VIEWPORT_SIZE_KM = 5;
         const KM_PER_DEGREE = 111.32; // approximate at equator
 
-        // Convert 10km to degrees (approximate)
+        // Convert km to degrees (approximate)
         function kmToDegrees(km, latitude) {
             const latOffset = km / KM_PER_DEGREE;
             const lngOffset = km / (KM_PER_DEGREE * Math.cos(latitude * Math.PI / 180));
@@ -600,7 +600,7 @@
             });
         }
 
-        // Show preview of 10km × 10km viewport
+        // Show preview of 5km × 5km viewport
         function showViewportPreview(latlng) {
             const offsets = kmToDegrees(VIEWPORT_SIZE_KM / 2, latlng.lat);
 

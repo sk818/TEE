@@ -5,7 +5,7 @@ A simple web-based interface for managing geographic viewports and data selectio
 ## Features
 
 - **Interactive Map**: OpenStreetMap-based map using Leaflet.js
-- **Viewport Visualization**: See the current 10km × 10km viewport box on the map
+- **Viewport Visualization**: See the current viewport box on the map
 - **Viewport Switching**: Switch between preset viewports with one click
 - **Viewport Creation**: Create new viewports by:
   - Clicking on the map to set center point
@@ -41,7 +41,7 @@ http://localhost:8001
 - **Create New Viewport**: Form to create custom viewports
 
 ### Map Area
-- **Viewport Box**: Blue rectangle showing the current 10km × 10km viewport
+- **Viewport Box**: Blue rectangle showing the current viewport
 - **Viewport Info**: Bottom-right shows instructions for viewport creation
 
 ## Common Tasks
@@ -164,7 +164,7 @@ Check your internet connection - the interface uses CDN-hosted Leaflet.js and Op
 - **Frontend**: HTML5, Vanilla JavaScript, Leaflet.js
 - **Map Source**: OpenStreetMap tiles
 - **Data Format**: Human-readable text files with geographic bounds
-- **Viewport Size**: Fixed at 10km × 10km (3600 arcseconds squared)
+- **Viewport Size**: Fixed size (existing: 10km × 10km, new viewports: 5km × 5km)
 
 ## Related Documentation
 

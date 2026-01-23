@@ -62,7 +62,7 @@ Bounds (degrees):
   Min Longitude: {min_lon:.4f}°
   Max Longitude: {max_lon:.4f}°
 
-Size: 10.0km × 10.0km
+Size: 5km × 5km
 
 Description: {description}
 

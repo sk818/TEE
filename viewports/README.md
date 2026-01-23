@@ -47,7 +47,7 @@ Generated: 2026-01-06T00:00:00
 - **Viewport ID**: Unique identifier (no spaces, use underscores)
 - **Center**: Latitude and longitude in decimal degrees
 - **Bounds**: Min/Max latitude and longitude in decimal degrees
-- **Size**: Always 10km × 10km (hardcoded)
+- **Size**: Fixed size (existing viewports: 10km × 10km, new viewports: 5km × 5km)
 - **Description**: Optional human-readable description
 - **Generated**: ISO timestamp when the viewport was created
 
@@ -96,6 +96,8 @@ python scripts/viewport_manager.py create-from-bounds \
 
 ## Important Notes
 
-- All viewports have a fixed size of **10km × 10km**
+- **Viewport Size**:
+  - Existing/legacy viewports: 10km × 10km
+  - New viewports (created going forward): 5km × 5km
 - Bounds are in **WGS84 (EPSG:4326)** coordinates (latitude/longitude in decimal degrees)
 - The cache lookup uses a tolerance of **±0.0001°** (approximately ±10 meters)
