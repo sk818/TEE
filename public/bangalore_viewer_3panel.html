@@ -240,6 +240,9 @@
         let center = [12.97, 77.59];  // Default: Bangalore
         let zoom = 12;
 
+        // Viewport bounds for clipping
+        let viewportBounds = null;  // Will be set from updateMapViewport()
+
         // Current embedding year
         let currentEmbeddingYear = '2024';
         let currentViewportName = 'tile_aligned';
@@ -283,6 +286,9 @@
                     if (vp.bounds_tuple && vp.bounds_tuple.length === 4) {
                         const [lonMin, latMin, lonMax, latMax] = vp.bounds_tuple;
 
+                        // Store viewport bounds in Leaflet format: [[latMin, lonMin], [latMax, lonMax]]
+                        viewportBounds = [[latMin, lonMin], [latMax, lonMax]];
+
                         // Calculate center (Leaflet expects [lat, lon])
                         center = [(latMin + latMax) / 2, (lonMin + lonMax) / 2];
 
@@ -298,7 +304,7 @@
                         else if (maxSpan > 0.05) zoom = 14;
                         else zoom = 15;
 
-                        console.log(`[VIEWPORT] Loaded: ${currentViewportName}, center: [${center[0].toFixed(4)}, ${center[1].toFixed(4)}], zoom: ${zoom}`);
+                        console.log(`[VIEWPORT] Loaded: ${currentViewportName}, center: [${center[0].toFixed(4)}, ${center[1].toFixed(4)}], zoom: ${zoom}, bounds: [[${latMin.toFixed(4)}, ${lonMin.toFixed(4)}], [${latMax.toFixed(4)}, ${lonMax.toFixed(4)}]]`);
                     }
                 }
             } catch (error) {
@@ -340,6 +346,13 @@
                 zoomOffset: -3
             }).addTo(maps.embedding);
 
+            // Clip embedding map to viewport bounds
+            if (viewportBounds) {
+                maps.embedding.setMaxBounds(viewportBounds);
+                maps.embedding.options.maxBoundsViscosity = 1.0;  // Prevent bouncing when hitting edges
+                console.log(`[MAPS] Embedding map clipped to viewport bounds: ${JSON.stringify(viewportBounds)}`);
+            }
+
             // RGB Satellite Map
             maps.rgb = L.map('map-rgb', {
                 center: center,
@@ -357,6 +370,13 @@
                 tileSize: 2048,
                 zoomOffset: -3
             }).addTo(maps.rgb);
+
+            // Clip RGB satellite map to viewport bounds
+            if (viewportBounds) {
+                maps.rgb.setMaxBounds(viewportBounds);
+                maps.rgb.options.maxBoundsViscosity = 1.0;  // Prevent bouncing when hitting edges
+                console.log(`[MAPS] RGB satellite map clipped to viewport bounds`);
+            }
 
             // Add click handlers
             Object.keys(maps).forEach(panel => {

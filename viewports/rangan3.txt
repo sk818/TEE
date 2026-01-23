@@ -1,0 +1,20 @@
+Viewport Configuration
+=====================
+
+Viewport ID: rangan3
+
+Center (degrees):
+  Latitude:  12.4265°
+  Longitude: 76.6540°
+
+Bounds (degrees):
+  Min Latitude:  12.4041°
+  Max Latitude:  12.4490°
+  Min Longitude: 76.6310°
+  Max Longitude: 76.6770°
+
+Size: 5km × 5km
+
+Description: 5km × 5km
+
+Generated: 2026-01-23T17:55:55.032921

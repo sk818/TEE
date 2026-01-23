@@ -464,32 +464,6 @@
                     </div>
                 </div>
 
-                <!-- Downloads Section -->
-                <div class="section">
-                    <div class="downloads-section">
-                        <div class="downloads-title">📥 Download & Process</div>
-                        <button class="btn-download" id="downloadBtn" onclick="startDownloads()" style="width: 100%; margin-bottom: 12px;">
-                            <span>Download All & Process</span>
-                            <span class="download-status" id="downloadStatus"></span>
-                        </button>
-                        <button class="btn-download" id="viewerBtn" onclick="goToViewer()" style="width: 100%; margin-bottom: 12px; display: none; border-color: #667eea; color: #667eea; background: #f0f4ff;">
-                            <span>▶ Go to Viewer</span>
-                            <span class="download-status" id="viewerStatus"></span>
-                        </button>
-                        <div id="progressContainer" style="display: none;">
-                            <div style="font-size: 11px; color: #666; margin-bottom: 6px;">
-                                <span id="progressLabel">Starting downloads...</span>
-                            </div>
-                            <div style="width: 100%; height: 6px; background: #eee; border-radius: 3px; overflow: hidden;">
-                                <div id="progressBar" style="height: 100%; width: 0%; background: linear-gradient(90deg, #667eea, #764ba2); transition: width 0.3s ease;"></div>
-                            </div>
-                            <div style="font-size: 10px; color: #999; margin-top: 6px; text-align: right;">
-                                <span id="progressPercent">0%</span>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-
                 <!-- Search -->
                 <div class="section">
                     <div class="section-title">Search Viewports</div>
@@ -526,6 +500,32 @@
                         </div>
                         <div id="closeButton" style="text-align: center; padding: 20px 10px;">
                             <button class="btn btn-secondary" onclick="toggleCreateForm()" style="width: auto;">Close</button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Downloads Section (at bottom of sidebar) -->
+                <div class="section" style="margin-top: auto; border-top: 1px solid #ddd; padding-top: 15px;">
+                    <div class="downloads-section">
+                        <div class="downloads-title">📥 Download & Process</div>
+                        <button class="btn-download" id="downloadBtn" onclick="startDownloads()" style="width: 100%; margin-bottom: 12px;">
+                            <span>Download All & Process</span>
+                            <span class="download-status" id="downloadStatus"></span>
+                        </button>
+                        <button class="btn-download" id="viewerBtn" onclick="goToViewer()" style="width: 100%; margin-bottom: 12px; display: none; border-color: #667eea; color: #667eea; background: #f0f4ff;">
+                            <span>▶ Go to Viewer</span>
+                            <span class="download-status" id="viewerStatus"></span>
+                        </button>
+                        <div id="progressContainer" style="display: none;">
+                            <div style="font-size: 11px; color: #666; margin-bottom: 6px;">
+                                <span id="progressLabel">Starting downloads...</span>
+                            </div>
+                            <div style="width: 100%; height: 6px; background: #eee; border-radius: 3px; overflow: hidden;">
+                                <div id="progressBar" style="height: 100%; width: 0%; background: linear-gradient(90deg, #667eea, #764ba2); transition: width 0.3s ease;"></div>
+                            </div>
+                            <div style="font-size: 10px; color: #999; margin-top: 6px; text-align: right;">
+                                <span id="progressPercent">0%</span>
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -579,21 +579,27 @@
 
             // Add click handler for viewport creation
             map.on('click', function(e) {
-                if (document.getElementById('createForm').classList.contains('open')) {
+                const formOpen = document.getElementById('createForm').classList.contains('open');
+                console.log('[MAP CLICK] Form open:', formOpen, 'Latlng:', e.latlng);
+                if (formOpen) {
+                    console.log('[MAP CLICK] Creating viewport from click at:', e.latlng);
                     createViewportFromClick(e.latlng);
+                } else {
+                    console.log('[MAP CLICK] Form not open, ignoring click');
                 }
             });
 
             // Add mousemove handler to show preview
             map.on('mousemove', function(e) {
-                if (document.getElementById('createForm').classList.contains('open')) {
+                // Only show preview if form is open AND no location has been selected yet
+                if (document.getElementById('createForm').classList.contains('open') && !pendingViewportBounds) {
                     showViewportPreview(e.latlng);
                 }
             });
 
-            // Hide preview when mouse leaves map
+            // Hide preview when mouse leaves map (but keep it visible if location has been selected for naming)
             map.getContainer().addEventListener('mouseout', function() {
-                if (previewBox) {
+                if (previewBox && !pendingViewportBounds) {
                     map.removeLayer(previewBox);
                     previewBox = null;
                 }
@@ -630,6 +636,7 @@
 
         // Prepare viewport for naming (called when map is clicked)
         function createViewportFromClick(latlng) {
+            console.log('[CREATE VIEWPORT] Starting creation at:', latlng);
             const offsets = kmToDegrees(VIEWPORT_SIZE_KM / 2, latlng.lat);
 
             const minLat = latlng.lat - offsets.latOffset;
@@ -642,12 +649,10 @@
                 bounds: `${minLon.toFixed(6)},${minLat.toFixed(6)},${maxLon.toFixed(6)},${maxLat.toFixed(6)}`,
                 autoName: `viewport_${latlng.lat.toFixed(4)}_${latlng.lng.toFixed(4)}`
             };
+            console.log('[CREATE VIEWPORT] Bounds:', pendingViewportBounds.bounds);
 
-            // Remove preview
-            if (previewBox) {
-                map.removeLayer(previewBox);
-                previewBox = null;
-            }
+            // Keep preview visible so user can see where the viewport will be
+            // (Don't remove it - let them see the selected area while typing the name)
 
             // Show the naming form
             document.getElementById('formFields').style.display = 'block';
@@ -657,6 +662,7 @@
 
             document.getElementById('mapInfoLabel').textContent = 'Name your viewport';
             document.getElementById('mapInfoValue').textContent = '(optional)';
+            console.log('[CREATE VIEWPORT] Form fields shown, ready for user input');
         }
 
         // Confirm and create the viewport with optional custom name
@@ -686,31 +692,57 @@
                 const data = await response.json();
 
                 if (data.success) {
-                    // Close the form
-                    document.getElementById('createForm').classList.remove('open');
+                    // Remove preview box
+                    if (previewBox) {
+                        map.removeLayer(previewBox);
+                        previewBox = null;
+                    }
 
-                    // Show success message
-                    document.getElementById('mapInfoLabel').textContent = '✓ Viewport created!';
-                    document.getElementById('mapInfoValue').textContent = name;
+                    // Check if data is being prepared in background
+                    if (data.data_preparing) {
+                        // Data is being downloaded/processed - show waiting message
+                        document.getElementById('mapInfoLabel').textContent = '⏳ Data preparing...';
+                        document.getElementById('mapInfoValue').textContent = data.message || 'Downloads in progress (15-30 minutes)';
+                        console.log('[VIEWPORT CREATE] Data preparing in background:', data.message);
 
-                    // Reload viewports list
-                    loadViewports();
-                    loadCurrentViewport();
+                        // Keep form open and reload after a delay to check if data is ready
+                        setTimeout(() => {
+                            loadViewports();
+                            loadCurrentViewport();
+                        }, 5000);
+                    } else {
+                        // Data is ready, close form and show success
+                        document.getElementById('createForm').classList.remove('open');
 
-                    // Restore viewport box after form closes
-                    drawViewportBox();
+                        // Show success message
+                        document.getElementById('mapInfoLabel').textContent = '✓ Viewport created!';
+                        document.getElementById('mapInfoValue').textContent = name;
 
-                    // Reset message after 3 seconds
-                    setTimeout(() => {
-                        document.getElementById('mapInfoLabel').textContent = 'Click on map';
-                        document.getElementById('mapInfoValue').textContent = 'to select viewport center';
-                    }, 3000);
+                        // Reload viewports list
+                        loadViewports();
+                        loadCurrentViewport();
+
+                        // Restore viewport box after form closes
+                        drawViewportBox();
+
+                        // Reset message after 3 seconds
+                        setTimeout(() => {
+                            document.getElementById('mapInfoLabel').textContent = 'Click on map';
+                            document.getElementById('mapInfoValue').textContent = 'to select viewport center';
+                        }, 3000);
+                    }
 
                     // Clear pending bounds
                     pendingViewportBounds = null;
                 } else {
                     document.getElementById('mapInfoLabel').textContent = '✗ Error creating viewport';
                     document.getElementById('mapInfoValue').textContent = data.error || 'Unknown error';
+
+                    // Remove preview box
+                    if (previewBox) {
+                        map.removeLayer(previewBox);
+                        previewBox = null;
+                    }
 
                     // Close form on error
                     setTimeout(() => {
@@ -721,6 +753,12 @@
             } catch (error) {
                 document.getElementById('mapInfoLabel').textContent = '✗ Error creating viewport';
                 document.getElementById('mapInfoValue').textContent = error.message;
+
+                // Remove preview box
+                if (previewBox) {
+                    map.removeLayer(previewBox);
+                    previewBox = null;
+                }
 
                 // Close form on error
                 setTimeout(() => {
@@ -738,6 +776,12 @@
             document.getElementById('closeButton').style.display = 'block';
             document.getElementById('viewportName').value = '';
             pendingViewportBounds = null;
+
+            // Remove preview box
+            if (previewBox) {
+                map.removeLayer(previewBox);
+                previewBox = null;
+            }
 
             document.getElementById('mapInfoLabel').textContent = 'Click on map';
             document.getElementById('mapInfoValue').textContent = 'to select viewport center';
