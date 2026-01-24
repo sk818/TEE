@@ -1,0 +1,20 @@
+Viewport Configuration
+=====================
+
+Viewport ID: iitdellhi
+
+Center (degrees):
+  Latitude:  28.5614°
+  Longitude: 77.1931°
+
+Bounds (degrees):
+  Min Latitude:  28.5389°
+  Max Latitude:  28.5838°
+  Min Longitude: 77.1675°
+  Max Longitude: 77.2187°
+
+Size: 5km × 5km
+
+Description: 5km × 5km
+
+Generated: 2026-01-24T18:04:08.849724

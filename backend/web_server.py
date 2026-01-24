@@ -48,9 +48,21 @@ FAISS_INDICES_DIR = DATA_DIR / "faiss_indices"
 tasks = {}
 tasks_lock = threading.Lock()
 
+# Get venv Python path for subprocess calls
+PROJECT_ROOT = Path(__file__).parent.parent
+VENV_PYTHON = PROJECT_ROOT / "venv" / "bin" / "python3"
+if not VENV_PYTHON.exists():
+    VENV_PYTHON = sys.executable  # Fallback to current Python if venv doesn't exist
+logger.info(f"Using Python: {VENV_PYTHON}")
+
 # ============================================================================
 # HELPER FUNCTIONS FOR DATA PREPARATION
 # ============================================================================
+
+def run_script(script_name, *args, timeout=1800):
+    """Run a Python script using the venv Python interpreter."""
+    cmd = [str(VENV_PYTHON), str(PROJECT_ROOT / script_name)] + list(args)
+    return subprocess.run(cmd, cwd=PROJECT_ROOT, capture_output=True, text=True, timeout=timeout)
 
 def check_viewport_mosaics_exist(viewport_name):
     """Check if embeddings and satellite RGB mosaics exist for a viewport."""
@@ -112,13 +124,7 @@ def trigger_data_download_and_processing(viewport_name):
 
             # Download embeddings
             logger.info(f"[DATA] Downloading embeddings for '{viewport_name}'...")
-            result = subprocess.run(
-                [sys.executable, 'download_embeddings.py'],
-                cwd=project_root,
-                capture_output=True,
-                text=True,
-                timeout=1800  # 30 minute timeout
-            )
+            result = run_script('download_embeddings.py', timeout=1800)
             if result.returncode != 0:
                 logger.error(f"[DATA] ✗ Embeddings download failed for '{viewport_name}':\n{result.stderr}")
                 return
@@ -130,13 +136,7 @@ def trigger_data_download_and_processing(viewport_name):
             for attempt in range(1, max_retries + 1):
                 logger.info(f"[DATA] Downloading satellite RGB for '{viewport_name}' (attempt {attempt}/{max_retries})...")
                 try:
-                    result = subprocess.run(
-                        [sys.executable, 'download_satellite_rgb.py'],
-                        cwd=project_root,
-                        capture_output=True,
-                        text=True,
-                        timeout=1800  # 30 minute timeout
-                    )
+                    result = run_script('download_satellite_rgb.py', timeout=1800)
                     if result.returncode == 0:
                         logger.info(f"[DATA] ✓ Satellite RGB downloaded for '{viewport_name}'")
                         satellite_success = True
@@ -168,13 +168,7 @@ def trigger_data_download_and_processing(viewport_name):
 
             # Create pyramids (will work with or without satellite data)
             logger.info(f"[DATA] Creating pyramids for '{viewport_name}'...")
-            result = subprocess.run(
-                [sys.executable, 'create_pyramids.py'],
-                cwd=project_root,
-                capture_output=True,
-                text=True,
-                timeout=1800  # 30 minute timeout
-            )
+            result = run_script('create_pyramids.py', timeout=1800)
             if result.returncode != 0:
                 logger.error(f"[DATA] ✗ Pyramid creation failed for '{viewport_name}':\n{result.stderr}")
                 return
@@ -276,15 +270,8 @@ def api_switch_viewport():
                 # If data is ready but pyramids aren't, trigger pyramid creation
                 def create_pyramids_in_background():
                     try:
-                        project_root = Path(__file__).parent.parent
                         logger.info(f"[PYRAMIDS] Starting pyramid creation for '{viewport_name}'...")
-                        result = subprocess.run(
-                            [sys.executable, 'create_pyramids.py'],
-                            cwd=project_root,
-                            capture_output=True,
-                            text=True,
-                            timeout=1800  # 30 minute timeout
-                        )
+                        result = run_script('create_pyramids.py', timeout=1800)
                         if result.returncode == 0:
                             logger.info(f"[PYRAMIDS] ✓ Pyramid creation complete for '{viewport_name}'")
                         else:
@@ -309,14 +296,7 @@ def api_switch_viewport():
             def create_faiss_in_background():
                 try:
                     logger.info(f"[FAISS] Starting index creation for '{viewport_name}'...")
-                    project_root = Path(__file__).parent.parent
-                    result = subprocess.run(
-                        [sys.executable, 'create_faiss_index.py'],
-                        cwd=project_root,
-                        capture_output=True,
-                        text=True,
-                        timeout=600  # 10 minute timeout
-                    )
+                    result = run_script('create_faiss_index.py', timeout=600)
                     if result.returncode == 0:
                         logger.info(f"[FAISS] ✓ Index creation complete for '{viewport_name}'")
                     else:
@@ -410,13 +390,7 @@ def api_download_embeddings():
         logger.info(f"Downloading embeddings for viewport: {viewport['viewport_id']}")
 
         # Run the download script
-        result = subprocess.run(
-            [sys.executable, str(project_root / 'download_embeddings.py')],
-            cwd=str(project_root),
-            capture_output=True,
-            text=True,
-            timeout=600  # 10 minute timeout
-        )
+        result = run_script('download_embeddings.py', timeout=600)
 
         if result.returncode == 0:
             logger.info("Embeddings download completed successfully")
@@ -453,13 +427,7 @@ def api_download_satellite():
         logger.info(f"Downloading satellite RGB for viewport: {viewport['viewport_id']}")
 
         # Run the download script
-        result = subprocess.run(
-            [sys.executable, str(project_root / 'download_satellite_rgb.py')],
-            cwd=str(project_root),
-            capture_output=True,
-            text=True,
-            timeout=600  # 10 minute timeout
-        )
+        result = run_script('download_satellite_rgb.py', timeout=600)
 
         if result.returncode == 0:
             logger.info("Satellite RGB download completed successfully")
@@ -572,13 +540,7 @@ def run_download_process(task_id):
             def download_embeddings():
                 try:
                     update_progress(10, "Downloading embeddings_2024.tif (TESSERA)...")
-                    result = subprocess.run(
-                        [sys.executable, str(project_root / 'download_embeddings.py')],
-                        cwd=str(project_root),
-                        capture_output=True,
-                        text=True,
-                        timeout=600
-                    )
+                    result = run_script('download_embeddings.py', timeout=600)
                     if result.returncode == 0:
                         update_progress(30, "✓ Embeddings downloaded")
                     return result.returncode == 0
@@ -589,14 +551,8 @@ def run_download_process(task_id):
 
             def download_satellite():
                 try:
-                    update_progress(10, "Downloading satellite_rgb.tif (Planetary Computer)...")
-                    result = subprocess.run(
-                        [sys.executable, str(project_root / 'download_satellite_rgb.py')],
-                        cwd=str(project_root),
-                        capture_output=True,
-                        text=True,
-                        timeout=600
-                    )
+                    update_progress(10, "Downloading satellite_rgb.tif...")
+                    result = run_script('download_satellite_rgb.py', timeout=600)
                     if result.returncode == 0:
                         update_progress(30, "✓ Satellite RGB downloaded")
                     return result.returncode == 0
@@ -626,13 +582,7 @@ def run_download_process(task_id):
         def create_pyramids():
             try:
                 update_progress(60, "Creating pyramid tiles...")
-                result = subprocess.run(
-                    [sys.executable, str(project_root / 'create_pyramids.py')],
-                    cwd=str(project_root),
-                    capture_output=True,
-                    text=True,
-                    timeout=1200  # 20 minute timeout
-                )
+                result = run_script('create_pyramids.py', timeout=1200)
                 if result.returncode != 0:
                     logger.warning(f"Pyramid creation returned non-zero: {result.stderr}")
                 return result.returncode == 0
@@ -671,13 +621,7 @@ def run_download_process(task_id):
                         logger.warning(f"Could not validate FAISS metadata: {e}")
 
                 update_progress(65, "Creating FAISS index for similarity search...")
-                result = subprocess.run(
-                    [sys.executable, str(project_root / 'create_faiss_index.py')],
-                    cwd=str(project_root),
-                    capture_output=True,
-                    text=True,
-                    timeout=600  # 10 minute timeout
-                )
+                result = run_script('create_faiss_index.py', timeout=600)
                 if result.returncode == 0:
                     update_progress(75, "✓ FAISS index created")
                 else:
