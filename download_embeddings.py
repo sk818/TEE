@@ -87,12 +87,18 @@ def download_embeddings():
                 print(f"   Downloading and merging tiles (attempt {attempt}/{max_retries})...")
                 progress.update("downloading", f"Downloading {output_file.name} (attempt {attempt}/{max_retries})...", current_file=output_file.name)
 
+                # Define progress callback to capture geotessera tile downloads
+                def on_geotessera_progress(current, total, status):
+                    # status contains information about tiles being downloaded (e.g., "Fetching tile X")
+                    progress.update("downloading", f"Downloading {output_file.name}: {status}", current_value=current, total_value=total, current_file=f"{output_file.name} - {status}")
+
                 # Fetch mosaic for the region (auto-downloads missing tiles)
                 mosaic_array, mosaic_transform, crs = tessera.fetch_mosaic_for_region(
                     bbox=BBOX,
                     year=year,
                     target_crs='EPSG:4326',
-                    auto_download=True
+                    auto_download=True,
+                    progress_callback=on_geotessera_progress
                 )
 
                 print(f"   ✓ Downloaded. Mosaic shape: {mosaic_array.shape}")
