@@ -791,6 +791,23 @@ def api_delete_viewport():
             except Exception as e:
                 logger.warning(f"Error deleting FAISS index directory for {viewport_name}: {e}")
 
+        # Delete progress tracking files for this viewport
+        tmp_dir = Path('/tmp')
+        progress_patterns = [
+            f'{viewport_name}_embeddings_progress.json',
+            f'{viewport_name}_pyramids_progress.json',
+            f'{viewport_name}_faiss_progress.json'
+        ]
+        for pattern in progress_patterns:
+            progress_file = tmp_dir / pattern
+            if progress_file.exists():
+                try:
+                    progress_file.unlink()
+                    deleted_items.append(f"progress file: {pattern}")
+                    logger.info(f"✓ Deleted progress file: {pattern}")
+                except Exception as e:
+                    logger.warning(f"Error deleting progress file {pattern}: {e}")
+
         # Delete the viewport file
         viewport_file.unlink()
         deleted_items.append(f"viewport: {viewport_name}.txt")
