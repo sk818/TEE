@@ -133,12 +133,12 @@ def download_embeddings():
         for attempt in range(1, max_retries + 1):
             try:
                 print(f"   Downloading and merging tiles (attempt {attempt}/{max_retries})...")
-                progress.update("downloading", f"Downloading {output_file.name} (attempt {attempt}/{max_retries})...", current_file=output_file.name)
+                progress.update("downloading", f"Downloading {output_file.name} - {est_width} × {est_height} pixels (~{est_mb:.1f} MB) - Attempt {attempt}/{max_retries}", current_file=output_file.name)
 
                 # Define progress callback to capture geotessera tile downloads
                 def on_geotessera_progress(current, total, status):
                     # status contains information about tiles being downloaded (e.g., "Fetching tile X")
-                    progress.update("downloading", f"Downloading {output_file.name}: {status}", current_value=current, total_value=total, current_file=f"{output_file.name} - {status}")
+                    progress.update("downloading", f"Downloading {output_file.name} ({est_mb:.1f} MB): {status}", current_value=current, total_value=total, current_file=f"{output_file.name} - {status}")
 
                 # Fetch mosaic for the region (auto-downloads missing tiles)
                 mosaic_array, mosaic_transform, crs = tessera.fetch_mosaic_for_region(
@@ -151,7 +151,7 @@ def download_embeddings():
 
                 print(f"   ✓ Downloaded. Mosaic shape: {mosaic_array.shape}")
                 print(f"   Saving to GeoTIFF: {output_file}")
-                progress.update("saving", f"Saving {output_file.name} to disk...", current_file=output_file.name, current_value=0, total_value=bands)
+                progress.update("saving", f"Writing {output_file.name} ({est_mb:.1f} MB) to disk - 128 bands...", current_file=output_file.name, current_value=0, total_value=bands)
 
                 # Save mosaic to GeoTIFF
                 height, width, bands = mosaic_array.shape
@@ -184,7 +184,7 @@ def download_embeddings():
                     # Report actual file size
                     actual_size_mb = output_file.stat().st_size / (1024 * 1024)
                     print(f"   File size: {actual_size_mb:.1f} MB (estimated: {est_mb:.1f} MB)")
-                    progress.update("processing", f"Saved {output_file.name}: {actual_size_mb:.1f} MB", current_file=output_file.name, current_value=est_bytes, total_value=est_bytes)
+                    progress.update("processing", f"✓ Saved {output_file.name}: {actual_size_mb:.1f} MB ({est_width} × {est_height} pixels)", current_file=output_file.name, current_value=est_bytes, total_value=est_bytes)
                     break  # File is valid, exit retry loop
                 except Exception as val_error:
                     print(f"   ✗ File validation failed: {val_error}")
