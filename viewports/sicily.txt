@@ -1,0 +1,20 @@
+Viewport Configuration
+=====================
+
+Viewport ID: sicily
+
+Center (degrees):
+  Latitude:  38.1009°
+  Longitude: 13.5171°
+
+Bounds (degrees):
+  Min Latitude:  38.0785°
+  Max Latitude:  38.1234°
+  Min Longitude: 13.4886°
+  Max Longitude: 13.5457°
+
+Size: 5km × 5km
+
+Description: 5km × 5km
+
+Generated: 2026-01-25T10:20:26.349250

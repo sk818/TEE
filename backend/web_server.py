@@ -285,11 +285,11 @@ def api_switch_viewport():
                 thread.start()
                 response_data['message'] += '\nCreating pyramids (this may take 10-15 minutes)...'
 
-        # Step 3: Check if FAISS index exists
+        # Step 3: Check if FAISS index exists (only if data and pyramids are ready)
         faiss_dir = FAISS_INDICES_DIR / viewport_name
         faiss_index_file = faiss_dir / 'all_embeddings.npy'
 
-        if not faiss_index_file.exists():
+        if response_data['data_ready'] and not faiss_index_file.exists():
             logger.info(f"[FAISS] Index not found for viewport '{viewport_name}', triggering creation...")
 
             # Trigger FAISS index creation in background thread
@@ -308,13 +308,14 @@ def api_switch_viewport():
 
             thread = threading.Thread(target=create_faiss_in_background, daemon=True)
             thread.start()
-
-            if response_data['data_ready']:
-                response_data['message'] += '\nCreating FAISS index for similarity search (this may take 2-5 minutes)...'
+            response_data['message'] += '\nCreating FAISS index for similarity search (this may take 2-5 minutes)...'
             response_data['faiss_ready'] = False
-        else:
+        elif faiss_index_file.exists():
             logger.info(f"[FAISS] ✓ Index ready for viewport '{viewport_name}'")
             response_data['faiss_ready'] = True
+        else:
+            logger.info(f"[FAISS] Waiting for data and pyramids before creating index for '{viewport_name}'")
+            response_data['faiss_ready'] = False
 
         return jsonify(response_data)
     except FileNotFoundError:
