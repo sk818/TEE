@@ -18,12 +18,51 @@ sys.path.insert(0, str(Path(__file__).parent))
 
 from lib.viewport_utils import get_active_viewport, check_cache
 from lib.progress_tracker import ProgressTracker
+import math
 
 # Configuration
 YEARS = range(2024, 2025)  # 2024 only for faster download
 DATA_DIR = Path.home() / "blore_data"
 EMBEDDINGS_DIR = DATA_DIR / "embeddings"
 MOSAICS_DIR = DATA_DIR / "mosaics"
+
+# Tessera embeddings parameters
+EMBEDDING_BANDS = 128
+BYTES_PER_BAND = 4  # float32
+PIXEL_SIZE_METERS = 10
+METERS_PER_DEGREE_LAT = 111320  # Constant
+COMPRESSION_RATIO = 0.4  # LZW compression typically achieves ~40% of original size
+
+def estimate_mosaic_dimensions(bbox):
+    """Estimate mosaic dimensions from bounding box.
+
+    Args:
+        bbox: tuple of (lon_min, lat_min, lon_max, lat_max)
+
+    Returns:
+        tuple of (estimated_width, estimated_height, estimated_file_size_mb)
+    """
+    lon_min, lat_min, lon_max, lat_max = bbox
+
+    # Calculate center latitude for longitude scaling
+    center_lat = (lat_min + lat_max) / 2
+    cos_lat = math.cos(math.radians(center_lat))
+
+    # Meters per degree at this latitude
+    meters_per_degree_lon = METERS_PER_DEGREE_LAT * cos_lat
+
+    # Calculate dimensions in pixels
+    height_pixels = int((lat_max - lat_min) * METERS_PER_DEGREE_LAT / PIXEL_SIZE_METERS)
+    width_pixels = int((lon_max - lon_min) * meters_per_degree_lon / PIXEL_SIZE_METERS)
+
+    # Calculate uncompressed file size (width × height × bands × bytes_per_band)
+    uncompressed_bytes = width_pixels * height_pixels * EMBEDDING_BANDS * BYTES_PER_BAND
+
+    # Estimate compressed size with LZW compression
+    compressed_bytes = int(uncompressed_bytes * COMPRESSION_RATIO)
+    compressed_mb = compressed_bytes / (1024 * 1024)
+
+    return width_pixels, height_pixels, compressed_mb, compressed_bytes
 
 def download_embeddings():
     """Download Tessera embeddings for current viewport."""
@@ -49,7 +88,13 @@ def download_embeddings():
     print(f"Viewport: {viewport_id}")
     print(f"Bounding box: {BBOX}")
     print(f"Years: {min(YEARS)} to {max(YEARS)}")
-    print(f"Embeddings will be downloaded to: {EMBEDDINGS_DIR.absolute()}")
+
+    # Estimate file size and dimensions
+    est_width, est_height, est_mb, est_bytes = estimate_mosaic_dimensions(BBOX)
+    print(f"\nEstimated dimensions: {est_width} × {est_height} pixels")
+    print(f"Estimated file size (compressed): {est_mb:.1f} MB")
+
+    print(f"\nEmbeddings will be downloaded to: {EMBEDDINGS_DIR.absolute()}")
     print(f"Mosaics will be saved to: {MOSAICS_DIR.absolute()}")
     print("=" * 60)
 
@@ -66,18 +111,21 @@ def download_embeddings():
         output_file = MOSAICS_DIR / f"{viewport_id}_embeddings_{year}.tif"
 
         print(f"   Target file: {output_file.name}")
-        progress.update("processing", f"Processing year {year}...", current_file=output_file.name)
+        print(f"   Expected size: {est_mb:.1f} MB")
+        progress.update("processing", f"Processing year {year}...", current_file=output_file.name, total_value=est_bytes)
 
         # Check cache for matching bounds
         cached_file = check_cache(BBOX, 'embeddings')
         if cached_file:
             print(f"   ✓ Cache hit! Using existing mosaic: {cached_file}")
-            progress.update("processing", f"Using cached embeddings for {year}", current_file=output_file.name)
+            progress.update("processing", f"Using cached embeddings for {year}", current_file=output_file.name, current_value=est_bytes, total_value=est_bytes)
             continue
 
         if output_file.exists():
             print(f"   ✓ Mosaic already exists: {output_file}")
-            progress.update("processing", f"Using existing mosaic for {year}", current_file=output_file.name)
+            actual_size_mb = output_file.stat().st_size / (1024 * 1024)
+            print(f"     Actual size: {actual_size_mb:.1f} MB")
+            progress.update("processing", f"Using existing mosaic for {year}", current_file=output_file.name, current_value=est_bytes, total_value=est_bytes)
             continue
 
         # Retry logic for download and validation
@@ -103,7 +151,7 @@ def download_embeddings():
 
                 print(f"   ✓ Downloaded. Mosaic shape: {mosaic_array.shape}")
                 print(f"   Saving to GeoTIFF: {output_file}")
-                progress.update("saving", f"Saving {output_file.name} to disk...", current_file=output_file.name)
+                progress.update("saving", f"Saving {output_file.name} to disk...", current_file=output_file.name, current_value=0, total_value=bands)
 
                 # Save mosaic to GeoTIFF
                 height, width, bands = mosaic_array.shape
@@ -123,6 +171,8 @@ def download_embeddings():
                     # Write each band
                     for band in range(bands):
                         dst.write(mosaic_array[:, :, band], band + 1)
+                        # Update progress: show bands written
+                        progress.update("saving", f"Writing band {band+1}/{bands}...", current_file=output_file.name, current_value=band+1, total_value=bands)
 
                 # Validate the saved file
                 print(f"   Validating TIFF file...")
@@ -130,6 +180,11 @@ def download_embeddings():
                     with rasterio.open(output_file) as src:
                         _ = src.read(1)  # Try reading first band
                     print(f"   ✓ File validation successful")
+
+                    # Report actual file size
+                    actual_size_mb = output_file.stat().st_size / (1024 * 1024)
+                    print(f"   File size: {actual_size_mb:.1f} MB (estimated: {est_mb:.1f} MB)")
+                    progress.update("processing", f"Saved {output_file.name}: {actual_size_mb:.1f} MB", current_file=output_file.name, current_value=est_bytes, total_value=est_bytes)
                     break  # File is valid, exit retry loop
                 except Exception as val_error:
                     print(f"   ✗ File validation failed: {val_error}")
@@ -174,8 +229,12 @@ def download_embeddings():
 
     if viewport_mosaic_file.exists():
         size_mb = viewport_mosaic_file.stat().st_size / (1024*1024)
+        compression_ratio = (size_mb / (est_mb / COMPRESSION_RATIO)) * 100 if est_mb > 0 else 0
         print(f"\n✓ Created mosaic for {viewport_id}:")
-        print(f"  - {viewport_mosaic_file.name} ({size_mb:.2f} MB)")
+        print(f"  - {viewport_mosaic_file.name}")
+        print(f"    Expected size: {est_mb:.1f} MB")
+        print(f"    Actual size:   {size_mb:.1f} MB")
+        print(f"    Compression:   {compression_ratio:.1f}%")
         progress.complete(f"Downloaded {size_mb:.1f} MB of embeddings")
     else:
         print(f"\n✗ Error: Mosaic for {viewport_id} was not created (all downloads failed)")

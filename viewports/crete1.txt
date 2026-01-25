@@ -1,0 +1,20 @@
+Viewport Configuration
+=====================
+
+Viewport ID: crete1
+
+Center (degrees):
+  Latitude:  35.5166°
+  Longitude: 24.0230°
+
+Bounds (degrees):
+  Min Latitude:  35.4941°
+  Max Latitude:  35.5390°
+  Min Longitude: 23.9954°
+  Max Longitude: 24.0506°
+
+Size: 5km × 5km
+
+Description: 5km × 5km
+
+Generated: 2026-01-25T13:37:14.111217
