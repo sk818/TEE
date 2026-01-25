@@ -429,6 +429,7 @@ def run_download_process(task_id):
         update_progress(5, "Checking for existing pyramid data...")
 
         viewport = get_active_viewport()
+        viewport_name = viewport['viewport_id']
         bounds = viewport['bounds']
         BOUNDS_TOLERANCE = 0.0001
 
