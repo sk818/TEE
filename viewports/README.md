@@ -86,7 +86,7 @@ python scripts/viewport_manager.py create-from-bounds \
 
 1. When you switch viewports using `viewport_manager.py use <name>`, the symlink `viewport.txt` is updated to point to the new viewport file.
 
-2. Download scripts (`download_embeddings.py`, `download_satellite_rgb.py`, etc.) read from `viewport.txt` to get the current bounds.
+2. Download scripts (`download_embeddings.py`, etc.) read from `viewport.txt` to get the current bounds.
 
 3. Before downloading, the scripts check if the bounds match any existing mosaic files (cache lookup with ±10m tolerance).
 

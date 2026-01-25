@@ -126,7 +126,7 @@ def check_cache(bounds: Tuple[float, float, float, float],
 
     Args:
         bounds: (min_lon, min_lat, max_lon, max_lat)
-        data_type: Type of data ('embeddings', 'satellite', etc.)
+        data_type: Type of data ('embeddings', etc.)
 
     Returns:
         Path to matching mosaic file, or None if no match found

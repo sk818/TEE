@@ -33,7 +33,7 @@ def get_orphaned_mosaics(current_viewports):
     orphaned = []
 
     for tif_file in mosaics_dir.glob("*.tif"):
-        # Extract viewport ID: remove _embeddings_2024 or _satellite_rgb suffix
+        # Extract viewport ID: remove _embeddings_2024 suffix
         filename = tif_file.stem  # Remove .tif
 
         # Try to match against current viewports

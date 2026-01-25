@@ -5,7 +5,7 @@ Integrate FAISS (Facebook AI Similarity Search) to build searchable indices on e
 
 ## Current Workflow
 1. User creates viewport
-2. Frontend triggers download → downloads embeddings & satellite RGB in parallel
+2. Frontend triggers download → downloads embeddings
 3. Post-processing → pyramid creation for visualization
 4. User explores data in viewer
 
@@ -81,11 +81,11 @@ Integrate FAISS (Facebook AI Similarity Search) to build searchable indices on e
 **Changes in `run_download_process()`**:
 - Current flow: Downloads → Pyramids → Done
 - New flow: Downloads → [Pyramids + FAISS Index (parallel)] → Done
-- Use ThreadPoolExecutor to run both in parallel (like current embeddings/satellite downloads)
+- Run embeddings download and pyramid creation in sequence
 
 **Progress Tracking** (revised timeline):
 - 0-10%: "Starting parallel downloads..."
-- 10-30%: "Downloading embeddings..." + "Downloading satellite RGB..."
+- 10-30%: "Downloading embeddings..."
 - 30-45%: Skip downloads if cached (now used for next step)
 - 45-60%: "Creating pyramids..." (slow step, parallelized)
 - 45-75%: "Creating FAISS index..." (parallelized with pyramids)
