@@ -65,22 +65,14 @@ def run_script(script_name, *args, timeout=1800):
     return subprocess.run(cmd, cwd=PROJECT_ROOT, capture_output=True, text=True, timeout=timeout)
 
 def check_viewport_mosaics_exist(viewport_name):
-    """Check if embeddings and satellite RGB mosaics exist for a viewport."""
+    """Check if embeddings mosaic exists for a viewport (satellite uses Esri/Bing imagery)."""
     embeddings_file = MOSAICS_DIR / f"{viewport_name}_embeddings_2024.tif"
-    satellite_file = MOSAICS_DIR / f"{viewport_name}_satellite_rgb.tif"
-
-    embeddings_exists = embeddings_file.exists()
-    satellite_exists = satellite_file.exists()
-
-    return embeddings_exists and satellite_exists
+    return embeddings_file.exists()
 
 def check_viewport_pyramids_exist(viewport_name):
-    """Check if pyramid tiles exist for a viewport."""
-    # Just check if the 2024 pyramid level_0 exists
+    """Check if pyramid tiles exist for a viewport (embeddings only, satellite uses Esri/Bing)."""
     pyramid_file = PYRAMIDS_DIR / "2024" / "level_0.tif"
-    satellite_pyramid = PYRAMIDS_DIR / "satellite" / "level_0.tif"
-
-    return pyramid_file.exists() and satellite_pyramid.exists()
+    return pyramid_file.exists()
 
 def get_viewport_data_size(viewport_name, active_viewport_name):
     """Calculate total data size for a viewport in MB."""
@@ -116,13 +108,13 @@ def get_viewport_data_size(viewport_name, active_viewport_name):
     return round(total_size / (1024 * 1024), 1)
 
 def trigger_data_download_and_processing(viewport_name):
-    """Download embeddings and satellite RGB with retries, then create pyramids."""
+    """Download embeddings and create pyramids. Satellite data uses Bing/Esri imagery."""
     def download_and_process():
         try:
             project_root = Path(__file__).parent.parent
             logger.info(f"[DATA] Starting download for viewport '{viewport_name}'...")
 
-            # Download embeddings
+            # Download embeddings only (satellite uses Bing/Esri imagery)
             logger.info(f"[DATA] Downloading embeddings for '{viewport_name}'...")
             result = run_script('download_embeddings.py', timeout=1800)
             if result.returncode != 0:
@@ -130,43 +122,7 @@ def trigger_data_download_and_processing(viewport_name):
                 return
             logger.info(f"[DATA] ✓ Embeddings downloaded for '{viewport_name}'")
 
-            # Download satellite RGB with retry logic
-            max_retries = 3
-            satellite_success = False
-            for attempt in range(1, max_retries + 1):
-                logger.info(f"[DATA] Downloading satellite RGB for '{viewport_name}' (attempt {attempt}/{max_retries})...")
-                try:
-                    result = run_script('download_satellite_rgb.py', timeout=1800)
-                    if result.returncode == 0:
-                        logger.info(f"[DATA] ✓ Satellite RGB downloaded for '{viewport_name}'")
-                        satellite_success = True
-                        break
-                    else:
-                        logger.warning(f"[DATA] Attempt {attempt} failed: {result.stderr[:200]}")
-                except subprocess.TimeoutExpired:
-                    logger.warning(f"[DATA] Attempt {attempt} timeout")
-                except Exception as e:
-                    logger.warning(f"[DATA] Attempt {attempt} error: {e}")
-
-                # Wait before retry (except on last attempt)
-                if attempt < max_retries:
-                    logger.info(f"[DATA] Retrying in 30 seconds...")
-                    import time
-                    time.sleep(30)
-
-            if not satellite_success:
-                logger.warning(f"[DATA] ⚠️  Satellite RGB download failed after {max_retries} attempts - will continue with embeddings only")
-                # Don't return here - continue with pyramid creation even if satellite fails
-
-            # Verify satellite RGB exists before pyramid creation
-            viewport = read_viewport_file(viewport_name)
-            satellite_file = MOSAICS_DIR / f"{viewport_name}_satellite_rgb.tif"
-            if satellite_file.exists():
-                logger.info(f"[DATA] ✓ Satellite RGB verified: {satellite_file}")
-            else:
-                logger.warning(f"[DATA] ⚠️  Satellite RGB not available: {satellite_file}")
-
-            # Create pyramids (will work with or without satellite data)
+            # Create pyramids (satellite layer uses Esri World Imagery)
             logger.info(f"[DATA] Creating pyramids for '{viewport_name}'...")
             result = run_script('create_pyramids.py', timeout=1800)
             if result.returncode != 0:
