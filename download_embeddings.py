@@ -75,51 +75,82 @@ def download_embeddings():
             progress.update("processing", f"Using existing mosaic for {year}", current_file=f"embeddings_{year}")
             continue
 
-        try:
-            print(f"   Downloading and merging tiles...")
-            progress.update("downloading", f"Downloading embeddings for {year}...", current_file=f"embeddings_{year}")
+        # Retry logic for download and validation
+        max_retries = 3
+        for attempt in range(1, max_retries + 1):
+            try:
+                print(f"   Downloading and merging tiles (attempt {attempt}/{max_retries})...")
+                progress.update("downloading", f"Downloading embeddings for {year} (attempt {attempt}/{max_retries})...", current_file=f"embeddings_{year}")
 
-            # Fetch mosaic for the region (auto-downloads missing tiles)
-            mosaic_array, mosaic_transform, crs = tessera.fetch_mosaic_for_region(
-                bbox=BBOX,
-                year=year,
-                target_crs='EPSG:4326',
-                auto_download=True
-            )
+                # Fetch mosaic for the region (auto-downloads missing tiles)
+                mosaic_array, mosaic_transform, crs = tessera.fetch_mosaic_for_region(
+                    bbox=BBOX,
+                    year=year,
+                    target_crs='EPSG:4326',
+                    auto_download=True
+                )
 
-            print(f"   ✓ Downloaded. Mosaic shape: {mosaic_array.shape}")
-            print(f"   Saving to GeoTIFF: {output_file}")
-            progress.update("saving", f"Saving embeddings to disk...", current_file=f"embeddings_{year}")
+                print(f"   ✓ Downloaded. Mosaic shape: {mosaic_array.shape}")
+                print(f"   Saving to GeoTIFF: {output_file}")
+                progress.update("saving", f"Saving embeddings to disk...", current_file=f"embeddings_{year}")
 
-            # Save mosaic to GeoTIFF
-            height, width, bands = mosaic_array.shape
+                # Save mosaic to GeoTIFF
+                height, width, bands = mosaic_array.shape
 
-            with rasterio.open(
-                output_file,
-                'w',
-                driver='GTiff',
-                height=height,
-                width=width,
-                count=bands,
-                dtype=mosaic_array.dtype,
-                crs=crs,
-                transform=mosaic_transform,
-                compress='lzw'
-            ) as dst:
-                # Write each band
-                for band in range(bands):
-                    dst.write(mosaic_array[:, :, band], band + 1)
+                with rasterio.open(
+                    output_file,
+                    'w',
+                    driver='GTiff',
+                    height=height,
+                    width=width,
+                    count=bands,
+                    dtype=mosaic_array.dtype,
+                    crs=crs,
+                    transform=mosaic_transform,
+                    compress='lzw'
+                ) as dst:
+                    # Write each band
+                    for band in range(bands):
+                        dst.write(mosaic_array[:, :, band], band + 1)
 
+                # Validate the saved file
+                print(f"   Validating TIFF file...")
+                try:
+                    with rasterio.open(output_file) as src:
+                        _ = src.read(1)  # Try reading first band
+                    print(f"   ✓ File validation successful")
+                    break  # File is valid, exit retry loop
+                except Exception as val_error:
+                    print(f"   ✗ File validation failed: {val_error}")
+                    output_file.unlink()  # Delete corrupted file
+                    if attempt < max_retries:
+                        progress.update("processing", f"File corrupted, retrying (attempt {attempt+1}/{max_retries})...", current_file=f"embeddings_{year}")
+                        import time
+                        time.sleep(5)  # Wait before retry
+                        continue
+                    else:
+                        progress.error(f"File corrupted after {max_retries} attempts for {year}")
+                        raise Exception(f"Corrupted file: {val_error}")
+
+            except Exception as e:
+                if attempt == max_retries:
+                    print(f"   ✗ Error processing {year} after {max_retries} attempts: {e}")
+                    import traceback
+                    traceback.print_exc()
+                    progress.error(f"Error downloading embeddings for {year}: {e}")
+                    break
+                else:
+                    print(f"   ⚠️  Attempt {attempt} failed, retrying: {e}")
+                    progress.update("processing", f"Download failed, retrying (attempt {attempt+1}/{max_retries})...", current_file=f"embeddings_{year}")
+                    import time
+                    time.sleep(5)  # Wait before retry
+                    continue
+
+        # Only continue to next year if this year was successful
+        if output_file.exists():
             size_mb = output_file.stat().st_size / (1024*1024)
             print(f"   ✓ Saved: {output_file} ({size_mb:.2f} MB)")
             progress.update("processing", f"Saved {size_mb:.1f} MB", current_value=int(size_mb), current_file=f"embeddings_{year}")
-
-        except Exception as e:
-            print(f"   ✗ Error processing {year}: {e}")
-            import traceback
-            traceback.print_exc()
-            progress.error(f"Error downloading embeddings for {year}: {e}")
-            continue
 
     print("\n" + "=" * 60)
     print("Download complete!")
