@@ -444,6 +444,13 @@
                 maxZoom: 18
             });
 
+            // Apply same bounds as embedding/RGB maps so all maps stay in sync
+            if (viewportBounds) {
+                maps.osm.setMaxBounds(viewportBounds);
+                maps.osm.options.maxBoundsViscosity = 1.0;
+                console.log(`[MAPS] OSM map clipped to viewport bounds`);
+            }
+
             L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
                 attribution: '© OpenStreetMap contributors',
                 maxZoom: 19
@@ -529,20 +536,25 @@
 
         // Synchronize all maps
         function syncMaps() {
-            // Use OSM as reference map
-            const refMap = maps.osm;
+            let syncing = false;
 
-            // Sync on move (during panning) and zoom (during zooming) for real-time feedback
-            refMap.on('move zoom', function() {
-                const refCenter = refMap.getCenter();
-                const refZoom = refMap.getZoom();
+            function doSync() {
+                if (syncing) return;
+                syncing = true;
 
-                Object.keys(maps).forEach(panel => {
-                    if (panel !== 'osm') {
-                        maps[panel].setView(refCenter, refZoom, {animate: false});
-                    }
+                const osmCenter = maps.osm.getCenter();
+                const osmZoom = maps.osm.getZoom();
+
+                // Sync embedding and rgb maps to OSM
+                ['embedding', 'rgb'].forEach(panel => {
+                    maps[panel].setView(osmCenter, osmZoom, {animate: false});
                 });
-            });
+
+                syncing = false;
+            }
+
+            // Sync when OSM moves or zooms
+            maps.osm.on('move zoom', doSync);
 
             // Add mousemove handler to embedding map to show coordinates
             maps.embedding.on('mousemove', function(e) {
