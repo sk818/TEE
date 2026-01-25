@@ -455,7 +455,7 @@
                 maxZoom: 17
             });
 
-            let embeddingLayer = L.tileLayer(`${TILE_SERVER}/tiles/${currentEmbeddingYear}/{z}/{x}/{y}.png`, {
+            let embeddingLayer = L.tileLayer(`${TILE_SERVER}/tiles/${currentViewportName}/${currentEmbeddingYear}/{z}/{x}/{y}.png`, {
                 attribution: 'Tessera Embeddings',
                 opacity: 1.0,
                 maxZoom: 17,

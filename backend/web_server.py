@@ -71,7 +71,8 @@ def check_viewport_mosaics_exist(viewport_name):
 
 def check_viewport_pyramids_exist(viewport_name):
     """Check if pyramid tiles exist for a viewport (embeddings only, satellite uses Esri/Bing)."""
-    pyramid_file = PYRAMIDS_DIR / "2024" / "level_0.tif"
+    viewport_pyramids_dir = PYRAMIDS_DIR / viewport_name
+    pyramid_file = viewport_pyramids_dir / "2024" / "level_0.tif"
     return pyramid_file.exists()
 
 def get_viewport_data_size(viewport_name, active_viewport_name):
@@ -91,18 +92,12 @@ def get_viewport_data_size(viewport_name, active_viewport_name):
             if item.is_file():
                 total_size += item.stat().st_size
 
-    # Pyramids (only include if this is the active viewport, since pyramids are shared)
-    if viewport_name == active_viewport_name:
-        pyramid_dirs = [
-            PYRAMIDS_DIR / '2024',
-            PYRAMIDS_DIR / 'satellite',
-            PYRAMIDS_DIR / 'pca'
-        ]
-        for pyr_dir in pyramid_dirs:
-            if pyr_dir.exists():
-                for item in pyr_dir.rglob('*'):
-                    if item.is_file():
-                        total_size += item.stat().st_size
+    # Pyramids (viewport-specific)
+    viewport_pyramids_dir = PYRAMIDS_DIR / viewport_name
+    if viewport_pyramids_dir.exists():
+        for item in viewport_pyramids_dir.rglob('*'):
+            if item.is_file():
+                total_size += item.stat().st_size
 
     # Convert to MB
     return round(total_size / (1024 * 1024), 1)
@@ -754,9 +749,17 @@ def api_delete_viewport():
                     deleted_items.append(f"mosaic: {mosaic_file.name}")
                     logger.info(f"✓ Deleted mosaic: {mosaic_file.name}")
 
-        # Note: Pyramid files are NOT deleted because they are shared resources
-        # generated from the active viewport's embeddings. They will be regenerated
-        # if the user switches to a different viewport or back to this one later.
+        # Delete viewport-specific pyramid directory
+        if PYRAMIDS_DIR.exists():
+            try:
+                viewport_pyramids_dir = PYRAMIDS_DIR / viewport_name
+                if viewport_pyramids_dir.exists():
+                    import shutil
+                    shutil.rmtree(viewport_pyramids_dir)
+                    deleted_items.append(f"pyramids directory: {viewport_name}/")
+                    logger.info(f"✓ Deleted pyramids directory: {viewport_name}/")
+            except Exception as e:
+                logger.warning(f"Error deleting pyramids directory for {viewport_name}: {e}")
 
         # Delete FAISS indices directory for this viewport
         if FAISS_INDICES_DIR.exists():

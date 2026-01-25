@@ -35,8 +35,7 @@ from lib.progress_tracker import ProgressTracker
 DATA_DIR = Path.home() / "blore_data"
 MOSAICS_DIR = DATA_DIR / "mosaics"
 PCA_MOSAICS_DIR = DATA_DIR / "mosaics" / "pca"
-PYRAMIDS_DIR = DATA_DIR / "pyramids"
-PCA_PYRAMIDS_DIR = DATA_DIR / "pyramids" / "pca"
+PYRAMIDS_BASE_DIR = DATA_DIR / "pyramids"
 YEARS = range(2024, 2025)  # 2024 only
 NUM_ZOOM_LEVELS = 6  # 6 useful zoom levels (skip the very zoomed-out tiny levels)
 
@@ -261,7 +260,7 @@ def main():
     if viewport_id:
         print(f"Viewport: {viewport_id}")
 
-    PYRAMIDS_DIR.mkdir(exist_ok=True)
+    PYRAMIDS_BASE_DIR.mkdir(exist_ok=True)
 
     # Process Tessera embeddings (2017-2024)
     for year in YEARS:
@@ -284,11 +283,20 @@ def main():
         progress.update("processing", f"Creating pyramids for {year}...", current_file=f"embeddings_{year}")
 
         # First, create RGB from first 3 bands (upscale 3x for maximum resolution when zoomed in)
-        rgb_temp_file = PYRAMIDS_DIR / f"temp_rgb_{year}.tif"
+        rgb_temp_file = PYRAMIDS_BASE_DIR / f"temp_rgb_{year}.tif"
         rgb_file = create_rgb_from_tessera(tessera_file, rgb_temp_file, upscale_factor=3)
 
+        # Create viewport-specific pyramid directory
+        if viewport_id:
+            viewport_pyramids_dir = PYRAMIDS_BASE_DIR / viewport_id
+        else:
+            # Fallback for backward compatibility if viewport can't be determined
+            viewport_pyramids_dir = PYRAMIDS_BASE_DIR / "rethymno"
+
+        viewport_pyramids_dir.mkdir(parents=True, exist_ok=True)
+
         # Create pyramids from native resolution RGB
-        year_dir = PYRAMIDS_DIR / str(year)
+        year_dir = viewport_pyramids_dir / str(year)
         create_pyramids_for_image(rgb_file, year_dir, f"Tessera {year}", upscale_factor=1)
         progress.update("processing", f"Created pyramid levels for {year}", current_file=f"embeddings_{year}", current_value=year-2023)
 
@@ -306,9 +314,18 @@ def main():
         satellite_file = MOSAICS_DIR / "bangalore_satellite_rgb.tif"
 
     if satellite_file.exists():
-        satellite_upscaled_file = PYRAMIDS_DIR / "temp_satellite_upscaled.tif"
+        satellite_upscaled_file = PYRAMIDS_BASE_DIR / "temp_satellite_upscaled.tif"
         upscale_image(satellite_file, satellite_upscaled_file, upscale_factor=3)
-        satellite_dir = PYRAMIDS_DIR / "satellite"
+
+        # Create viewport-specific satellite directory
+        if viewport_id:
+            viewport_pyramids_dir = PYRAMIDS_BASE_DIR / viewport_id
+        else:
+            # Fallback for backward compatibility if viewport can't be determined
+            viewport_pyramids_dir = PYRAMIDS_BASE_DIR / "rethymno"
+
+        viewport_pyramids_dir.mkdir(parents=True, exist_ok=True)
+        satellite_dir = viewport_pyramids_dir / "satellite"
         create_pyramids_for_image(satellite_upscaled_file, satellite_dir, "Satellite RGB", upscale_factor=1)
         satellite_upscaled_file.unlink()
     else:
@@ -319,8 +336,6 @@ def main():
     print("Processing PCA Embeddings")
     print("=" * 70)
 
-    PCA_PYRAMIDS_DIR.mkdir(exist_ok=True)
-
     for year in YEARS:
         pca_file = PCA_MOSAICS_DIR / f"bangalore_{year}_pca.tif"
 
@@ -328,13 +343,22 @@ def main():
             print(f"\n⚠️  Skipping PCA {year}: File not found")
             continue
 
+        # Create viewport-specific PCA directory
+        if viewport_id:
+            viewport_pyramids_dir = PYRAMIDS_BASE_DIR / viewport_id
+        else:
+            # Fallback for backward compatibility if viewport can't be determined
+            viewport_pyramids_dir = PYRAMIDS_BASE_DIR / "rethymno"
+
+        pca_pyramids_dir = viewport_pyramids_dir / "pca"
+        pca_pyramids_dir.mkdir(parents=True, exist_ok=True)
+
         # Upscale PCA RGB for better resolution
-        pca_upscaled_file = PCA_PYRAMIDS_DIR / f"bangalore_{year}_pca_upscaled.tif"
-        PCA_PYRAMIDS_DIR.mkdir(parents=True, exist_ok=True)
+        pca_upscaled_file = pca_pyramids_dir / f"bangalore_{year}_pca_upscaled.tif"
         upscale_image(pca_file, pca_upscaled_file, upscale_factor=3)
 
         # Create pyramids from upscaled PCA RGB
-        pca_year_dir = PCA_PYRAMIDS_DIR / str(year)
+        pca_year_dir = pca_pyramids_dir / str(year)
         create_pyramids_for_image(pca_upscaled_file, pca_year_dir, f"PCA {year}", upscale_factor=1)
 
         # Clean up upscaled temp file
@@ -343,26 +367,36 @@ def main():
     print("\n" + "=" * 70)
     print("✅ Pyramid generation complete!")
     print(f"\nPyramids saved in:")
-    print(f"  - Tessera: {PYRAMIDS_DIR.absolute()}")
-    print(f"  - PCA: {PCA_PYRAMIDS_DIR.absolute()}")
 
-    # Summary
-    years_created = [d.name for d in PYRAMIDS_DIR.iterdir() if d.is_dir()]
-    pca_years_created = [d.name for d in PCA_PYRAMIDS_DIR.iterdir() if d.is_dir()]
-    print(f"\nCreated Tessera pyramids for: {', '.join(sorted(years_created))}")
-    print(f"Created PCA pyramids for: {', '.join(sorted(pca_years_created))}")
+    # Calculate total size and summarize by viewport
+    if viewport_id:
+        viewport_pyramids_dir = PYRAMIDS_BASE_DIR / viewport_id
+    else:
+        viewport_pyramids_dir = PYRAMIDS_BASE_DIR / "rethymno"
 
-    # Calculate total size
-    total_size = sum(f.stat().st_size for f in PYRAMIDS_DIR.rglob("*.tif"))
-    pca_total_size = sum(f.stat().st_size for f in PCA_PYRAMIDS_DIR.rglob("*.tif"))
-    total_mb = total_size / (1024 * 1024)
-    pca_total_mb = pca_total_size / (1024 * 1024)
-    print(f"\nTessera pyramid size: {total_mb:.1f} MB")
-    print(f"PCA pyramid size: {pca_total_mb:.1f} MB")
-    print(f"Total: {(total_mb + pca_total_mb):.1f} MB")
+    if viewport_pyramids_dir.exists():
+        print(f"  - {viewport_pyramids_dir.absolute()}")
 
-    # Update progress to complete
-    progress.complete(f"Created pyramids: {total_mb:.1f} MB Tessera + {pca_total_mb:.1f} MB PCA")
+        # Summary of years created for this viewport
+        years_created = [d.name for d in (viewport_pyramids_dir).iterdir() if d.is_dir() and d.name not in ['satellite', 'pca']]
+        print(f"\nCreated Tessera pyramids for: {', '.join(sorted(years_created))}")
+
+        # Check for PCA
+        pca_dir = viewport_pyramids_dir / "pca"
+        if pca_dir.exists():
+            pca_years_created = [d.name for d in pca_dir.iterdir() if d.is_dir()]
+            print(f"Created PCA pyramids for: {', '.join(sorted(pca_years_created))}")
+
+        # Calculate total size
+        total_size = sum(f.stat().st_size for f in viewport_pyramids_dir.rglob("*.tif"))
+        total_mb = total_size / (1024 * 1024)
+        print(f"\nViewport pyramid size: {total_mb:.1f} MB")
+
+        # Update progress to complete
+        progress.complete(f"Created pyramids: {total_mb:.1f} MB for {viewport_id or 'rethymno'}")
+    else:
+        print(f"  - {viewport_pyramids_dir.absolute()} (not created)")
+        progress.complete("Pyramid generation complete (no viewports found)")
 
 
 if __name__ == "__main__":

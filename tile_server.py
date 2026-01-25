@@ -17,27 +17,32 @@ app = Flask(__name__)
 CORS(app)
 
 DATA_DIR = Path.home() / "blore_data"
-PYRAMIDS_DIR = DATA_DIR / "pyramids"
+PYRAMIDS_BASE_DIR = DATA_DIR / "pyramids"
 YEARS = [str(y) for y in range(2017, 2025)] + ['satellite']
 
 # Cache for tile readers
 readers = {}
 
-def get_reader(map_id, zoom_level):
-    """Get or create a Reader for a specific map and zoom level."""
+def get_reader(viewport, map_id, zoom_level):
+    """Get or create a Reader for a specific viewport, map, and zoom level."""
     # Map web zoom levels to pyramid levels (we have 6 levels: 0-5)
     # With tileSize=2048 and zoomOffset=-3, Leaflet requests z=3 to z=14
     # Map z=14 → level 0 (most detail), z=3 → level 5 (least detail)
     # Use floor division to spread 12 zoom levels across 6 pyramid levels
     pyramid_level = max(0, min(5, (14 - zoom_level) // 2))
 
-    key = f"{map_id}_{pyramid_level}"
+    key = f"{viewport}_{map_id}_{pyramid_level}"
 
     if key not in readers:
+        viewport_pyramids_dir = PYRAMIDS_BASE_DIR / viewport
+
         if map_id == 'satellite':
-            tif_path = PYRAMIDS_DIR / 'satellite' / f'level_{pyramid_level}.tif'
+            tif_path = viewport_pyramids_dir / 'satellite' / f'level_{pyramid_level}.tif'
+        elif map_id == 'pca':
+            tif_path = viewport_pyramids_dir / 'pca' / '2024' / f'level_{pyramid_level}.tif'
         else:
-            tif_path = PYRAMIDS_DIR / map_id / f'level_{pyramid_level}.tif'
+            # map_id is a year like '2024'
+            tif_path = viewport_pyramids_dir / map_id / f'level_{pyramid_level}.tif'
 
         if tif_path.exists():
             readers[key] = str(tif_path)
@@ -67,14 +72,14 @@ def tile_to_bbox(x, y, zoom):
     lat_min = math.degrees(lat_min_rad)
     return (lon_min, lat_min, lon_max, lat_max)
 
-@app.route('/tiles/<map_id>/<int:z>/<int:x>/<int:y>.png')
-def get_tile(map_id, z, x, y):
-    """Serve a map tile."""
+@app.route('/tiles/<viewport>/<map_id>/<int:z>/<int:x>/<int:y>.png')
+def get_tile(viewport, map_id, z, x, y):
+    """Serve a map tile for a specific viewport."""
     # Use larger tile size for native resolution
     TILE_SIZE = 2048  # Larger tiles = minimal downsampling, near-native pixels
 
     try:
-        tif_path = get_reader(map_id, z)
+        tif_path = get_reader(viewport, map_id, z)
 
         if not tif_path:
             # Return transparent tile if file doesn't exist
@@ -128,14 +133,19 @@ def get_tile(map_id, z, x, y):
         print(f"Error serving tile: {e}")
         return f"Error: {e}", 500
 
-@app.route('/bounds/<map_id>')
-def get_bounds(map_id):
-    """Get bounds for a map."""
+@app.route('/bounds/<viewport>/<map_id>')
+def get_bounds(viewport, map_id):
+    """Get bounds for a map in a specific viewport."""
     try:
+        viewport_pyramids_dir = PYRAMIDS_BASE_DIR / viewport
+
         if map_id == 'satellite':
-            tif_path = PYRAMIDS_DIR / 'satellite' / 'level_0.tif'
+            tif_path = viewport_pyramids_dir / 'satellite' / 'level_0.tif'
+        elif map_id == 'pca':
+            tif_path = viewport_pyramids_dir / 'pca' / '2024' / 'level_0.tif'
         else:
-            tif_path = PYRAMIDS_DIR / map_id / 'level_0.tif'
+            # map_id is a year like '2024'
+            tif_path = viewport_pyramids_dir / map_id / 'level_0.tif'
 
         if tif_path.exists():
             with Reader(str(tif_path)) as src:
@@ -152,20 +162,46 @@ def get_bounds(map_id):
 
 @app.route('/health')
 def health():
-    """Health check endpoint."""
+    """Health check endpoint - returns available maps for all viewports."""
+    viewports_data = {}
+
+    if PYRAMIDS_BASE_DIR.exists():
+        # Scan all viewport directories
+        for viewport_dir in PYRAMIDS_BASE_DIR.iterdir():
+            if viewport_dir.is_dir():
+                viewport_name = viewport_dir.name
+                available_maps = []
+
+                # Check for year directories (2017-2024)
+                for year in YEARS:
+                    if year != 'satellite':
+                        year_dir = viewport_dir / year / 'level_0.tif'
+                        if year_dir.exists():
+                            available_maps.append(year)
+
+                # Check for satellite
+                if (viewport_dir / 'satellite' / 'level_0.tif').exists():
+                    available_maps.append('satellite')
+
+                # Check for PCA
+                if (viewport_dir / 'pca' / '2024' / 'level_0.tif').exists():
+                    available_maps.append('pca')
+
+                if available_maps:
+                    viewports_data[viewport_name] = available_maps
+
     return jsonify({
         'status': 'ok',
-        'maps_available': [m for m in YEARS if (PYRAMIDS_DIR / m / 'level_0.tif').exists() if m != 'satellite'] +
-                         (['satellite'] if (PYRAMIDS_DIR / 'satellite' / 'level_0.tif').exists() else [])
+        'viewports': viewports_data
     })
 
 if __name__ == '__main__':
     print("Starting Tessera Tile Server...")
-    print(f"Serving tiles from: {PYRAMIDS_DIR.absolute()}")
+    print(f"Serving tiles from: {PYRAMIDS_BASE_DIR.absolute()}")
     print("Available endpoints:")
-    print("  - http://localhost:5125/tiles/<map_id>/<z>/<x>/<y>.png")
-    print("  - http://localhost:5125/bounds/<map_id>")
+    print("  - http://localhost:5125/tiles/<viewport>/<map_id>/<z>/<x>/<y>.png")
+    print("  - http://localhost:5125/bounds/<viewport>/<map_id>")
     print("  - http://localhost:5125/health")
-    print("\nMap IDs: 2017, 2018, 2019, 2020, 2021, 2022, 2023, 2024, satellite")
+    print("\nMap IDs: 2017, 2018, 2019, 2020, 2021, 2022, 2023, 2024, satellite, pca")
     print("\nStarting server on http://localhost:5125")
     app.run(debug=True, port=5125, threaded=True)
