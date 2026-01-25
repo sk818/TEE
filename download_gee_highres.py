@@ -292,7 +292,7 @@ def main():
         print(f"\nNext steps:")
         print(f"  1. Regenerate pyramids: python create_pyramids.py")
         print(f"  2. Restart tile server: python tile_server.py")
-        print(f"  3. View in browser: bangalore_viewer_3panel.html")
+        print(f"  3. View in browser: viewer.html")
     else:
         print("\n✗ Download failed")
 

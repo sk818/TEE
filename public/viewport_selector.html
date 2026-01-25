@@ -878,8 +878,8 @@
 
         // Go directly to viewer
         function goToViewer() {
-            // Use the main viewport-aware viewer (bangalore_viewer_3panel.html is now viewport-agnostic)
-            window.location.href = 'bangalore_viewer_3panel.html';
+            // Use the main viewport-aware viewer (viewer.html is now viewport-agnostic)
+            window.location.href = 'viewer.html';
         }
 
         // Delete a viewport
@@ -1235,7 +1235,7 @@ Max Lon: ${bounds.maxLon.toFixed(4)}°
 
                     // Redirect to viewer after a short delay (using viewport-aware viewer)
                     setTimeout(() => {
-                        window.location.href = 'bangalore_viewer_3panel.html';
+                        window.location.href = 'viewer.html';
                     }, 2000);
                 } else {
                     throw new Error('Download process timeout');
