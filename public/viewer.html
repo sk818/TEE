@@ -532,7 +532,8 @@
             // Use OSM as reference map
             const refMap = maps.osm;
 
-            refMap.on('zoomend moveend', function() {
+            // Sync on move (during panning) and zoom (during zooming) for real-time feedback
+            refMap.on('move zoom', function() {
                 const refCenter = refMap.getCenter();
                 const refZoom = refMap.getZoom();
 
