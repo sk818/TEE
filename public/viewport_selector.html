@@ -824,35 +824,11 @@
                         // Show progress modal with real-time updates
                         await pollAllOperations(name);
 
-                        // After operations complete, close form and show success
-                        document.getElementById('createForm').classList.remove('open');
-
-                        // Show success message
-                        document.getElementById('mapInfoLabel').textContent = '✓ Viewport created!';
-                        document.getElementById('mapInfoValue').textContent = name;
-
-                        // Reload viewports list and current viewport
-                        loadViewports();
-                        loadCurrentViewport();
-
-                        // Restore viewport box after form closes
-                        drawViewportBox();
-
-                        // Reset message after 3 seconds
-                        setTimeout(() => {
-                            document.getElementById('mapInfoLabel').textContent = 'Click on map';
-                            document.getElementById('mapInfoValue').textContent = 'to select viewport center';
-                        }, 3000);
+                        // After operations complete, switch to the new viewport as active
+                        await switchViewport(name);
                     } else {
-                        // Data is ready immediately, close form and show success
-                        document.getElementById('createForm').classList.remove('open');
-
-                        // Show success message
-                        document.getElementById('mapInfoLabel').textContent = '✓ Viewport created!';
-                        document.getElementById('mapInfoValue').textContent = name;
-
-                        // Reload viewports list
-                        loadViewports();
+                        // Data is ready immediately, switch to the new viewport as active
+                        await switchViewport(name);
                         loadCurrentViewport();
 
                         // Restore viewport box after form closes

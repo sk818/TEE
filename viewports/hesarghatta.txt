@@ -1,0 +1,20 @@
+Viewport Configuration
+=====================
+
+Viewport ID: hesarghatta
+
+Center (degrees):
+  Latitude:  13.1641°
+  Longitude: 77.4897°
+
+Bounds (degrees):
+  Min Latitude:  13.1416°
+  Max Latitude:  13.1865°
+  Min Longitude: 77.4666°
+  Max Longitude: 77.5127°
+
+Size: 5km × 5km
+
+Description: 5km × 5km
+
+Generated: 2026-01-25T10:09:47.626317
