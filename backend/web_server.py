@@ -609,13 +609,34 @@ def api_downloads_progress(task_id):
 
             task = tasks[task_id]
 
-        return jsonify({
+        response = {
             'success': True,
             'progress': task['progress'],
             'stage': task['stage'],
             'completed': task['completed'],
             'error': task['error']
-        })
+        }
+
+        # Check for detailed operation progress (e.g., embeddings download)
+        try:
+            viewport = get_active_viewport()
+            viewport_name = viewport['viewport_id']
+
+            # Check for embeddings operation progress file
+            embeddings_progress_file = Path(f"/tmp/{viewport_name}_embeddings_progress.json")
+            if embeddings_progress_file.exists():
+                with open(embeddings_progress_file, 'r') as f:
+                    op_progress = json.load(f)
+                    # Include detailed message if available
+                    if op_progress.get('message'):
+                        response['detailed_message'] = op_progress['message']
+                    if op_progress.get('current_file'):
+                        response['current_file'] = op_progress['current_file']
+        except Exception:
+            # If detailed progress isn't available, just use the simplified progress
+            pass
+
+        return jsonify(response)
 
     except Exception as e:
         logger.error(f"Error getting progress: {e}")

@@ -1426,7 +1426,13 @@ Max Lon: ${bounds.maxLon.toFixed(4)}°
 
                             progressBar.style.width = progress + '%';
                             progressPercent.textContent = progress + '%';
-                            progressLabel.textContent = stage;
+
+                            // Show detailed message if available (e.g., from embeddings download)
+                            if (progressData.detailed_message) {
+                                progressLabel.textContent = progressData.detailed_message;
+                            } else {
+                                progressLabel.textContent = stage;
+                            }
 
                             if (progressData.completed) {
                                 completed = true;

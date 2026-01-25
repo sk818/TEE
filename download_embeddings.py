@@ -7,6 +7,7 @@ Uses cache checking to avoid re-downloading for previously-selected viewports.
 """
 
 import sys
+import json
 import numpy as np
 import rasterio
 from rasterio.transform import Affine
@@ -151,10 +152,10 @@ def download_embeddings():
 
                 print(f"   ✓ Downloaded. Mosaic shape: {mosaic_array.shape}")
                 print(f"   Saving to GeoTIFF: {output_file}")
-                progress.update("saving", f"Writing {output_file.name} ({est_mb:.1f} MB) to disk - 128 bands...", current_file=output_file.name, current_value=0, total_value=bands)
 
                 # Save mosaic to GeoTIFF
                 height, width, bands = mosaic_array.shape
+                progress.update("saving", f"Writing {output_file.name} ({est_mb:.1f} MB) to disk - {bands} bands...", current_file=output_file.name, current_value=0, total_value=bands)
 
                 with rasterio.open(
                     output_file,
@@ -237,8 +238,18 @@ def download_embeddings():
         print(f"    Compression:   {compression_ratio:.1f}%")
         progress.complete(f"Downloaded {size_mb:.1f} MB of embeddings")
     else:
-        print(f"\n✗ Error: Mosaic for {viewport_id} was not created (all downloads failed)")
-        progress.error(f"Failed to download embeddings after {3} attempts")
+        # Check current status to avoid overwriting detailed error message
+        try:
+            with open(progress.progress_file, 'r') as f:
+                current_progress = json.load(f)
+                # Only set generic error if we don't already have a detailed error
+                if current_progress.get("status") != "error":
+                    print(f"\n✗ Error: Mosaic for {viewport_id} was not created (all downloads failed)")
+                    progress.error(f"Failed to download embeddings after {max_retries} attempts")
+        except (FileNotFoundError, json.JSONDecodeError):
+            # Progress file doesn't exist or is invalid, set generic error
+            print(f"\n✗ Error: Mosaic for {viewport_id} was not created (all downloads failed)")
+            progress.error(f"Failed to download embeddings after {max_retries} attempts")
 
 if __name__ == "__main__":
     download_embeddings()
