@@ -326,6 +326,9 @@
         <div class="panel">
             <div class="panel-header">Tessera Embeddings <span id="embedding-year">2024</span></div>
             <div id="map-embedding" class="map"></div>
+            <div id="coords-display" style="position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); background: rgba(0, 0, 0, 0.8); color: #00ff00; padding: 15px 20px; border-radius: 6px; font-family: monospace; font-size: 14px; font-weight: bold; pointer-events: none; display: none; z-index: 500; text-align: center; border: 2px solid #00ff00; box-shadow: 0 0 10px rgba(0, 255, 0, 0.5);">
+                <div id="coords-text">Lat: 0.000000 | Lon: 0.000000</div>
+            </div>
         </div>
         <div class="panel">
             <div class="panel-header">Satellite RGB</div>
@@ -538,6 +541,13 @@
                         maps[panel].setView(refCenter, refZoom, {animate: false});
                     }
                 });
+            });
+
+            // Add mousemove handler to embedding map to show coordinates
+            maps.embedding.on('mousemove', function(e) {
+                if (labelingMode) {
+                    updateCoordinatesDisplay(e.latlng.lat, e.latlng.lng);
+                }
             });
         }
 
@@ -863,6 +873,7 @@
             document.getElementById('start-label-btn').style.display = 'none';
             document.getElementById('stop-label-btn').style.display = 'block';
             document.getElementById('map-embedding').style.cursor = 'crosshair';
+            document.getElementById('coords-display').style.display = 'block';
             console.log('Labeling mode: ON');
         }
 
@@ -872,7 +883,16 @@
             document.getElementById('start-label-btn').style.display = 'block';
             document.getElementById('stop-label-btn').style.display = 'none';
             document.getElementById('map-embedding').style.cursor = 'grab';
+            document.getElementById('coords-display').style.display = 'none';
             console.log('Labeling mode: OFF');
+        }
+
+        // Update coordinates display on mouse move over embedding map
+        function updateCoordinatesDisplay(lat, lon) {
+            const coordsText = document.getElementById('coords-text');
+            if (coordsText) {
+                coordsText.textContent = `Lat: ${lat.toFixed(6)} | Lon: ${lon.toFixed(6)}`;
+            }
         }
 
         // Extract embedding and associate with label
