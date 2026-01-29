@@ -1602,20 +1602,24 @@
             onAdd(map) {
                 this._map = map;
 
-                // Create canvas element positioned absolutely on the map container
+                // Create a custom pane for the canvas (above tiles and markers)
+                let canvasPane = map.getPane('explorerCanvasPane');
+                if (!canvasPane) {
+                    canvasPane = map.createPane('explorerCanvasPane');
+                    canvasPane.style.zIndex = 650; // Higher than markerPane (625)
+                }
+
+                // Create canvas element
                 this._canvas = document.createElement('canvas');
                 this._canvas.className = 'explorer-direct-canvas';
                 this._canvas.style.position = 'absolute';
                 this._canvas.style.top = '0';
                 this._canvas.style.left = '0';
-                this._canvas.style.zIndex = '200';
                 this._canvas.style.pointerEvents = 'none';
                 this._canvas.style.opacity = '0.5';
 
-                // Add directly to map container, not to overlay pane
-                // This avoids coordinate system mismatches from pane transforms
-                const mapContainer = map.getContainer();
-                mapContainer.appendChild(this._canvas);
+                // Add to custom pane
+                canvasPane.appendChild(this._canvas);
 
                 this._ctx = this._canvas.getContext('2d');
                 this._updateCanvasSize();
@@ -1623,7 +1627,7 @@
                 // Redraw on any map change (pan, zoom, resize)
                 this._map.on('move zoom resize', this._redraw, this);
 
-                console.log('[CANVAS] Layer added to map container');
+                console.log('[CANVAS] Layer added to explorerCanvasPane with z-index 650');
                 this._redraw();
             }
 
@@ -1657,9 +1661,11 @@
                 // Clear canvas
                 ctx.clearRect(0, 0, size.x, size.y);
 
-                ctx.fillStyle = '#FFFFFF';
+                // Use bright red for debugging visibility (will change to white when working)
+                ctx.fillStyle = '#FF0000';
 
                 let drawnCount = 0;
+                let visibleCount = 0;
 
                 // Draw each pixel using container point coordinates (which are relative to map container)
                 for (const match of this.matches) {
@@ -1667,10 +1673,14 @@
                     const sw = map.latLngToContainerPoint(bounds[0]);
                     const ne = map.latLngToContainerPoint(bounds[1]);
 
+                    drawnCount++;
+
                     // Skip if completely off-screen
                     if (ne.x < 0 || sw.x > size.x || sw.y < 0 || ne.y > size.y) {
                         continue;
                     }
+
+                    visibleCount++;
 
                     const x = Math.round(sw.x);
                     const y = Math.round(ne.y);
@@ -1678,10 +1688,9 @@
                     const height = Math.max(1, Math.round(sw.y - ne.y));
 
                     ctx.fillRect(x, y, width, height);
-                    drawnCount++;
                 }
 
-                console.log(`[EXPLORER] Canvas rendered ${drawnCount} visible pixels`);
+                console.log(`[EXPLORER] Canvas: processed ${drawnCount} pixels, drew ${visibleCount} visible pixels`);
             }
 
             updateMatches(newMatches) {
