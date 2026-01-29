@@ -1598,6 +1598,7 @@
                 // Bind events
                 this._map.on('resize', this._onResize, this);
                 this._map.on('zoom', this._redraw, this);
+                this._map.on('moveend', this._redraw, this);  // Redraw after pan completes to sync with threshold changes
 
                 // Initial draw
                 this._redraw();
