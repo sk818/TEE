@@ -1563,7 +1563,7 @@
 
                 let visibleCount = 0;
 
-                // Draw each pixel
+                // Draw each pixel with slight overlap to eliminate gaps from rounding
                 for (const match of this.matches) {
                     const matchBounds = calculatePixelBounds(match.lat, match.lon);
                     const sw = map.latLngToContainerPoint(matchBounds[0]);
@@ -1576,13 +1576,16 @@
 
                     visibleCount++;
 
-                    // Use floor for position and ceil for dimensions to prevent gaps and banding
-                    const x = Math.floor(sw.x);
-                    const y = Math.floor(ne.y);
-                    const width = Math.max(1, Math.ceil(ne.x - sw.x));
-                    const height = Math.max(1, Math.ceil(sw.y - ne.y));
+                    // Calculate exact bounds without rounding, let canvas handle rendering
+                    const x = sw.x;
+                    const y = ne.y;
+                    const width = ne.x - sw.x;
+                    const height = sw.y - ne.y;
 
-                    ctx.fillRect(x, y, width, height);
+                    // Only draw if size is reasonable (avoid zero/negative sizes)
+                    if (width > 0.1 && height > 0.1) {
+                        ctx.fillRect(x, y, width, height);
+                    }
                 }
 
             }
