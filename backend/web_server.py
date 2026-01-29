@@ -1003,7 +1003,8 @@ def api_search_similar_embeddings():
             logger.info(f"[SEARCH] No matches. Closest 10 distances: {distances[closest_10]}")
 
         # Limit results to prevent overwhelming the client
-        MAX_RESULTS = 10000
+        # For 5km x 5km viewports (~250K embeddings), we can handle 250K results
+        MAX_RESULTS = 250000
         if len(similar_indices) > MAX_RESULTS:
             logger.info(f"[SEARCH] Limiting results to {MAX_RESULTS} (found {len(similar_indices)})")
             # Sort by distance and take top matches
