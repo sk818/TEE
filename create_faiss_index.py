@@ -96,6 +96,38 @@ def create_faiss_index():
             logger.info(f"Mosaic dimensions: {width}×{height}")
             logger.info(f"Total pixels: {width * height:,}")
 
+            # Clip to viewport bounds
+            transform = src.transform
+            min_lat, min_lon, max_lat, max_lon = bounds
+
+            # Convert lat/lon bounds to pixel coordinates
+            # x = (lon - transform.c) / transform.a
+            # y = (lat - transform.f) / transform.e
+            pixel_min_x = int((min_lon - transform.c) / transform.a)
+            pixel_max_x = int((max_lon - transform.c) / transform.a)
+            pixel_min_y = int((max_lat - transform.f) / transform.e)
+            pixel_max_y = int((min_lat - transform.f) / transform.e)
+
+            # Ensure within mosaic bounds
+            pixel_min_x = max(0, min(pixel_min_x, width - 1))
+            pixel_max_x = max(0, min(pixel_max_x, width - 1))
+            pixel_min_y = max(0, min(pixel_min_y, height - 1))
+            pixel_max_y = max(0, min(pixel_max_y, height - 1))
+
+            # Ensure min < max
+            if pixel_min_x > pixel_max_x:
+                pixel_min_x, pixel_max_x = pixel_max_x, pixel_min_x
+            if pixel_min_y > pixel_max_y:
+                pixel_min_y, pixel_max_y = pixel_max_y, pixel_min_y
+
+            clipped_width = pixel_max_x - pixel_min_x
+            clipped_height = pixel_max_y - pixel_min_y
+
+            logger.info(f"Viewport bounds: [{min_lat:.6f}, {min_lon:.6f}] to [{max_lat:.6f}, {max_lon:.6f}]")
+            logger.info(f"Clipped to pixels: x=[{pixel_min_x}, {pixel_max_x}], y=[{pixel_min_y}, {pixel_max_y}]")
+            logger.info(f"Clipped dimensions: {clipped_width}×{clipped_height}")
+            logger.info(f"Clipped pixels: {clipped_width * clipped_height:,}")
+
             # Step 1: Read sampled embeddings for FAISS index
             logger.info(f"\n📊 Step 1: Creating IVF-PQ index from sampled pixels...")
             logger.info(f"   Reading every {SAMPLING_FACTOR}×{SAMPLING_FACTOR} pixel...")
@@ -103,8 +135,9 @@ def create_faiss_index():
             sampled_embeddings = []
             sampled_coords = []
 
-            for y in range(0, height, SAMPLING_FACTOR):
-                for x in range(0, width, SAMPLING_FACTOR):
+            # Only sample within clipped bounds
+            for y in range(pixel_min_y, pixel_max_y, SAMPLING_FACTOR):
+                for x in range(pixel_min_x, pixel_max_x, SAMPLING_FACTOR):
                     # Read 128 bands at this pixel (3×3 window to ensure data)
                     from rasterio import windows as rasterio_windows
                     window = rasterio_windows.Window(
@@ -113,8 +146,8 @@ def create_faiss_index():
                     data = src.read(window=window)  # (128, 3, 3)
 
                     # Extract center pixel
-                    center_x = min(1, x)
-                    center_y = min(1, y)
+                    center_x = min(1, x - max(0, x - 1))
+                    center_y = min(1, y - max(0, y - 1))
                     embedding = data[:, center_y, center_x]  # (128,)
                     sampled_embeddings.append(embedding)
                     sampled_coords.append((x, y))
@@ -145,42 +178,43 @@ def create_faiss_index():
             logger.info(f"     Index size: {index_size_mb:.1f} MB")
             progress.update("processing", f"Created index ({index_size_mb:.1f} MB)", current_file="embeddings_index")
 
-            # Step 2: Read ALL embeddings for threshold-based search
-            logger.info(f"\n💾 Step 2: Storing all pixel embeddings...")
-            logger.info(f"   Reading all {width * height:,} pixels...")
+            # Step 2: Read ALL embeddings for threshold-based search (clipped to viewport)
+            logger.info(f"\n💾 Step 2: Storing all pixel embeddings (clipped)...")
+            logger.info(f"   Reading {clipped_width * clipped_height:,} pixels in viewport...")
 
             all_embeddings = []
             pixel_coords = []
 
             # Read in chunks to manage memory
             chunk_size = 256
-            for y_start in range(0, height, chunk_size):
-                y_end = min(y_start + chunk_size, height)
+            for y_start in range(pixel_min_y, pixel_max_y, chunk_size):
+                y_end = min(y_start + chunk_size, pixel_max_y)
                 logger.info(f"   Processing rows {y_start}-{y_end}...")
 
                 # Update progress
-                percent = min(100, int((y_start / height) * 100))
+                percent = min(100, int((y_start - pixel_min_y) / clipped_height * 100))
                 progress.update("processing", f"Loading embeddings ({percent}%)...",
-                              current_value=y_start, total_value=height, current_file="all_embeddings")
+                              current_value=y_start - pixel_min_y, total_value=clipped_height, current_file="all_embeddings")
 
-                # Read all bands for this chunk
+                # Read all bands for this chunk (clipped to viewport width)
                 from rasterio import windows as rasterio_windows
-                window = rasterio_windows.Window(0, y_start, width, y_end - y_start)
-                chunk_data = src.read(window=window)  # (128, chunk_height, width)
+                window = rasterio_windows.Window(pixel_min_x, y_start, clipped_width, y_end - y_start)
+                chunk_data = src.read(window=window)  # (128, chunk_height, clipped_width)
 
-                # Reshape: (128, chunk_height, width) → (chunk_height*width, 128)
+                # Reshape: (128, chunk_height, clipped_width) → (chunk_height*clipped_width, 128)
                 chunk_height = chunk_data.shape[1]
                 chunk_embeddings = chunk_data.transpose(1, 2, 0).reshape(-1, EMBEDDING_DIM)
                 all_embeddings.append(chunk_embeddings)
 
-                # Generate pixel coordinates
+                # Generate pixel coordinates (relative to clipped region)
                 for y in range(y_start, y_end):
-                    for x in range(width):
+                    for x in range(pixel_min_x, pixel_max_x):
                         pixel_coords.append((x, y))
 
             # Keep as float32 (no conversion to uint8 - embeddings are already float32 in GeoTIFF)
             all_embeddings = np.vstack(all_embeddings).astype(np.float32)
-            logger.info(f"   ✓ Loaded all embeddings: {all_embeddings.shape}")
+            logger.info(f"   ✓ Loaded all embeddings (clipped): {all_embeddings.shape}")
+            logger.info(f"     Embeddings: {all_embeddings.shape[0]:,} pixels × {all_embeddings.shape[1]} dims")
 
             # Save all embeddings
             embeddings_file = output_dir / "all_embeddings.npy"
@@ -203,7 +237,10 @@ def create_faiss_index():
                 "mosaic_file": str(mosaic_file),
                 "mosaic_height": height,
                 "mosaic_width": width,
-                "num_total_pixels": width * height,
+                "clipped_height": clipped_height,
+                "clipped_width": clipped_width,
+                "clipped_pixel_bounds": {"min_x": pixel_min_x, "max_x": pixel_max_x, "min_y": pixel_min_y, "max_y": pixel_max_y},
+                "num_total_pixels": clipped_width * clipped_height,  # Only pixels in viewport
                 "num_sampled_pixels": len(sampled_embeddings),
                 "sampling_factor": SAMPLING_FACTOR,
                 "embedding_dim": EMBEDDING_DIM,
