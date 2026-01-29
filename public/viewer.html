@@ -1616,6 +1616,8 @@
                 const container = map.getContainer();
                 container.appendChild(this._canvas);
 
+                console.log('[CANVAS] Added to map container', container.className);
+
                 this._ctx = this._canvas.getContext('2d');
                 this._updateCanvasSize();
 
@@ -1623,6 +1625,7 @@
                 this._map.on('zoom moveend', this._redraw, this);
                 this._map.on('resize', this._onResize, this);
 
+                console.log('[CANVAS] Events bound, drawing...');
                 this._redraw();
             }
 
@@ -1639,15 +1642,20 @@
                 const size = this._map.getSize();
                 const dpr = window.devicePixelRatio || 1;
 
-                // Set drawing surface size (no scaling by dpr - we'll handle it in fillRect)
-                this._canvas.width = size.x;
-                this._canvas.height = size.y;
+                // Set drawing surface to device pixel dimensions
+                this._canvas.width = size.x * dpr;
+                this._canvas.height = size.y * dpr;
 
-                // Set CSS display size to match
+                // Set CSS display size in CSS pixels
                 this._canvas.style.width = size.x + 'px';
                 this._canvas.style.height = size.y + 'px';
 
                 this._ctx.imageSmoothingEnabled = false;
+
+                // Scale drawing operations by device pixel ratio
+                this._ctx.scale(dpr, dpr);
+
+                console.log(`[CANVAS] Sized to ${size.x}×${size.y}px (${this._canvas.width}×${this._canvas.height} device pixels, dpr=${dpr})`);
             }
 
             _onResize() {
@@ -1658,35 +1666,33 @@
             _redraw() {
                 const ctx = this._ctx;
                 const map = this._map;
+                const size = map.getSize();
 
-                // Clear canvas
-                ctx.clearRect(0, 0, this._canvas.width, this._canvas.height);
+                // Clear canvas using CSS pixel size (context is scaled by dpr)
+                ctx.clearRect(0, 0, size.x, size.y);
 
-                // Set white color
                 ctx.fillStyle = '#FFFFFF';
 
+                const startTime = performance.now();
                 let drawnCount = 0;
 
-                // Draw each pixel - use integer coordinates to avoid anti-aliasing artifacts
+                // Draw each pixel
                 for (const match of this.matches) {
                     const bounds = calculatePixelBounds(match.lat, match.lon);
                     const sw = map.latLngToContainerPoint(bounds[0]);
                     const ne = map.latLngToContainerPoint(bounds[1]);
 
-                    // Round to integers to avoid horizontal/vertical line artifacts
-                    const x1 = Math.round(sw.x);
-                    const y1 = Math.round(ne.y);
-                    const x2 = Math.round(ne.x);
-                    const y2 = Math.round(sw.y);
+                    const x = Math.round(sw.x);
+                    const y = Math.round(ne.y);
+                    const width = Math.max(1, Math.round(ne.x - sw.x));
+                    const height = Math.max(1, Math.round(sw.y - ne.y));
 
-                    const width = Math.max(1, x2 - x1);
-                    const height = Math.max(1, y2 - y1);
-
-                    ctx.fillRect(x1, y1, width, height);
+                    ctx.fillRect(x, y, width, height);
                     drawnCount++;
                 }
 
-                console.log(`[EXPLORER] Canvas rendered ${drawnCount} pixels`);
+                const renderTime = performance.now() - startTime;
+                console.log(`[EXPLORER] Canvas rendered ${drawnCount} pixels in ${renderTime.toFixed(1)}ms`);
             }
 
             updateMatches(newMatches) {
