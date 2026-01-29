@@ -1601,15 +1601,9 @@
 
             onAdd(map) {
                 this._map = map;
+                this._originalMatches = this.matches.slice(); // Keep original matches for coordinate system
 
-                // Create a custom pane for the canvas (above tiles and markers)
-                let canvasPane = map.getPane('explorerCanvasPane');
-                if (!canvasPane) {
-                    canvasPane = map.createPane('explorerCanvasPane');
-                    canvasPane.style.zIndex = 650; // Higher than markerPane (625)
-                }
-
-                // Create canvas element
+                // Create canvas element directly in map container
                 this._canvas = document.createElement('canvas');
                 this._canvas.className = 'explorer-direct-canvas';
                 this._canvas.style.position = 'absolute';
@@ -1617,17 +1611,19 @@
                 this._canvas.style.left = '0';
                 this._canvas.style.pointerEvents = 'none';
                 this._canvas.style.opacity = '0.5';
+                this._canvas.style.zIndex = '999'; // Ensure it's on top
 
-                // Add to custom pane
-                canvasPane.appendChild(this._canvas);
+                // Add directly to map container
+                const mapContainer = map.getContainer();
+                mapContainer.appendChild(this._canvas);
 
                 this._ctx = this._canvas.getContext('2d');
                 this._updateCanvasSize();
 
-                // Redraw on any map change (pan, zoom, resize)
+                // Redraw on any map change
                 this._map.on('move zoom resize', this._redraw, this);
 
-                console.log('[CANVAS] Layer added to explorerCanvasPane with z-index 650');
+                console.log('[CANVAS] Layer added to map container');
                 this._redraw();
             }
 
@@ -1641,13 +1637,10 @@
 
             _updateCanvasSize() {
                 const size = this._map.getSize();
-
-                // Set canvas to match map size exactly (no DPR scaling - we'll handle in drawing)
                 this._canvas.width = size.x;
                 this._canvas.height = size.y;
                 this._canvas.style.width = size.x + 'px';
                 this._canvas.style.height = size.y + 'px';
-
                 this._ctx.imageSmoothingEnabled = false;
             }
 
@@ -1661,19 +1654,23 @@
                 // Clear canvas
                 ctx.clearRect(0, 0, size.x, size.y);
 
-                // Use bright red for debugging visibility (will change to white when working)
+                // Use bright red for testing
                 ctx.fillStyle = '#FF0000';
 
-                let drawnCount = 0;
                 let visibleCount = 0;
 
-                // Draw each pixel using container point coordinates (which are relative to map container)
-                for (const match of this.matches) {
-                    const bounds = calculatePixelBounds(match.lat, match.lon);
-                    const sw = map.latLngToContainerPoint(bounds[0]);
-                    const ne = map.latLngToContainerPoint(bounds[1]);
+                // Get map's top-left corner in lat/lng to establish coordinate frame
+                const bounds = map.getBounds();
+                const topLeft = map.latLngToContainerPoint(bounds.getNorthWest());
+                const bottomRight = map.latLngToContainerPoint(bounds.getSouthEast());
 
-                    drawnCount++;
+                console.log(`[CANVAS] Map viewport: TL=(${topLeft.x.toFixed(0)},${topLeft.y.toFixed(0)}) BR=(${bottomRight.x.toFixed(0)},${bottomRight.y.toFixed(0)})`);
+
+                // Draw each pixel
+                for (const match of this.matches) {
+                    const matchBounds = calculatePixelBounds(match.lat, match.lon);
+                    const sw = map.latLngToContainerPoint(matchBounds[0]);
+                    const ne = map.latLngToContainerPoint(matchBounds[1]);
 
                     // Skip if completely off-screen
                     if (ne.x < 0 || sw.x > size.x || sw.y < 0 || ne.y > size.y) {
@@ -1690,7 +1687,7 @@
                     ctx.fillRect(x, y, width, height);
                 }
 
-                console.log(`[EXPLORER] Canvas: processed ${drawnCount} pixels, drew ${visibleCount} visible pixels`);
+                console.log(`[EXPLORER] Canvas rendered ${visibleCount} visible pixels`);
             }
 
             updateMatches(newMatches) {
