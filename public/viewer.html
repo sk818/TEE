@@ -1864,8 +1864,6 @@
                     newlyCommitted.push(key);
                 }
 
-                if (shouldVisualize) {                } else {                }
-
                 // Step 3: Apply intelligent relabeling
                 // Prepare data for relabeling endpoint
                 const relabelRequest = {
@@ -1942,7 +1940,8 @@
                         }
                         if (!shouldReVisualize) {
                             summary += `\n[Note: Visualization not updated for large operations. Zoom out and back in to refresh view.]`;
-                        }                        alert(summary);
+                        }
+                        alert(summary);
                     } else {
                         alert(`Successfully committed ${pixelCount} similar pixels!\nNo existing pixels needed relabeling.`);
                     }
@@ -1962,7 +1961,8 @@
             document.getElementById('commit-similar-btn').style.display = 'none';
             document.getElementById('clear-similar-btn').style.display = 'none';
             document.getElementById('similar-count').textContent = '0';
-            updateLabelCount();        }
+            updateLabelCount();
+        }
 
         // Auto-clear preview when active label changes
         document.addEventListener('DOMContentLoaded', function() {
