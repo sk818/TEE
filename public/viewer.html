@@ -762,6 +762,7 @@
         let explorerMode = false;
         let explorerResults = null;      // Cache: {allMatches, queryTime, cacheThreshold, sourcePixel}
         let explorerVisualization = null; // Layer group for visualization
+        let explorerCanvasLayer = null;   // Direct canvas layer (reused on slider changes)
 
         // Create a new label
         function createLabelDialog() {
@@ -1350,6 +1351,7 @@
                 explorerVisualization = null;
             }
 
+            explorerCanvasLayer = null;
             explorerResults = null;
 
             // Reset stats
@@ -1526,23 +1528,28 @@
         function visualizeExplorerResults(matches) {
             console.log(`[EXPLORER] visualizeExplorerResults called with ${matches.length} matches`);
 
-            // Clear previous visualization
-            if (explorerVisualization) {
-                maps.embedding.removeLayer(explorerVisualization);
-                explorerVisualization = null;
-            }
-
             if (matches.length === 0) {
                 console.log('[EXPLORER] No matches to visualize');
                 return;
             }
 
+            // If canvas layer exists (slider change), just update matches
+            if (explorerCanvasLayer) {
+                console.log(`[EXPLORER] Reusing existing canvas layer, updating to ${matches.length} matches`);
+                explorerCanvasLayer.updateMatches(matches);
+                return;
+            }
+
+            // New search: create canvas layer and layer group
+            console.log(`[EXPLORER] Creating new canvas layer for ${matches.length} matches`);
+
             const layerGroup = L.layerGroup();
 
-            // Use direct canvas drawing for all matches (fast and scaleable)
-            console.log(`[EXPLORER] Using Direct Canvas drawing for ${matches.length} matches`);
-            visualizeGoldPixelsWithCanvas(matches, layerGroup);
+            // Create and add canvas layer
+            explorerCanvasLayer = new DirectCanvasLayer(matches, maps.embedding);
+            layerGroup.addLayer(explorerCanvasLayer);
 
+            // Add to map
             layerGroup.addTo(maps.embedding);
             explorerVisualization = layerGroup;
 
@@ -1550,21 +1557,10 @@
             console.log(`[EXPLORER] Adding source pixel marker at (${explorerResults.sourcePixel.lat}, ${explorerResults.sourcePixel.lon})`);
             visualizeSourcePixel(explorerResults.sourcePixel.lat, explorerResults.sourcePixel.lon, layerGroup);
 
-            console.log(`[EXPLORER] Visualization complete - ${matches.length} gold pixels + 1 source marker added`);
+            console.log(`[EXPLORER] Visualization complete - ${matches.length} white pixels + 1 source marker added`);
         }
 
-        // Visualize gold pixels with direct canvas drawing
-        function visualizeGoldPixelsWithCanvas(matches, layerGroup) {
-            console.log(`[EXPLORER] Using Direct Canvas drawing for ${matches.length} pixels`);
-
-            // Create custom canvas layer for direct pixel rendering
-            const directCanvasLayer = new DirectCanvasLayer(matches, maps.embedding);
-
-            layerGroup.addLayer(directCanvasLayer);
-            console.log(`[EXPLORER] Direct canvas layer added with ${matches.length} pixels`);
-        }
-
-        // Custom canvas layer for direct pixel rendering
+// Custom canvas layer for direct pixel rendering
         class DirectCanvasLayer extends L.Layer {
             constructor(matches, map) {
                 super();
@@ -1656,6 +1652,12 @@
 
                 const renderTime = performance.now() - startTime;
                 console.log(`[EXPLORER] Canvas rendered ${drawnCount} pixels in ${renderTime.toFixed(1)}ms`);
+            }
+
+            // Update matches and redraw without removing/re-adding layer
+            updateMatches(newMatches) {
+                this.matches = newMatches;
+                this._redraw();
             }
         }
 
