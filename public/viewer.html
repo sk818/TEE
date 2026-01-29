@@ -1627,7 +1627,8 @@
                 // Bind events
                 this._map.on('resize', this._onResize, this);
                 this._map.on('zoom', this._boundScheduleRedraw);
-                this._map.on('move', this._boundScheduleRedraw);
+                // Don't listen to 'move' - let Leaflet's CSS transforms handle panning
+                // Only redraw on zoom which changes the lat/lng to pixel mapping
 
                 // Initial draw
                 this._redraw();
@@ -1636,7 +1637,6 @@
             onRemove(map) {
                 this._map.off('resize', this._onResize, this);
                 this._map.off('zoom', this._boundScheduleRedraw);
-                this._map.off('move', this._boundScheduleRedraw);
 
                 if (this._canvas) {
                     this._canvas.remove();
