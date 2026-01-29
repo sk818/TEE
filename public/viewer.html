@@ -250,11 +250,6 @@
         #progress-status.error {
             color: #dc3545;
         }
-
-        /* Debug: Show canvas outline to diagnose alignment issues */
-        .explorer-direct-canvas {
-            border: 1px solid rgba(255, 0, 0, 0.3) !important;
-        }
     </style>
 </head>
 <body>
@@ -1352,7 +1347,7 @@
         // Clear explorer results and visualization
         function clearExplorerResults() {
             if (explorerVisualization) {
-                maps.embedding.removeLayer(explorerVisualization);
+                maps.rgb.removeLayer(explorerVisualization);
                 explorerVisualization = null;
             }
 
@@ -1579,15 +1574,15 @@
 
             const layerGroup = L.layerGroup();
 
-            // Create and add canvas layer
-            explorerCanvasLayer = new DirectCanvasLayer(matches, maps.embedding);
+            // Create and add canvas layer to RGB (Bing satellite) panel
+            explorerCanvasLayer = new DirectCanvasLayer(matches, maps.rgb);
             layerGroup.addLayer(explorerCanvasLayer);
 
-            // Add to map
-            layerGroup.addTo(maps.embedding);
+            // Add to RGB panel with 50% opacity
+            layerGroup.addTo(maps.rgb);
             explorerVisualization = layerGroup;
 
-            // Add source pixel marker
+            // Add source pixel marker to RGB panel
             console.log(`[EXPLORER] Adding source pixel marker at (${explorerResults.sourcePixel.lat}, ${explorerResults.sourcePixel.lon})`);
             visualizeSourcePixel(explorerResults.sourcePixel.lat, explorerResults.sourcePixel.lon, layerGroup);
 
@@ -1616,13 +1611,11 @@
                 this._canvas.style.zIndex = '200';
                 this._canvas.style.pointerEvents = 'none';
                 this._canvas.style.willChange = 'transform';
+                this._canvas.style.opacity = '0.5';  // 50% opacity for semi-transparent overlay
 
                 // Add to Leaflet's overlay pane (automatically handles transforms and positioning)
                 const pane = map.getPane('overlayPane');
                 pane.appendChild(this._canvas);
-
-                console.log(`[CANVAS] Added to overlay pane`);
-                console.log(`[CANVAS] Canvas parent: ${this._canvas.parentElement.className}`);
 
                 // Set up canvas context
                 this._ctx = this._canvas.getContext('2d');
@@ -1662,8 +1655,6 @@
 
                 // Scale context for device pixel ratio
                 this._ctx.scale(dpr, dpr);
-
-                console.log(`[CANVAS] Size updated: ${size.x}×${size.y}px CSS, ${this._canvas.width}×${this._canvas.height}px drawing (dpr=${dpr})`);
             }
 
             _onResize() {
@@ -1676,20 +1667,14 @@
                 const map = this._map;
                 const dpr = window.devicePixelRatio || 1;
 
-                console.log(`[CANVAS] _redraw() START - canvas size: ${this._canvas.width}×${this._canvas.height}, CSS: ${this._canvas.style.width}×${this._canvas.style.height}`);
-                console.log(`[CANVAS] Context state: fillStyle=${ctx.fillStyle}, globalAlpha=${ctx.globalAlpha}`);
-
                 // Clear canvas (use CSS size since context is scaled by dpr)
                 ctx.clearRect(0, 0, this._canvas.width / dpr, this._canvas.height / dpr);
-                console.log(`[CANVAS] Canvas cleared`);
 
                 // Set white color
                 ctx.fillStyle = '#FFFFFF';
-                console.log(`[CANVAS] Fill style set to ${ctx.fillStyle}`);
 
                 const startTime = performance.now();
                 let drawnCount = 0;
-                let sampleLogged = false;
 
                 // Draw each pixel
                 for (const match of this.matches) {
@@ -1704,25 +1689,13 @@
                     const width = Math.max(1, ne.x - sw.x);
                     const height = Math.max(1, sw.y - ne.y);
 
-                    // Log first pixel for debugging
-                    if (drawnCount === 0) {
-                        console.log(`[CANVAS] FIRST pixel: lat=${match.lat.toFixed(6)}, lon=${match.lon.toFixed(6)} → screen x=${sw.x.toFixed(1)}, y=${ne.y.toFixed(1)}, size=${width}×${height}`);
-                    }
-
-                    // Log sample coordinate
-                    if (!sampleLogged && drawnCount === 500) {
-                        console.log(`[CANVAS] Sample pixel #500: lat=${match.lat.toFixed(6)}, lon=${match.lon.toFixed(6)} → screen x=${sw.x.toFixed(1)}, y=${ne.y.toFixed(1)}, size=${width}×${height}`);
-                        sampleLogged = true;
-                    }
-
                     // Draw filled rectangle
                     ctx.fillRect(sw.x, ne.y, width, height);
                     drawnCount++;
                 }
 
                 const renderTime = performance.now() - startTime;
-                console.log(`[CANVAS] _redraw() COMPLETE - rendered ${drawnCount} pixels in ${renderTime.toFixed(1)}ms`);
-                console.log(`[CANVAS] Canvas element visible? ${this._canvas.style.display}, opacity: ${this._canvas.style.opacity}, z-index: ${this._canvas.style.zIndex}`);
+                console.log(`[EXPLORER] Canvas rendered ${drawnCount} pixels in ${renderTime.toFixed(1)}ms`);
             }
 
             // Update matches and redraw without removing/re-adding layer
