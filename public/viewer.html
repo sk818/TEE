@@ -762,7 +762,6 @@
         let explorerMode = false;
         let explorerResults = null;      // Cache: {allMatches, queryTime, cacheThreshold, sourcePixel}
         let explorerVisualization = null; // Layer group for visualization
-        let explorerCanvasLayer = null;  // Canvas layer for large result sets
 
         // Create a new label
         function createLabelDialog() {
@@ -1511,14 +1510,9 @@
 
             const layerGroup = L.layerGroup();
 
-            // Adaptive rendering based on match count
-            if (matches.length < 1000) {
-                console.log(`[EXPLORER] Using rectangle rendering for ${matches.length} matches`);
-                visualizeGoldPixelsWithRectangles(matches, layerGroup);
-            } else {
-                console.log(`[EXPLORER] Using canvas rendering for ${matches.length} matches`);
-                visualizeGoldPixelsWithCanvas(matches, layerGroup);
-            }
+            // Use direct canvas drawing for all matches (fast and scaleable)
+            console.log(`[EXPLORER] Using Direct Canvas drawing for ${matches.length} matches`);
+            visualizeGoldPixelsWithCanvas(matches, layerGroup);
 
             layerGroup.addTo(maps.embedding);
             explorerVisualization = layerGroup;
@@ -1530,70 +1524,109 @@
             console.log(`[EXPLORER] Visualization complete - ${matches.length} gold pixels + 1 source marker added`);
         }
 
-        // Visualize gold pixels with Canvas renderer (for large result sets)
+        // Visualize gold pixels with direct canvas drawing
         function visualizeGoldPixelsWithCanvas(matches, layerGroup) {
-            console.log(`[EXPLORER] Using Canvas renderer for ${matches.length} pixels`);
+            console.log(`[EXPLORER] Using Direct Canvas drawing for ${matches.length} pixels`);
 
-            // Create Canvas layer if not exists
-            if (!explorerCanvasLayer) {
-                explorerCanvasLayer = L.canvas({pane: 'overlayPane'});
-            }
+            // Create custom canvas layer for direct pixel rendering
+            const directCanvasLayer = new DirectCanvasLayer(matches, maps.embedding);
 
-            let addedCount = 0;
-            matches.forEach(match => {
-                const bounds = calculatePixelBounds(match.lat, match.lon);
-
-                // Create rectangle on Canvas renderer with pure white fill
-                const rect = L.rectangle(bounds, {
-                    color: '#FFFFFF',        // White
-                    weight: 0,               // No border
-                    fill: true,
-                    fillColor: '#FFFFFF',    // Pure white (255,255,255)
-                    fillOpacity: 1.0,        // Solid white
-                    renderer: explorerCanvasLayer  // KEY: Use canvas renderer
-                });
-
-                layerGroup.addLayer(rect);
-                addedCount++;
-            });
-
-            console.log(`[EXPLORER] Canvas layer prepared with ${addedCount} rectangles added to layer group`);
+            layerGroup.addLayer(directCanvasLayer);
+            console.log(`[EXPLORER] Direct canvas layer added with ${matches.length} pixels`);
         }
 
-        // Visualize gold pixels with Leaflet rectangles (for small result sets < 1000)
-        function visualizeGoldPixelsWithRectangles(matches, layerGroup) {
-            console.log(`[EXPLORER] Using Rectangles for ${matches.length} pixels`);
+        // Custom canvas layer for direct pixel rendering
+        class DirectCanvasLayer extends L.Layer {
+            constructor(matches, map) {
+                super();
+                this.matches = matches;
+                this._map = map;
+                this._canvas = null;
+                this._ctx = null;
+            }
 
-            let addedCount = 0;
-            matches.forEach(match => {
-                const bounds = calculatePixelBounds(match.lat, match.lon);
+            onAdd(map) {
+                this._map = map;
 
-                const rect = L.rectangle(bounds, {
-                    color: '#FFFFFF',        // White
-                    weight: 0,               // No border
-                    fill: true,
-                    fillColor: '#FFFFFF',    // Pure white (255,255,255)
-                    fillOpacity: 1.0        // Solid white
-                });
+                // Create canvas element
+                this._canvas = document.createElement('canvas');
+                this._canvas.className = 'explorer-direct-canvas';
+                this._canvas.style.position = 'absolute';
+                this._canvas.style.top = '0';
+                this._canvas.style.left = '0';
+                this._canvas.style.zIndex = '200';
+                this._canvas.style.pointerEvents = 'none';
 
-                // Add hover popup for small sets
-                rect.bindPopup(`<div style="font-size: 12px;">
-                    Distance: ${match.distance.toFixed(3)}<br/>
-                    Pixel: (${match.pixel.x}, ${match.pixel.y})
-                </div>`);
+                // Add to overlay pane
+                const container = map.getPane('overlayPane');
+                container.appendChild(this._canvas);
 
-                rect.on('mouseover', function() {
-                    this.openPopup();
-                });
-                rect.on('mouseout', function() {
-                    this.closePopup();
-                });
+                // Set up canvas context
+                this._ctx = this._canvas.getContext('2d');
+                this._updateCanvasSize();
 
-                layerGroup.addLayer(rect);
-                addedCount++;
-            });
+                // Bind events
+                this._map.on('resize', this._onResize, this);
+                this._map.on('move zoom', this._redraw, this);
 
-            console.log(`[EXPLORER] Added ${addedCount} rectangles to layer group`);
+                // Initial draw
+                this._redraw();
+            }
+
+            onRemove(map) {
+                this._map.off('resize', this._onResize, this);
+                this._map.off('move zoom', this._redraw, this);
+
+                if (this._canvas) {
+                    this._canvas.remove();
+                }
+            }
+
+            _updateCanvasSize() {
+                const size = this._map.getSize();
+                this._canvas.width = size.x;
+                this._canvas.height = size.y;
+            }
+
+            _onResize() {
+                this._updateCanvasSize();
+                this._redraw();
+            }
+
+            _redraw() {
+                const ctx = this._ctx;
+                const map = this._map;
+
+                // Clear canvas
+                ctx.clearRect(0, 0, this._canvas.width, this._canvas.height);
+
+                // Set white color
+                ctx.fillStyle = '#FFFFFF';
+
+                const startTime = performance.now();
+                let drawnCount = 0;
+
+                // Draw each pixel
+                for (const match of this.matches) {
+                    // Calculate bounds for this pixel
+                    const bounds = calculatePixelBounds(match.lat, match.lon);
+
+                    // Convert to screen coordinates
+                    const sw = map.latLngToContainerPoint(bounds[0]);
+                    const ne = map.latLngToContainerPoint(bounds[1]);
+
+                    // Ensure positive dimensions
+                    const width = Math.max(1, ne.x - sw.x);
+                    const height = Math.max(1, sw.y - ne.y);
+
+                    // Draw filled rectangle
+                    ctx.fillRect(sw.x, ne.y, width, height);
+                    drawnCount++;
+                }
+
+                const renderTime = performance.now() - startTime;
+                console.log(`[EXPLORER] Canvas rendered ${drawnCount} pixels in ${renderTime.toFixed(1)}ms`);
+            }
         }
 
         // Visualize source pixel with distinct marker
