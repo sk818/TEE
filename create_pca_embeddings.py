@@ -23,8 +23,8 @@ YEARS = range(2024, 2025)  # 2024 only
 N_COMPONENTS = 3  # RGB
 CHUNK_SIZE = 1000  # Process in chunks to save memory
 
-def compute_pca_for_year(year, viewport_id=None):
-    """Create RGB visualization from first 3 embedding bands."""
+def compute_pca_for_year(year, viewport_id=None, bounds=None):
+    """Create RGB visualization from first 3 embedding bands (clipped to viewport)."""
 
     # Use viewport-specific filename
     if viewport_id:
@@ -52,17 +52,56 @@ def compute_pca_for_year(year, viewport_id=None):
 
         print(f"  Input: {width}×{height} with {n_bands} bands")
 
+        # Clip to viewport bounds if provided
+        if bounds:
+            transform = src.transform
+            min_lat, min_lon, max_lat, max_lon = bounds
+
+            # Convert lat/lon bounds to pixel coordinates
+            pixel_min_x = int((min_lon - transform.c) / transform.a)
+            pixel_max_x = int((max_lon - transform.c) / transform.a)
+            pixel_min_y = int((max_lat - transform.f) / transform.e)
+            pixel_max_y = int((min_lat - transform.f) / transform.e)
+
+            # Ensure within mosaic bounds
+            pixel_min_x = max(0, min(pixel_min_x, width - 1))
+            pixel_max_x = max(0, min(pixel_max_x, width - 1))
+            pixel_min_y = max(0, min(pixel_min_y, height - 1))
+            pixel_max_y = max(0, min(pixel_max_y, height - 1))
+
+            # Ensure min < max
+            if pixel_min_x > pixel_max_x:
+                pixel_min_x, pixel_max_x = pixel_max_x, pixel_min_x
+            if pixel_min_y > pixel_max_y:
+                pixel_min_y, pixel_max_y = pixel_max_y, pixel_min_y
+
+            clipped_width = pixel_max_x - pixel_min_x
+            clipped_height = pixel_max_y - pixel_min_y
+
+            print(f"  Clipping to viewport: x=[{pixel_min_x}, {pixel_max_x}], y=[{pixel_min_y}, {pixel_max_y}]")
+            print(f"  Clipped dimensions: {clipped_width}×{clipped_height}")
+        else:
+            pixel_min_x = 0
+            pixel_min_y = 0
+            clipped_width = width
+            clipped_height = height
+
         # Read first 3 bands directly (no PCA)
         print(f"  Reading first {N_COMPONENTS} bands as RGB...")
         if n_bands < N_COMPONENTS:
             print(f"  ⚠️  WARNING: Only {n_bands} bands available, need {N_COMPONENTS}")
             return False
 
-        # Read first 3 bands
-        rgb_bands = src.read(1, window=None)  # Will read band by band
-        pca_image = np.zeros((N_COMPONENTS, height, width), dtype=np.float32)
+        # Read first 3 bands (clipped to viewport)
+        from rasterio import windows as rasterio_windows
+        if bounds:
+            window = rasterio_windows.Window(pixel_min_x, pixel_min_y, clipped_width, clipped_height)
+        else:
+            window = None
+
+        pca_image = np.zeros((N_COMPONENTS, clipped_height, clipped_width), dtype=np.float32)
         for i in range(N_COMPONENTS):
-            pca_image[i] = src.read(i+1)  # Bands are 1-indexed
+            pca_image[i] = src.read(i+1, window=window)  # Bands are 1-indexed
 
         print(f"  Using first {N_COMPONENTS} bands directly as RGB")
 
@@ -115,18 +154,21 @@ def main():
 
     # Try to get active viewport, but continue if not available for backwards compatibility
     viewport_id = None
+    bounds = None
     try:
         viewport = get_active_viewport()
         viewport_id = viewport['viewport_id']
+        bounds = viewport['bounds_tuple']
         print(f"Viewport: {viewport_id}")
+        print(f"Bounds: {bounds}")
     except Exception as e:
         print(f"Warning: Could not read active viewport: {e}")
-        print("Processing any available mosaic files...")
+        print("Processing any available mosaic files (no clipping)...")
 
     success_count = 0
 
     for year in YEARS:
-        if compute_pca_for_year(year, viewport_id):
+        if compute_pca_for_year(year, viewport_id, bounds):
             success_count += 1
 
     print("\n" + "=" * 70)
