@@ -1639,11 +1639,21 @@
 
             _updateCanvasSize() {
                 const size = this._map.getSize();
-                // Set both the drawing surface AND the CSS display size to match
-                this._canvas.width = size.x;
-                this._canvas.height = size.y;
+                const dpr = window.devicePixelRatio || 1;
+
+                // Set the drawing surface to account for device pixel ratio
+                this._canvas.width = size.x * dpr;
+                this._canvas.height = size.y * dpr;
+
+                // Set CSS display size
                 this._canvas.style.width = size.x + 'px';
                 this._canvas.style.height = size.y + 'px';
+
+                // Disable image smoothing for crisp pixel rendering
+                this._ctx.imageSmoothingEnabled = false;
+
+                // Scale context for device pixel ratio
+                this._ctx.scale(dpr, dpr);
             }
 
             _onResize() {
@@ -1654,9 +1664,10 @@
             _redraw() {
                 const ctx = this._ctx;
                 const map = this._map;
+                const dpr = window.devicePixelRatio || 1;
 
-                // Clear canvas
-                ctx.clearRect(0, 0, this._canvas.width, this._canvas.height);
+                // Clear canvas (use CSS size since context is scaled by dpr)
+                ctx.clearRect(0, 0, this._canvas.width / dpr, this._canvas.height / dpr);
 
                 // Set white color
                 ctx.fillStyle = '#FFFFFF';
