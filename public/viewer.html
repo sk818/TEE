@@ -1602,7 +1602,7 @@
             onAdd(map) {
                 this._map = map;
 
-                // Create canvas element
+                // Create canvas element positioned absolutely on the map container
                 this._canvas = document.createElement('canvas');
                 this._canvas.className = 'explorer-direct-canvas';
                 this._canvas.style.position = 'absolute';
@@ -1612,24 +1612,23 @@
                 this._canvas.style.pointerEvents = 'none';
                 this._canvas.style.opacity = '0.5';
 
-                // Add to Leaflet's overlay pane - this automatically applies CSS transforms during panning
-                const pane = map.getPane('overlayPane');
-                pane.appendChild(this._canvas);
+                // Add directly to map container, not to overlay pane
+                // This avoids coordinate system mismatches from pane transforms
+                const mapContainer = map.getContainer();
+                mapContainer.appendChild(this._canvas);
 
                 this._ctx = this._canvas.getContext('2d');
                 this._updateCanvasSize();
 
-                // Only redraw on zoom and moveend (after pan completes)
-                // Don't redraw during panning - let Leaflet's CSS transforms handle synchronization
-                this._map.on('zoom moveend', this._redraw, this);
-                this._map.on('resize', this._onResize, this);
+                // Redraw on any map change (pan, zoom, resize)
+                this._map.on('move zoom resize', this._redraw, this);
 
+                console.log('[CANVAS] Layer added to map container');
                 this._redraw();
             }
 
             onRemove(map) {
-                this._map.off('zoom moveend', this._redraw, this);
-                this._map.off('resize', this._onResize, this);
+                this._map.off('move zoom resize', this._redraw, this);
 
                 if (this._canvas) {
                     this._canvas.remove();
@@ -1638,45 +1637,40 @@
 
             _updateCanvasSize() {
                 const size = this._map.getSize();
-                const dpr = window.devicePixelRatio || 1;
 
-                // Set drawing surface to device pixel dimensions
-                this._canvas.width = size.x * dpr;
-                this._canvas.height = size.y * dpr;
-
-                // Set CSS display size in CSS pixels
+                // Set canvas to match map size exactly (no DPR scaling - we'll handle in drawing)
+                this._canvas.width = size.x;
+                this._canvas.height = size.y;
                 this._canvas.style.width = size.x + 'px';
                 this._canvas.style.height = size.y + 'px';
 
                 this._ctx.imageSmoothingEnabled = false;
-
-                // Scale drawing operations by device pixel ratio
-                this._ctx.scale(dpr, dpr);
-            }
-
-            _onResize() {
-                this._updateCanvasSize();
-                this._redraw();
             }
 
             _redraw() {
+                if (!this._ctx || !this._canvas) return;
+
                 const ctx = this._ctx;
                 const map = this._map;
                 const size = map.getSize();
 
-                // Clear canvas using CSS pixel size (context is scaled by dpr)
+                // Clear canvas
                 ctx.clearRect(0, 0, size.x, size.y);
 
                 ctx.fillStyle = '#FFFFFF';
 
-                const startTime = performance.now();
                 let drawnCount = 0;
 
-                // Draw each pixel
+                // Draw each pixel using container point coordinates (which are relative to map container)
                 for (const match of this.matches) {
                     const bounds = calculatePixelBounds(match.lat, match.lon);
                     const sw = map.latLngToContainerPoint(bounds[0]);
                     const ne = map.latLngToContainerPoint(bounds[1]);
+
+                    // Skip if completely off-screen
+                    if (ne.x < 0 || sw.x > size.x || sw.y < 0 || ne.y > size.y) {
+                        continue;
+                    }
 
                     const x = Math.round(sw.x);
                     const y = Math.round(ne.y);
@@ -1687,8 +1681,7 @@
                     drawnCount++;
                 }
 
-                const renderTime = performance.now() - startTime;
-                console.log(`[EXPLORER] Canvas rendered ${drawnCount} pixels in ${renderTime.toFixed(1)}ms`);
+                console.log(`[EXPLORER] Canvas rendered ${drawnCount} visible pixels`);
             }
 
             updateMatches(newMatches) {
