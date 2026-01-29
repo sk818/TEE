@@ -1430,7 +1430,28 @@
                     return;
                 }
 
-                console.log(`[EXPLORER] Found ${searchData.matches.length} matches in ${searchData.query_stats.computation_time_ms}ms`);
+                console.log(`[EXPLORER] Backend response: matches=${searchData.matches.length}, query_stats=`, searchData.query_stats);
+
+                // Log distance statistics (avoid spreading large arrays)
+                if (searchData.matches.length > 0) {
+                    let minDist = Infinity;
+                    let maxDist = -Infinity;
+                    let sumDist = 0;
+
+                    for (const match of searchData.matches) {
+                        minDist = Math.min(minDist, match.distance);
+                        maxDist = Math.max(maxDist, match.distance);
+                        sumDist += match.distance;
+                    }
+
+                    const avgDist = sumDist / searchData.matches.length;
+                    console.log(`[EXPLORER] Distance range: min=${minDist.toFixed(2)}, max=${maxDist.toFixed(2)}, avg=${avgDist.toFixed(2)}`);
+
+                    // Check if we're hitting result limit
+                    if (searchData.matches.length === 250000 && searchData.query_stats.matches_found > 250000) {
+                        console.warn(`[EXPLORER] ⚠️  HITTING RESULT LIMIT! Backend found ${searchData.query_stats.matches_found} matches but returning only 250K. Increase MAX_RESULTS in backend.`);
+                    }
+                }
 
                 // Step 3: Cache results
                 explorerResults = {
@@ -1487,9 +1508,17 @@
             document.getElementById('explorer-threshold').textContent = threshold.toFixed(2);
 
             if (matches.length > 0) {
-                const distances = matches.map(m => m.distance);
-                document.getElementById('explorer-dist-min').textContent = Math.min(...distances).toFixed(3);
-                document.getElementById('explorer-dist-max').textContent = Math.max(...distances).toFixed(3);
+                // Find min/max without spreading large array
+                let minDist = Infinity;
+                let maxDist = -Infinity;
+
+                for (const match of matches) {
+                    minDist = Math.min(minDist, match.distance);
+                    maxDist = Math.max(maxDist, match.distance);
+                }
+
+                document.getElementById('explorer-dist-min').textContent = minDist.toFixed(3);
+                document.getElementById('explorer-dist-max').textContent = maxDist.toFixed(3);
             }
         }
 
@@ -1556,6 +1585,7 @@
                 this._canvas.style.left = '0';
                 this._canvas.style.zIndex = '200';
                 this._canvas.style.pointerEvents = 'none';
+                this._canvas.style.willChange = 'transform';
 
                 // Add to overlay pane
                 const container = map.getPane('overlayPane');
@@ -1567,7 +1597,8 @@
 
                 // Bind events
                 this._map.on('resize', this._onResize, this);
-                this._map.on('move zoom', this._redraw, this);
+                this._map.on('move', this._redraw, this);
+                this._map.on('zoom', this._redraw, this);
 
                 // Initial draw
                 this._redraw();
