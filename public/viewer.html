@@ -1621,12 +1621,15 @@
                 const mapContainer = map.getContainer();
                 mapContainer.appendChild(this._canvas);
 
+                // Verify canvas was added
+                console.log(`[CANVAS] Added to map container`);
+                console.log(`[CANVAS] Canvas parent: ${this._canvas.parentElement.className}`);
+                console.log(`[CANVAS] Canvas in DOM: ${document.body.contains(this._canvas)}`);
+                console.log(`[CANVAS] Canvas position: ${this._canvas.style.position}, top: ${this._canvas.style.top}, left: ${this._canvas.style.left}`);
+
                 // Set up canvas context
                 this._ctx = this._canvas.getContext('2d');
                 this._updateCanvasSize();
-
-                // Log for debugging
-                console.log(`[CANVAS] Added to map container, size: ${this._canvas.width} × ${this._canvas.height}`);
 
                 // Bind events
                 this._map.on('resize', this._onResize, this);
@@ -1662,6 +1665,8 @@
 
                 // Scale context for device pixel ratio
                 this._ctx.scale(dpr, dpr);
+
+                console.log(`[CANVAS] Size updated: ${size.x}×${size.y}px CSS, ${this._canvas.width}×${this._canvas.height}px drawing (dpr=${dpr})`);
             }
 
             _onResize() {
@@ -1674,11 +1679,16 @@
                 const map = this._map;
                 const dpr = window.devicePixelRatio || 1;
 
+                console.log(`[CANVAS] _redraw() START - canvas size: ${this._canvas.width}×${this._canvas.height}, CSS: ${this._canvas.style.width}×${this._canvas.style.height}`);
+                console.log(`[CANVAS] Context state: fillStyle=${ctx.fillStyle}, globalAlpha=${ctx.globalAlpha}`);
+
                 // Clear canvas (use CSS size since context is scaled by dpr)
                 ctx.clearRect(0, 0, this._canvas.width / dpr, this._canvas.height / dpr);
+                console.log(`[CANVAS] Canvas cleared`);
 
                 // Set white color
                 ctx.fillStyle = '#FFFFFF';
+                console.log(`[CANVAS] Fill style set to ${ctx.fillStyle}`);
 
                 const startTime = performance.now();
                 let drawnCount = 0;
@@ -1697,9 +1707,14 @@
                     const width = Math.max(1, ne.x - sw.x);
                     const height = Math.max(1, sw.y - ne.y);
 
-                    // Log sample coordinate for debugging
-                    if (!sampleLogged && drawnCount % 1000 === 0) {
-                        console.log(`[CANVAS] Sample pixel: lat=${match.lat.toFixed(6)}, lon=${match.lon.toFixed(6)} → screen x=${sw.x.toFixed(1)}, y=${ne.y.toFixed(1)}, size=${width}×${height}`);
+                    // Log first pixel for debugging
+                    if (drawnCount === 0) {
+                        console.log(`[CANVAS] FIRST pixel: lat=${match.lat.toFixed(6)}, lon=${match.lon.toFixed(6)} → screen x=${sw.x.toFixed(1)}, y=${ne.y.toFixed(1)}, size=${width}×${height}`);
+                    }
+
+                    // Log sample coordinate
+                    if (!sampleLogged && drawnCount === 500) {
+                        console.log(`[CANVAS] Sample pixel #500: lat=${match.lat.toFixed(6)}, lon=${match.lon.toFixed(6)} → screen x=${sw.x.toFixed(1)}, y=${ne.y.toFixed(1)}, size=${width}×${height}`);
                         sampleLogged = true;
                     }
 
@@ -1709,7 +1724,8 @@
                 }
 
                 const renderTime = performance.now() - startTime;
-                console.log(`[EXPLORER] Canvas rendered ${drawnCount} pixels in ${renderTime.toFixed(1)}ms`);
+                console.log(`[CANVAS] _redraw() COMPLETE - rendered ${drawnCount} pixels in ${renderTime.toFixed(1)}ms`);
+                console.log(`[CANVAS] Canvas element visible? ${this._canvas.style.display}, opacity: ${this._canvas.style.opacity}, z-index: ${this._canvas.style.zIndex}`);
             }
 
             // Update matches and redraw without removing/re-adding layer
