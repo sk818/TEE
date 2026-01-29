@@ -1458,6 +1458,7 @@
                 // Step 3: Cache results
                 explorerResults = {
                     sourcePixel: {lat, lon},
+                    sourceEmbedding: extractData.embedding,  // Store for threshold expansion searches
                     allMatches: searchData.matches,
                     queryTime: searchData.query_stats.computation_time_ms,
                     cacheThreshold: cacheThreshold
@@ -1478,7 +1479,7 @@
         }
 
         // Update explorer visualization based on current threshold
-        function updateExplorerVisualization() {
+        async function updateExplorerVisualization() {
             if (!explorerResults) {
                 console.log('[EXPLORER] No explorer results cached');
                 return;
@@ -1487,15 +1488,43 @@
             const currentThreshold = parseFloat(document.getElementById('threshold-display').textContent);
             console.log(`[EXPLORER] updateExplorerVisualization called - cached ${explorerResults.allMatches.length} results, current threshold: ${currentThreshold}`);
 
+            // If threshold exceeds cache, fetch more matches from backend
+            if (currentThreshold > explorerResults.cacheThreshold) {
+                console.log(`[EXPLORER] Threshold ${currentThreshold} exceeds cache ${explorerResults.cacheThreshold}, fetching more matches...`);
+
+                try {
+                    const searchResp = await fetch('/api/embeddings/search-similar', {
+                        method: 'POST',
+                        headers: {'Content-Type': 'application/json'},
+                        body: JSON.stringify({
+                            embedding: explorerResults.sourceEmbedding,
+                            threshold: currentThreshold,
+                            viewport_id: currentViewportName
+                        })
+                    });
+                    const searchData = await searchResp.json();
+
+                    if (searchData.success) {
+                        console.log(`[EXPLORER] Fetched ${searchData.matches.length} matches with threshold ${currentThreshold}`);
+
+                        // Update cache with new results
+                        explorerResults.allMatches = searchData.matches;
+                        explorerResults.cacheThreshold = currentThreshold;
+
+                        // Update query time
+                        document.getElementById('explorer-time').textContent = `${searchData.query_stats.computation_time_ms}ms`;
+                    } else {
+                        console.error(`[EXPLORER] Backend search failed: ${searchData.error}`);
+                    }
+                } catch (error) {
+                    console.error(`[EXPLORER] Error fetching more matches:`, error);
+                }
+            }
+
             // Filter cached results by current threshold
             const filteredMatches = explorerResults.allMatches.filter(m => m.distance <= currentThreshold);
 
             console.log(`[EXPLORER] Showing ${filteredMatches.length} of ${explorerResults.allMatches.length} matches (threshold: ${currentThreshold})`);
-
-            // Warn if threshold exceeds cache
-            if (currentThreshold > explorerResults.cacheThreshold) {
-                console.warn(`[EXPLORER] Threshold ${currentThreshold} exceeds cache limit ${explorerResults.cacheThreshold}. Some matches may be missing.`);
-            }
 
             // Visualize filtered results
             visualizeExplorerResults(filteredMatches);
