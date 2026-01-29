@@ -1,13 +1,12 @@
 #!/usr/bin/env python3
 """
-Create PCA-projected embeddings from Tessera embeddings.
-Reduces 128 dimensions to 3 for RGB visualization.
+Create RGB visualization from Tessera embeddings.
+Uses the first 3 bands directly (no PCA).
 """
 
 import sys
 import numpy as np
 import rasterio
-from sklearn.decomposition import IncrementalPCA
 from pathlib import Path
 # from tqdm import tqdm  # Disabled to reduce output
 
@@ -25,7 +24,7 @@ N_COMPONENTS = 3  # RGB
 CHUNK_SIZE = 1000  # Process in chunks to save memory
 
 def compute_pca_for_year(year, viewport_id=None):
-    """Compute PCA projection for a single year's embeddings."""
+    """Create RGB visualization from first 3 embedding bands."""
 
     # Use viewport-specific filename
     if viewport_id:
@@ -53,37 +52,19 @@ def compute_pca_for_year(year, viewport_id=None):
 
         print(f"  Input: {width}×{height} with {n_bands} bands")
 
-        # Read all data (reshape to [pixels, bands])
-        print(f"  Reading embeddings...")
-        data = src.read()  # Shape: (bands, height, width)
-        data_reshaped = data.reshape(n_bands, -1).T  # Shape: (pixels, bands)
+        # Read first 3 bands directly (no PCA)
+        print(f"  Reading first {N_COMPONENTS} bands as RGB...")
+        if n_bands < N_COMPONENTS:
+            print(f"  ⚠️  WARNING: Only {n_bands} bands available, need {N_COMPONENTS}")
+            return False
 
-        # Remove NaN/invalid values
-        valid_mask = ~np.isnan(data_reshaped).any(axis=1)
-        valid_data = data_reshaped[valid_mask]
+        # Read first 3 bands
+        rgb_bands = src.read(1, window=None)  # Will read band by band
+        pca_image = np.zeros((N_COMPONENTS, height, width), dtype=np.float32)
+        for i in range(N_COMPONENTS):
+            pca_image[i] = src.read(i+1)  # Bands are 1-indexed
 
-        print(f"  Valid pixels: {valid_data.shape[0]:,} / {data_reshaped.shape[0]:,}")
-
-        # Compute PCA
-        print(f"  Computing PCA ({n_bands} → {N_COMPONENTS} dimensions)...")
-        pca = IncrementalPCA(n_components=N_COMPONENTS)
-
-        # Fit PCA in chunks
-        for i in range(0, len(valid_data), CHUNK_SIZE):
-            chunk = valid_data[i:i+CHUNK_SIZE]
-            pca.partial_fit(chunk)
-
-        # Transform all data
-        print(f"  Transforming data...")
-        pca_result = np.full((data_reshaped.shape[0], N_COMPONENTS), np.nan)
-
-        for i in range(0, len(valid_data), CHUNK_SIZE):
-            chunk_indices = np.where(valid_mask)[0][i:i+CHUNK_SIZE]
-            chunk = valid_data[i:i+CHUNK_SIZE]
-            pca_result[chunk_indices] = pca.transform(chunk)
-
-        # Reshape back to image
-        pca_image = pca_result.T.reshape(N_COMPONENTS, height, width)
+        print(f"  Using first {N_COMPONENTS} bands directly as RGB")
 
         # Normalize to 0-255 for RGB visualization
         print(f"  Normalizing to RGB (0-255)...")
@@ -102,9 +83,9 @@ def compute_pca_for_year(year, viewport_id=None):
                 band_normalized = ((band_clipped - p2) / (p98 - p2) * 255).astype(np.uint8)
                 rgb_image[i] = band_normalized
 
-                print(f"    PC{i+1}: range [{p2:.2f}, {p98:.2f}] → [0, 255]")
+                print(f"    Band {i+1}: range [{p2:.2f}, {p98:.2f}] → [0, 255]")
 
-        # Save PCA result
+        # Save RGB result
         print(f"  Saving to {output_file}...")
         OUTPUT_DIR.mkdir(exist_ok=True)
 
@@ -117,12 +98,9 @@ def compute_pca_for_year(year, viewport_id=None):
         with rasterio.open(output_file, 'w', **profile) as dst:
             dst.write(rgb_image)
 
-        # Print explained variance
-        explained_var = pca.explained_variance_ratio_
-        total_var = explained_var.sum() * 100
-        print(f"\n  ✓ PCA complete!")
-        print(f"    Explained variance: {explained_var[0]*100:.1f}%, {explained_var[1]*100:.1f}%, {explained_var[2]*100:.1f}%")
-        print(f"    Total: {total_var:.1f}% of variance captured")
+        # Print info
+        print(f"\n  ✓ RGB visualization complete!")
+        print(f"    Using first 3 embedding dimensions as RGB")
 
         size_mb = output_file.stat().st_size / (1024 * 1024)
         print(f"    Output: {output_file} ({size_mb:.1f} MB)")
@@ -132,7 +110,7 @@ def compute_pca_for_year(year, viewport_id=None):
 def main():
     """Process all years."""
     print("=" * 70)
-    print("Creating PCA-projected embeddings for visualization")
+    print("Creating RGB visualizations from embedding first 3 bands")
     print("=" * 70)
 
     # Try to get active viewport, but continue if not available for backwards compatibility
