@@ -1617,15 +1617,12 @@
                 this._canvas.style.pointerEvents = 'none';
                 this._canvas.style.willChange = 'transform';
 
-                // Add to map container (not overlay pane) to avoid Leaflet pane transforms
-                const mapContainer = map.getContainer();
-                mapContainer.appendChild(this._canvas);
+                // Add to Leaflet's overlay pane (automatically handles transforms and positioning)
+                const pane = map.getPane('overlayPane');
+                pane.appendChild(this._canvas);
 
-                // Verify canvas was added
-                console.log(`[CANVAS] Added to map container`);
+                console.log(`[CANVAS] Added to overlay pane`);
                 console.log(`[CANVAS] Canvas parent: ${this._canvas.parentElement.className}`);
-                console.log(`[CANVAS] Canvas in DOM: ${document.body.contains(this._canvas)}`);
-                console.log(`[CANVAS] Canvas position: ${this._canvas.style.position}, top: ${this._canvas.style.top}, left: ${this._canvas.style.left}`);
 
                 // Set up canvas context
                 this._ctx = this._canvas.getContext('2d');
