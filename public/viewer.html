@@ -914,9 +914,23 @@
 
         // Extract embedding and associate with label
         async function extractAndLabelEmbedding(lat, lon) {
+            try {
+                const response = await fetch('/api/embeddings/extract', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({lat, lon})
+                });
+                const data = await response.json();
+
                 if (!data.success) {
                     console.error(`[LABELING] API error: ${data.error}`);
                     alert(`Error extracting embedding: ${data.error}`);
+                    return;
+                }
+
+                const activeLabel = document.getElementById('active-label').value;
+                if (!activeLabel) {
+                    alert('Please select a label first!');
                     return;
                 }
 
