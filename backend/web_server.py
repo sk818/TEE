@@ -64,6 +64,38 @@ def run_script(script_name, *args, timeout=1800):
     cmd = [str(VENV_PYTHON), str(PROJECT_ROOT / script_name)] + list(args)
     return subprocess.run(cmd, cwd=PROJECT_ROOT, capture_output=True, text=True, timeout=timeout)
 
+def wait_for_file(file_path, min_size_bytes=1024, max_retries=30, retry_interval=1.0):
+    """
+    Wait for a file to exist and reach minimum size (indicates write completion).
+
+    Args:
+        file_path: Path to file to wait for
+        min_size_bytes: Minimum file size indicating complete write (default 1KB)
+        max_retries: Maximum number of retry attempts
+        retry_interval: Seconds to wait between retries
+
+    Returns:
+        True if file exists and meets size requirement, False if timeout
+    """
+    file_path = Path(file_path)
+    for attempt in range(max_retries):
+        if file_path.exists():
+            try:
+                file_size = file_path.stat().st_size
+                if file_size >= min_size_bytes:
+                    logger.info(f"[WAIT] File ready after {attempt} retries: {file_path.name} ({file_size / (1024*1024):.1f} MB)")
+                    return True
+                else:
+                    logger.debug(f"[WAIT] File exists but too small ({file_size} bytes), retrying...")
+            except OSError as e:
+                logger.debug(f"[WAIT] Could not stat file: {e}, retrying...")
+
+        if attempt < max_retries - 1:
+            time.sleep(retry_interval)
+
+    logger.error(f"[WAIT] Timeout waiting for file: {file_path}")
+    return False
+
 def check_viewport_mosaics_exist(viewport_name):
     """Check if embeddings mosaic exists for a viewport (satellite uses Esri/Bing imagery)."""
     embeddings_file = MOSAICS_DIR / f"{viewport_name}_embeddings_2024.tif"
@@ -114,50 +146,85 @@ def trigger_data_download_and_processing(viewport_name):
     def download_and_process():
         try:
             project_root = Path(__file__).parent.parent
-            logger.info(f"[DATA] Starting download for viewport '{viewport_name}'...")
+            logger.info(f"[PIPELINE] Starting serial preprocessing for viewport '{viewport_name}'...")
 
-            # Download embeddings only (satellite uses Bing/Esri imagery)
-            logger.info(f"[DATA] Downloading embeddings for '{viewport_name}'...")
+            # ===== STAGE 1: Download embeddings =====
+            logger.info(f"[PIPELINE] STAGE 1/4: Downloading embeddings for '{viewport_name}'...")
             result = run_script('download_embeddings.py', timeout=1800)
             if result.returncode != 0:
-                logger.error(f"[DATA] ✗ Embeddings download failed for '{viewport_name}':\n{result.stderr}")
+                logger.error(f"[PIPELINE] ✗ Stage 1 failed - Embeddings download:\n{result.stderr}")
                 return
-            logger.info(f"[DATA] ✓ Embeddings downloaded for '{viewport_name}'")
 
-            # Verify embeddings mosaic was actually created
+            # Verify embeddings file exists and is properly written
             embeddings_file = MOSAICS_DIR / f"{viewport_name}_embeddings_2024.tif"
-            if not embeddings_file.exists():
-                logger.error(f"[DATA] ✗ Embeddings mosaic file not found for '{viewport_name}' after download")
+            if not wait_for_file(embeddings_file, min_size_bytes=1024*1024):  # At least 1 MB
+                logger.error(f"[PIPELINE] ✗ Stage 1 verification failed - Embeddings file missing/incomplete")
                 return
+            logger.info(f"[PIPELINE] ✓ Stage 1 complete: Embeddings downloaded ({embeddings_file.stat().st_size / (1024*1024):.1f} MB)")
 
-            # Create RGB visualization from first 3 embedding bands
-            logger.info(f"[DATA] Creating RGB visualization for '{viewport_name}'...")
+            # ===== STAGE 2: Create RGB visualization =====
+            logger.info(f"[PIPELINE] STAGE 2/4: Creating RGB visualization for '{viewport_name}'...")
             result = run_script('create_rgb_embeddings.py', timeout=1800)
             if result.returncode != 0:
-                logger.error(f"[DATA] ✗ RGB visualization creation failed for '{viewport_name}':\n{result.stderr}")
+                logger.error(f"[PIPELINE] ✗ Stage 2 failed - RGB creation:\n{result.stderr}")
                 return
-            logger.info(f"[DATA] ✓ RGB visualization created for '{viewport_name}'")
 
-            # Create pyramids (satellite layer uses Esri World Imagery)
-            logger.info(f"[DATA] Creating pyramids for '{viewport_name}'...")
+            # Verify RGB file exists and is properly written
+            rgb_file = MOSAICS_DIR / "rgb" / f"{viewport_name}_2024_rgb.tif"
+            if not wait_for_file(rgb_file, min_size_bytes=512*1024):  # At least 512 KB
+                logger.error(f"[PIPELINE] ✗ Stage 2 verification failed - RGB file missing/incomplete")
+                return
+            logger.info(f"[PIPELINE] ✓ Stage 2 complete: RGB visualization created ({rgb_file.stat().st_size / (1024*1024):.1f} MB)")
+
+            # ===== STAGE 3: Create pyramids =====
+            logger.info(f"[PIPELINE] STAGE 3/4: Creating pyramids for '{viewport_name}'...")
             result = run_script('create_pyramids.py', timeout=1800)
             if result.returncode != 0:
-                logger.error(f"[DATA] ✗ Pyramid creation failed for '{viewport_name}':\n{result.stderr}")
+                logger.error(f"[PIPELINE] ✗ Stage 3 failed - Pyramid creation:\n{result.stderr}")
                 return
-            logger.info(f"[DATA] ✓ Pyramids created for '{viewport_name}'")
 
-            # Create FAISS index for similarity search
-            logger.info(f"[DATA] Creating FAISS index for '{viewport_name}'...")
+            # Verify pyramid files exist
+            viewport_pyramids_dir = PYRAMIDS_DIR / viewport_name / "2024"
+            level_0_file = viewport_pyramids_dir / "level_0.tif"
+            if not wait_for_file(level_0_file, min_size_bytes=512*1024):  # At least 512 KB
+                logger.error(f"[PIPELINE] ✗ Stage 3 verification failed - Pyramid level_0 missing/incomplete")
+                return
+
+            # Check that at least 3 pyramid levels were created
+            pyramid_levels = list(viewport_pyramids_dir.glob("level_*.tif"))
+            if len(pyramid_levels) < 3:
+                logger.error(f"[PIPELINE] ✗ Stage 3 verification failed - Only {len(pyramid_levels)} pyramid levels created (expected >= 3)")
+                return
+            logger.info(f"[PIPELINE] ✓ Stage 3 complete: Pyramids created ({len(pyramid_levels)} levels)")
+
+            # ===== STAGE 4: Create FAISS index =====
+            logger.info(f"[PIPELINE] STAGE 4/4: Creating FAISS index for '{viewport_name}'...")
             result = run_script('create_faiss_index.py', timeout=1800)
             if result.returncode != 0:
-                logger.error(f"[DATA] ✗ FAISS index creation failed for '{viewport_name}':\n{result.stderr}")
+                logger.error(f"[PIPELINE] ✗ Stage 4 failed - FAISS index creation:\n{result.stderr}")
                 return
-            logger.info(f"[DATA] ✓ FAISS index created for '{viewport_name}'")
+
+            # Verify FAISS index files exist
+            faiss_index_file = FAISS_INDICES_DIR / viewport_name / "embeddings.index"
+            if not wait_for_file(faiss_index_file, min_size_bytes=1024):  # At least 1 KB
+                logger.error(f"[PIPELINE] ✗ Stage 4 verification failed - FAISS index missing/incomplete")
+                return
+
+            # Check for supporting FAISS files
+            faiss_dir = FAISS_INDICES_DIR / viewport_name
+            required_files = ["embeddings.index", "all_embeddings.npy", "pixel_coords.npy", "metadata.json"]
+            missing_files = [f for f in required_files if not (faiss_dir / f).exists()]
+            if missing_files:
+                logger.warning(f"[PIPELINE] Stage 4 warning - Missing FAISS files: {missing_files}")
+            else:
+                logger.info(f"[PIPELINE] ✓ Stage 4 complete: All FAISS index files created")
+
+            logger.info(f"[PIPELINE] ✓✓✓ SUCCESS: All 4 stages complete for viewport '{viewport_name}' ✓✓✓")
 
         except subprocess.TimeoutExpired:
-            logger.error(f"[DATA] ✗ Download/processing timeout for '{viewport_name}'")
+            logger.error(f"[PIPELINE] ✗ Timeout during preprocessing for '{viewport_name}'")
         except Exception as e:
-            logger.error(f"[DATA] ✗ Error downloading/processing data for '{viewport_name}': {e}")
+            logger.error(f"[PIPELINE] ✗ Error during preprocessing for '{viewport_name}': {e}", exc_info=True)
 
     thread = threading.Thread(target=download_and_process, daemon=True)
     thread.start()
