@@ -1,0 +1,20 @@
+Viewport Configuration
+=====================
+
+Viewport ID: CAMB3
+
+Center (degrees):
+  Latitude:  52.2107°
+  Longitude: 0.1070°
+
+Bounds (degrees):
+  Min Latitude:  52.1882°
+  Max Latitude:  52.2331°
+  Min Longitude: 0.0704°
+  Max Longitude: 0.1437°
+
+Size: 5km × 5km
+
+Description: 5km × 5km
+
+Generated: 2026-01-30T15:33:56.150796

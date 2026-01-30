@@ -1,0 +1,20 @@
+Viewport Configuration
+=====================
+
+Viewport ID: CAM2
+
+Center (degrees):
+  Latitude:  52.2143°
+  Longitude: 0.1025°
+
+Bounds (degrees):
+  Min Latitude:  52.1919°
+  Max Latitude:  52.2368°
+  Min Longitude: 0.0658°
+  Max Longitude: 0.1391°
+
+Size: 5km × 5km
+
+Description: 5km × 5km
+
+Generated: 2026-01-30T10:32:41.412807

@@ -155,12 +155,16 @@ def trigger_data_download_and_processing(viewport_name):
                 logger.error(f"[PIPELINE] ✗ Stage 1 failed - Embeddings download:\n{result.stderr}")
                 return
 
-            # Verify embeddings file exists and is properly written
-            embeddings_file = MOSAICS_DIR / f"{viewport_name}_embeddings_2024.tif"
+            # Verify embeddings file exists (check for any year)
+            embedding_files = list(MOSAICS_DIR.glob(f"{viewport_name}_embeddings_*.tif"))
+            if not embedding_files:
+                logger.error(f"[PIPELINE] ✗ Stage 1 verification failed - No embeddings files found")
+                return
+            embeddings_file = embedding_files[0]  # Use first found embeddings file
             if not wait_for_file(embeddings_file, min_size_bytes=1024*1024):  # At least 1 MB
                 logger.error(f"[PIPELINE] ✗ Stage 1 verification failed - Embeddings file missing/incomplete")
                 return
-            logger.info(f"[PIPELINE] ✓ Stage 1 complete: Embeddings downloaded ({embeddings_file.stat().st_size / (1024*1024):.1f} MB)")
+            logger.info(f"[PIPELINE] ✓ Stage 1 complete: Embeddings downloaded for {len(embedding_files)} year(s) ({embeddings_file.stat().st_size / (1024*1024):.1f} MB per file)")
 
             # ===== STAGE 2: Create RGB visualization =====
             logger.info(f"[PIPELINE] STAGE 2/4: Creating RGB visualization for '{viewport_name}'...")
@@ -169,8 +173,13 @@ def trigger_data_download_and_processing(viewport_name):
                 logger.error(f"[PIPELINE] ✗ Stage 2 failed - RGB creation:\n{result.stderr}")
                 return
 
-            # Verify RGB file exists and is properly written
-            rgb_file = MOSAICS_DIR / "rgb" / f"{viewport_name}_2024_rgb.tif"
+            # Verify RGB file exists and is properly written (check for any year)
+            rgb_dir = MOSAICS_DIR / "rgb"
+            rgb_files = list(rgb_dir.glob(f"{viewport_name}_*_rgb.tif")) if rgb_dir.exists() else []
+            if not rgb_files:
+                logger.error(f"[PIPELINE] ✗ Stage 2 verification failed - No RGB files found")
+                return
+            rgb_file = rgb_files[0]  # Use first found RGB file
             if not wait_for_file(rgb_file, min_size_bytes=512*1024):  # At least 512 KB
                 logger.error(f"[PIPELINE] ✗ Stage 2 verification failed - RGB file missing/incomplete")
                 return
@@ -183,19 +192,36 @@ def trigger_data_download_and_processing(viewport_name):
                 logger.error(f"[PIPELINE] ✗ Stage 3 failed - Pyramid creation:\n{result.stderr}")
                 return
 
-            # Verify pyramid files exist
-            viewport_pyramids_dir = PYRAMIDS_DIR / viewport_name / "2024"
-            level_0_file = viewport_pyramids_dir / "level_0.tif"
+            # Verify pyramid files exist (check for any year)
+            viewport_pyramids_dir = PYRAMIDS_DIR / viewport_name
+            if not viewport_pyramids_dir.exists():
+                logger.error(f"[PIPELINE] ✗ Stage 3 verification failed - Pyramid directory missing")
+                return
+
+            # Find any year directory with pyramids
+            pyramid_year_dir = None
+            for year_dir in viewport_pyramids_dir.glob("*"):
+                if year_dir.is_dir() and year_dir.name not in ['satellite', 'rgb']:
+                    level_0_file = year_dir / "level_0.tif"
+                    if level_0_file.exists():
+                        pyramid_year_dir = year_dir
+                        break
+
+            if not pyramid_year_dir:
+                logger.error(f"[PIPELINE] ✗ Stage 3 verification failed - No pyramid levels found")
+                return
+
+            level_0_file = pyramid_year_dir / "level_0.tif"
             if not wait_for_file(level_0_file, min_size_bytes=512*1024):  # At least 512 KB
                 logger.error(f"[PIPELINE] ✗ Stage 3 verification failed - Pyramid level_0 missing/incomplete")
                 return
 
             # Check that at least 3 pyramid levels were created
-            pyramid_levels = list(viewport_pyramids_dir.glob("level_*.tif"))
+            pyramid_levels = list(pyramid_year_dir.glob("level_*.tif"))
             if len(pyramid_levels) < 3:
                 logger.error(f"[PIPELINE] ✗ Stage 3 verification failed - Only {len(pyramid_levels)} pyramid levels created (expected >= 3)")
                 return
-            logger.info(f"[PIPELINE] ✓ Stage 3 complete: Pyramids created ({len(pyramid_levels)} levels)")
+            logger.info(f"[PIPELINE] ✓ Stage 3 complete: Pyramids created ({len(pyramid_levels)} levels for {pyramid_year_dir.name})")
 
             # ===== STAGE 4: Create FAISS index =====
             logger.info(f"[PIPELINE] STAGE 4/4: Creating FAISS index for '{viewport_name}'...")
@@ -204,14 +230,23 @@ def trigger_data_download_and_processing(viewport_name):
                 logger.error(f"[PIPELINE] ✗ Stage 4 failed - FAISS index creation:\n{result.stderr}")
                 return
 
-            # Verify FAISS index files exist
-            faiss_index_file = FAISS_INDICES_DIR / viewport_name / "embeddings.index"
-            if not wait_for_file(faiss_index_file, min_size_bytes=1024):  # At least 1 KB
+            # Verify FAISS index files exist (year-specific - look for any year with FAISS)
+            faiss_viewport_dir = FAISS_INDICES_DIR / viewport_name
+            faiss_found = False
+            for year_dir in faiss_viewport_dir.glob("*"):
+                if year_dir.is_dir():
+                    faiss_index_file = year_dir / "embeddings.index"
+                    if faiss_index_file.exists():
+                        faiss_found = True
+                        faiss_dir = year_dir
+                        logger.info(f"[PIPELINE] ✓ Stage 4 complete: FAISS index created for {year_dir.name}")
+                        break
+
+            if not faiss_found:
                 logger.error(f"[PIPELINE] ✗ Stage 4 verification failed - FAISS index missing/incomplete")
                 return
 
             # Check for supporting FAISS files
-            faiss_dir = FAISS_INDICES_DIR / viewport_name
             required_files = ["embeddings.index", "all_embeddings.npy", "pixel_coords.npy", "metadata.json"]
             missing_files = [f for f in required_files if not (faiss_dir / f).exists()]
             if missing_files:

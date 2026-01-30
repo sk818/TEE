@@ -1,0 +1,20 @@
+Viewport Configuration
+=====================
+
+Viewport ID: RandomChina
+
+Center (degrees):
+  Latitude:  46.6268°
+  Longitude: 124.8555°
+
+Bounds (degrees):
+  Min Latitude:  46.6043°
+  Max Latitude:  46.6493°
+  Min Longitude: 124.8228°
+  Max Longitude: 124.8882°
+
+Size: 5km × 5km
+
+Description: 5km × 5km
+
+Generated: 2026-01-30T11:29:39.967177

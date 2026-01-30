@@ -345,7 +345,7 @@
         <div class="panel">
             <div class="panel-header">
                 Tessera Embeddings
-                <select id="embedding-year-selector" style="margin-left: 10px; padding: 4px 8px; border: 1px solid #555; border-radius: 3px; background: #333; color: #fff; font-size: 13px;">
+                <select id="embedding-year-selector" style="display: none; margin-left: 10px; padding: 4px 8px; border: 1px solid #555; border-radius: 3px; background: #333; color: #fff; font-size: 13px;">
                     <option value="2024">2024</option>
                 </select>
             </div>
@@ -572,8 +572,10 @@
                 const response = await fetch(`http://localhost:8001/api/viewports/${currentViewportName}/available-years`);
                 const data = await response.json();
 
-                if (data.success && data.years.length > 0) {
+                if (data.success && data.years && data.years.length > 1) {
+                    // Only show selector if more than 1 year available
                     const yearSelector = document.getElementById('embedding-year-selector');
+                    yearSelector.style.display = 'inline-block';
                     yearSelector.innerHTML = '';
 
                     // Populate dropdown (newest first)
@@ -591,6 +593,10 @@
                     });
 
                     console.log(`✓ Available years: ${data.years.join(', ')}`);
+                } else {
+                    // Hide selector if 0 or 1 year
+                    const yearSelector = document.getElementById('embedding-year-selector');
+                    yearSelector.style.display = 'none';
                 }
             } catch (error) {
                 console.error('Error loading available years:', error);
