@@ -521,6 +521,15 @@
                 minZoom: 6
             }).addTo(maps.rgb);
 
+            // Add RGB embeddings visualization layer
+            let rgbLayer = L.tileLayer(`${TILE_SERVER}/tiles/${currentViewportName}/rgb/{z}/{x}/{y}.png`, {
+                attribution: 'RGB Embeddings',
+                opacity: 1.0,
+                minZoom: 6,
+                maxZoom: 17,
+                tileSize: 256
+            }).addTo(maps.rgb);
+
             // Clip RGB satellite map to viewport bounds
             if (viewportBounds) {
                 maps.rgb.setMaxBounds(viewportBounds);
