@@ -266,15 +266,15 @@ def main():
     for year in YEARS:
         # Use viewport-specific filename
         if viewport_id:
-            # Prefer cropped PCA mosaic (viewport-clipped RGB) if it exists
-            pca_file = PCA_MOSAICS_DIR / f"{viewport_id}_{year}_pca.tif"
+            # Prefer cropped RGB mosaic (viewport-clipped, first 3 bands) if it exists
+            rgb_file_path = PCA_MOSAICS_DIR / f"{viewport_id}_{year}_rgb.tif"
             tessera_file = MOSAICS_DIR / f"{viewport_id}_embeddings_{year}.tif"
 
-            # Use PCA file if available (already cropped and RGB), otherwise extract from embeddings
-            if pca_file.exists():
-                rgb_file = pca_file
-                print(f"\nProcessing {pca_file.name} (cropped PCA mosaic)...")
-                progress.update("processing", f"Creating pyramids for {year} (from PCA)...", current_file=f"embeddings_{year}")
+            # Use RGB file if available (already cropped and RGB), otherwise extract from embeddings
+            if rgb_file_path.exists():
+                rgb_file = rgb_file_path
+                print(f"\nProcessing {rgb_file_path.name} (cropped RGB mosaic)...")
+                progress.update("processing", f"Creating pyramids for {year} (from RGB)...", current_file=f"embeddings_{year}")
             elif tessera_file.exists():
                 print(f"\nProcessing {tessera_file.name}...")
                 progress.update("processing", f"Creating pyramids for {year}...", current_file=f"embeddings_{year}")

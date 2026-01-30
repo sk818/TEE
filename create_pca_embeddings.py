@@ -23,19 +23,19 @@ YEARS = range(2024, 2025)  # 2024 only
 N_COMPONENTS = 3  # RGB
 CHUNK_SIZE = 1000  # Process in chunks to save memory
 
-def compute_pca_for_year(year, viewport_id=None, bounds=None):
+def create_rgb_from_embeddings(year, viewport_id=None, bounds=None):
     """Create RGB visualization from first 3 embedding bands (clipped to viewport)."""
 
     # Use viewport-specific filename
     if viewport_id:
         input_file = MOSAICS_DIR / f"{viewport_id}_embeddings_{year}.tif"
-        output_file = OUTPUT_DIR / f"{viewport_id}_{year}_pca.tif"
+        output_file = OUTPUT_DIR / f"{viewport_id}_{year}_rgb.tif"
     else:
-        print(f"⚠️  Skipping PCA {year}: No viewport specified")
+        print(f"⚠️  Skipping RGB {year}: No viewport specified")
         return False
 
     if output_file.exists():
-        print(f"✓ Skipping {year}: PCA file already exists")
+        print(f"✓ Skipping {year}: RGB file already exists")
         return True
 
     if not input_file.exists():
@@ -179,15 +179,14 @@ def main():
     success_count = 0
 
     for year in YEARS:
-        if compute_pca_for_year(year, viewport_id, bounds):
+        if create_rgb_from_embeddings(year, viewport_id, bounds):
             success_count += 1
 
     print("\n" + "=" * 70)
     print(f"✅ Complete! Processed {success_count} years")
-    print(f"\nPCA embeddings saved in: {OUTPUT_DIR.absolute()}")
+    print(f"\nRGB embeddings saved in: {OUTPUT_DIR.absolute()}")
     print("\nNext steps:")
-    print("  1. Create pyramids: modify create_pyramids.py to include PCA mosaics")
-    print("  2. Add PCA panel to viewer")
+    print("  1. Create pyramids: run create_pyramids.py")
 
 if __name__ == "__main__":
     main()
