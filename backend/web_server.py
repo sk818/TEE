@@ -155,13 +155,10 @@ def trigger_data_download_and_processing(viewport_name, years=None):
             # ===== STAGE 1: Download embeddings =====
             if years:
                 years_str = ','.join(str(y) for y in years)
-                logger.info(f"[PIPELINE] STAGE 1/4: Downloading embeddings for '{viewport_name}'")
-                logger.info(f"[PIPELINE]   Selected years: {years}")
-                logger.info(f"[PIPELINE]   Calling: download_embeddings.py --years {years_str}")
+                logger.info(f"[PIPELINE] STAGE 1/4: Downloading embeddings for '{viewport_name}' (years: {years_str})...")
                 result = run_script('download_embeddings.py', '--years', years_str, timeout=1800)
             else:
-                logger.info(f"[PIPELINE] STAGE 1/4: Downloading embeddings for '{viewport_name}'")
-                logger.info(f"[PIPELINE]   No year selection - using all available years")
+                logger.info(f"[PIPELINE] STAGE 1/4: Downloading embeddings for '{viewport_name}' (all available years)...")
                 result = run_script('download_embeddings.py', timeout=1800)
             if result.returncode != 0:
                 logger.error(f"[PIPELINE] ✗ Stage 1 failed - Embeddings download:\n{result.stderr}")
@@ -449,8 +446,6 @@ def api_create_viewport():
 
         # Get selected years
         years = data.get('years')  # Will be list of integers or None
-        if years:
-            logger.info(f"[NEW VIEWPORT] User selected years: {years}")
 
         # Create viewport
         create_viewport_from_bounds(name, bounds, description)

@@ -33,27 +33,17 @@ parser = argparse.ArgumentParser(description='Download Tessera embeddings')
 parser.add_argument('--years', type=str, help='Comma-separated years to download (e.g., 2017,2018,2024)')
 args = parser.parse_args()
 
-print(f"\n{'='*60}")
-print(f"download_embeddings.py started")
-print(f"Command line args: {sys.argv}")
-print(f"Parsed args.years: {args.years}")
-print(f"{'='*60}\n")
-
 if args.years:
     try:
         # Parse comma-separated years and convert to integers
         requested_years = sorted([int(y.strip()) for y in args.years.split(',') if y.strip()])
         if requested_years:
             YEARS = requested_years
-            print(f"✓ Using selected years: {YEARS}")
         else:
-            print(f"⚠️  No valid years parsed, using defaults: {list(DEFAULT_YEARS)}")
             YEARS = DEFAULT_YEARS
-    except (ValueError, IndexError) as e:
-        print(f"✗ Invalid years format: {args.years} - Error: {e}")
+    except (ValueError, IndexError):
         YEARS = DEFAULT_YEARS
 else:
-    print(f"⚠️  No --years parameter provided, using all defaults: {list(DEFAULT_YEARS)}")
     YEARS = DEFAULT_YEARS
 
 # Tessera embeddings parameters
