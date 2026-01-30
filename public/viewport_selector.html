@@ -600,33 +600,9 @@
                     </div>
                 </div>
 
-                <!-- Downloads Section (at bottom of sidebar) -->
+                <!-- Quick Viewer Access -->
                 <div class="section" style="margin-top: auto; border-top: 1px solid #ddd; padding-top: 15px;">
-                    <div class="downloads-section">
-                        <div class="downloads-title">📥 Download & Process</div>
-                        <button class="btn-download" id="downloadBtn" onclick="startDownloads()" style="width: 100%; margin-bottom: 12px;">
-                            <span>Download All & Process</span>
-                            <span class="download-status" id="downloadStatus"></span>
-                        </button>
-                        <button class="btn-download" id="viewerBtn" onclick="goToViewer()" style="width: 100%; margin-bottom: 12px; display: none; border-color: #667eea; color: #667eea; background: #f0f4ff;">
-                            <span>▶ Go to Viewer</span>
-                            <span class="download-status" id="viewerStatus"></span>
-                        </button>
-                        <div id="progressContainer" style="display: none;">
-                            <div style="font-size: 11px; color: #666; margin-bottom: 6px;">
-                                <span id="progressLabel">Starting downloads...</span>
-                            </div>
-                            <div style="width: 100%; height: 6px; background: #eee; border-radius: 3px; overflow: hidden;">
-                                <div id="progressBar" style="height: 100%; width: 0%; background: linear-gradient(90deg, #667eea, #764ba2); transition: width 0.3s ease;"></div>
-                            </div>
-                            <div style="font-size: 10px; color: #999; margin-top: 6px; text-align: right;">
-                                <span id="progressPercent">0%</span>
-                            </div>
-                        </div>
-                    </div>
-
-                    <!-- Quick Viewer Access -->
-                    <button class="btn-download" id="quickViewerBtn" onclick="goToViewer()" style="width: 100%; margin-top: 12px; border-color: #667eea; color: #667eea; background: #f0f4ff;">
+                    <button class="btn-download" id="quickViewerBtn" onclick="goToViewer()" style="width: 100%; border-color: #667eea; color: #667eea; background: #f0f4ff;">
                         <span>▶ Open Viewer</span>
                     </button>
                 </div>
