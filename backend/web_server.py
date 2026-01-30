@@ -62,7 +62,14 @@ logger.info(f"Using Python: {VENV_PYTHON}")
 def run_script(script_name, *args, timeout=1800):
     """Run a Python script using the venv Python interpreter."""
     cmd = [str(VENV_PYTHON), str(PROJECT_ROOT / script_name)] + list(args)
-    return subprocess.run(cmd, cwd=PROJECT_ROOT, capture_output=True, text=True, timeout=timeout)
+    logger.info(f"[RUN_SCRIPT] Executing command: {' '.join(cmd)}")
+    result = subprocess.run(cmd, cwd=PROJECT_ROOT, capture_output=True, text=True, timeout=timeout)
+    logger.info(f"[RUN_SCRIPT] Command returned code: {result.returncode}")
+    if result.stdout:
+        logger.info(f"[RUN_SCRIPT] stdout (first 200 chars): {result.stdout[:200]}")
+    if result.stderr:
+        logger.info(f"[RUN_SCRIPT] stderr (first 200 chars): {result.stderr[:200]}")
+    return result
 
 def wait_for_file(file_path, min_size_bytes=1024, max_retries=30, retry_interval=1.0):
     """

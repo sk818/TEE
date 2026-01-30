@@ -1,0 +1,20 @@
+Viewport Configuration
+=====================
+
+Viewport ID: test2
+
+Center (degrees):
+  Latitude:  52.1926°
+  Longitude: 0.1308°
+
+Bounds (degrees):
+  Min Latitude:  52.1702°
+  Max Latitude:  52.2151°
+  Min Longitude: 0.0942°
+  Max Longitude: 0.1674°
+
+Size: 5km × 5km
+
+Description: 5km × 5km
+
+Generated: 2026-01-30T17:47:37.616859
