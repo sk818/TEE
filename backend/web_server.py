@@ -134,7 +134,7 @@ def get_viewport_data_size(viewport_name, active_viewport_name):
     # Convert to MB
     return round(total_size / (1024 * 1024), 1)
 
-def trigger_data_download_and_processing(viewport_name):
+def trigger_data_download_and_processing(viewport_name, years=None):
     """Download embeddings and run full preprocessing pipeline:
     1. download_embeddings.py - Download GeoTessera embeddings (clipped to viewport)
     2. create_rgb_embeddings.py - Create RGB visualization from first 3 bands (clipped)
@@ -153,8 +153,13 @@ def trigger_data_download_and_processing(viewport_name):
             set_active_viewport(viewport_name)
 
             # ===== STAGE 1: Download embeddings =====
-            logger.info(f"[PIPELINE] STAGE 1/4: Downloading embeddings for '{viewport_name}'...")
-            result = run_script('download_embeddings.py', timeout=1800)
+            if years:
+                years_str = ','.join(str(y) for y in years)
+                logger.info(f"[PIPELINE] STAGE 1/4: Downloading embeddings for '{viewport_name}' (years: {years_str})...")
+                result = run_script('download_embeddings.py', '--years', years_str, timeout=1800)
+            else:
+                logger.info(f"[PIPELINE] STAGE 1/4: Downloading embeddings for '{viewport_name}' (all available years)...")
+                result = run_script('download_embeddings.py', timeout=1800)
             if result.returncode != 0:
                 logger.error(f"[PIPELINE] ✗ Stage 1 failed - Embeddings download:\n{result.stderr}")
                 return
@@ -439,6 +444,11 @@ def api_create_viewport():
             import time
             name = f"viewport_{int(time.time())}"
 
+        # Get selected years
+        years = data.get('years')  # Will be list of integers or None
+        if years:
+            logger.info(f"[NEW VIEWPORT] User selected years: {years}")
+
         # Create viewport
         create_viewport_from_bounds(name, bounds, description)
 
@@ -448,7 +458,7 @@ def api_create_viewport():
 
         # Automatically trigger data download and processing for new viewport
         logger.info(f"[NEW VIEWPORT] Triggering data download for new viewport '{name}'...")
-        trigger_data_download_and_processing(name)
+        trigger_data_download_and_processing(name, years=years)
 
         return jsonify({
             'success': True,

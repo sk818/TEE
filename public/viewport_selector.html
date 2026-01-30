@@ -589,6 +589,40 @@
                                 <label>Viewport Name (optional)</label>
                                 <input type="text" id="viewportName" placeholder="e.g., bangalore_south" class="form-group input">
                             </div>
+                            <div class="form-group" style="margin-top: 12px;">
+                                <label style="font-weight: 600; margin-bottom: 8px; display: block;">Download years (2017-2024):</label>
+                                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 6px;">
+                                    <label style="display: flex; align-items: center; font-weight: normal; font-size: 13px;">
+                                        <input type="checkbox" id="year2017" class="year-checkbox" value="2017" style="margin-right: 6px;"> 2017
+                                    </label>
+                                    <label style="display: flex; align-items: center; font-weight: normal; font-size: 13px;">
+                                        <input type="checkbox" id="year2018" class="year-checkbox" value="2018" style="margin-right: 6px;"> 2018
+                                    </label>
+                                    <label style="display: flex; align-items: center; font-weight: normal; font-size: 13px;">
+                                        <input type="checkbox" id="year2019" class="year-checkbox" value="2019" style="margin-right: 6px;"> 2019
+                                    </label>
+                                    <label style="display: flex; align-items: center; font-weight: normal; font-size: 13px;">
+                                        <input type="checkbox" id="year2020" class="year-checkbox" value="2020" style="margin-right: 6px;"> 2020
+                                    </label>
+                                    <label style="display: flex; align-items: center; font-weight: normal; font-size: 13px;">
+                                        <input type="checkbox" id="year2021" class="year-checkbox" value="2021" style="margin-right: 6px;"> 2021
+                                    </label>
+                                    <label style="display: flex; align-items: center; font-weight: normal; font-size: 13px;">
+                                        <input type="checkbox" id="year2022" class="year-checkbox" value="2022" style="margin-right: 6px;"> 2022
+                                    </label>
+                                    <label style="display: flex; align-items: center; font-weight: normal; font-size: 13px;">
+                                        <input type="checkbox" id="year2023" class="year-checkbox" value="2023" style="margin-right: 6px;"> 2023
+                                    </label>
+                                    <label style="display: flex; align-items: center; font-weight: normal; font-size: 13px;">
+                                        <input type="checkbox" id="year2024" class="year-checkbox" value="2024" checked style="margin-right: 6px;"> 2024
+                                    </label>
+                                </div>
+                                <div style="font-size: 12px; color: #666; margin-top: 8px;">
+                                    <button type="button" onclick="selectAllYears()" style="background: none; border: none; color: #667eea; cursor: pointer; text-decoration: underline;">Select All</button>
+                                    <span style="margin: 0 4px;">•</span>
+                                    <button type="button" onclick="selectNoYears()" style="background: none; border: none; color: #667eea; cursor: pointer; text-decoration: underline;">Select None</button>
+                                </div>
+                            </div>
                             <div class="button-group">
                                 <button class="btn btn-primary btn-small" onclick="confirmViewportCreation()">Create</button>
                                 <button class="btn btn-secondary btn-small" onclick="cancelViewportCreation()">Cancel</button>
@@ -759,12 +793,35 @@
         }
 
         // Confirm and create the viewport with optional custom name
+        function selectAllYears() {
+            document.querySelectorAll('.year-checkbox').forEach(cb => cb.checked = true);
+        }
+
+        function selectNoYears() {
+            document.querySelectorAll('.year-checkbox').forEach(cb => cb.checked = false);
+        }
+
+        function getSelectedYears() {
+            const selected = [];
+            document.querySelectorAll('.year-checkbox:checked').forEach(cb => {
+                selected.push(parseInt(cb.value));
+            });
+            return selected.sort();
+        }
+
         async function confirmViewportCreation() {
             if (!pendingViewportBounds) return;
 
             const customName = document.getElementById('viewportName').value.trim();
             const name = customName || pendingViewportBounds.autoName;
             const bounds = pendingViewportBounds.bounds;
+            const years = getSelectedYears();
+
+            // Validate that at least one year is selected
+            if (years.length === 0) {
+                alert('Please select at least one year to download');
+                return;
+            }
 
             // Hide form
             document.getElementById('formFields').style.display = 'none';
@@ -772,14 +829,14 @@
 
             // Show loading state
             document.getElementById('mapInfoLabel').textContent = 'Creating viewport...';
-            document.getElementById('mapInfoValue').textContent = '';
+            document.getElementById('mapInfoValue').textContent = `Downloading embeddings for ${years.length} year${years.length > 1 ? 's' : ''}...`;
 
             try {
                 // Create the viewport via API
                 const response = await fetch('/api/viewports/create', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ bounds, name, description: `${VIEWPORT_SIZE_KM}km × ${VIEWPORT_SIZE_KM}km` })
+                    body: JSON.stringify({ bounds, name, description: `${VIEWPORT_SIZE_KM}km × ${VIEWPORT_SIZE_KM}km`, years })
                 });
 
                 const data = await response.json();

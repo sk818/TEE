@@ -22,10 +22,30 @@ from lib.progress_tracker import ProgressTracker
 import math
 
 # Configuration
-YEARS = range(2017, 2025)  # Support 2017-2024 (Sentinel-2 availability)
+DEFAULT_YEARS = range(2017, 2025)  # Support 2017-2024 (Sentinel-2 availability)
 DATA_DIR = Path.home() / "blore_data"
 EMBEDDINGS_DIR = DATA_DIR / "embeddings"
 MOSAICS_DIR = DATA_DIR / "mosaics"
+
+# Parse command line arguments for year selection
+import argparse
+parser = argparse.ArgumentParser(description='Download Tessera embeddings')
+parser.add_argument('--years', type=str, help='Comma-separated years to download (e.g., 2017,2018,2024)')
+args = parser.parse_args()
+
+if args.years:
+    try:
+        YEARS = range(int(min(args.years.split(','))), int(max(args.years.split(','))) + 1)
+        # Filter to only requested years
+        requested_years = [int(y.strip()) for y in args.years.split(',')]
+        YEARS = [y for y in YEARS if y in requested_years]
+        if not YEARS:
+            YEARS = DEFAULT_YEARS
+    except (ValueError, IndexError):
+        print(f"Invalid years format: {args.years}")
+        YEARS = DEFAULT_YEARS
+else:
+    YEARS = DEFAULT_YEARS
 
 # Tessera embeddings parameters
 EMBEDDING_BANDS = 128
