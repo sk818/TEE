@@ -33,18 +33,27 @@ parser = argparse.ArgumentParser(description='Download Tessera embeddings')
 parser.add_argument('--years', type=str, help='Comma-separated years to download (e.g., 2017,2018,2024)')
 args = parser.parse_args()
 
+print(f"\n{'='*60}")
+print(f"download_embeddings.py started")
+print(f"Command line args: {sys.argv}")
+print(f"Parsed args.years: {args.years}")
+print(f"{'='*60}\n")
+
 if args.years:
     try:
-        YEARS = range(int(min(args.years.split(','))), int(max(args.years.split(','))) + 1)
-        # Filter to only requested years
-        requested_years = [int(y.strip()) for y in args.years.split(',')]
-        YEARS = [y for y in YEARS if y in requested_years]
-        if not YEARS:
+        # Parse comma-separated years and convert to integers
+        requested_years = sorted([int(y.strip()) for y in args.years.split(',') if y.strip()])
+        if requested_years:
+            YEARS = requested_years
+            print(f"✓ Using selected years: {YEARS}")
+        else:
+            print(f"⚠️  No valid years parsed, using defaults: {list(DEFAULT_YEARS)}")
             YEARS = DEFAULT_YEARS
-    except (ValueError, IndexError):
-        print(f"Invalid years format: {args.years}")
+    except (ValueError, IndexError) as e:
+        print(f"✗ Invalid years format: {args.years} - Error: {e}")
         YEARS = DEFAULT_YEARS
 else:
+    print(f"⚠️  No --years parameter provided, using all defaults: {list(DEFAULT_YEARS)}")
     YEARS = DEFAULT_YEARS
 
 # Tessera embeddings parameters

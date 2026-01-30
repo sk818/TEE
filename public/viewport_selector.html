@@ -809,7 +809,9 @@
             document.querySelectorAll('.year-checkbox:checked').forEach(cb => {
                 selected.push(parseInt(cb.value));
             });
-            return selected.sort();
+            selected.sort();
+            console.log('[YEARS] Selected years:', selected);
+            return selected;
         }
 
         async function confirmViewportCreation() {
@@ -836,10 +838,13 @@
 
             try {
                 // Create the viewport via API
+                const requestBody = { bounds, name, description: `${VIEWPORT_SIZE_KM}km × ${VIEWPORT_SIZE_KM}km`, years };
+                console.log('[VIEWPORT CREATE] Request body:', requestBody);
+
                 const response = await fetch('/api/viewports/create', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ bounds, name, description: `${VIEWPORT_SIZE_KM}km × ${VIEWPORT_SIZE_KM}km`, years })
+                    body: JSON.stringify(requestBody)
                 });
 
                 const data = await response.json();
