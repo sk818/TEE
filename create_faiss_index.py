@@ -35,6 +35,7 @@ MOSAICS_DIR = DATA_DIR / "mosaics"
 FAISS_INDICES_DIR = DATA_DIR / "faiss_indices"
 SAMPLING_FACTOR = 4  # Every 4×4 pixels (reduces 19M → 1.2M vectors)
 EMBEDDING_DIM = 128
+YEARS = range(2017, 2025)  # Support 2017-2024
 
 def check_faiss_installed():
     """Check if FAISS is installed, provide helpful message if not."""
@@ -51,43 +52,35 @@ def normalize_embeddings(embeddings):
     return embeddings.astype(np.float32) / 255.0
 
 
-def create_faiss_index():
-    """Create FAISS index and store all embeddings for current viewport."""
+def create_faiss_index_for_year(viewport_id, bounds, year):
+    """Create FAISS index and store all embeddings for a specific year."""
 
     # Check FAISS availability
     if not check_faiss_installed():
-        sys.exit(1)
+        return False
 
     import faiss
 
-    # Read active viewport
-    try:
-        viewport = get_active_viewport()
-        viewport_id = viewport['viewport_id']
-        bounds = viewport['bounds_tuple']
-    except Exception as e:
-        logger.error(f"Failed to read viewport: {e}")
-        sys.exit(1)
-
     # Initialize progress tracker
-    progress = ProgressTracker(f"{viewport_id}_faiss")
-    progress.update("starting", f"Creating FAISS index for {viewport_id}...")
+    progress = ProgressTracker(f"{viewport_id}_faiss_{year}")
+    progress.update("starting", f"Creating FAISS index for {viewport_id} ({year})...")
 
-    # Find mosaic file (viewport-specific)
-    mosaic_file = MOSAICS_DIR / f"{viewport_id}_embeddings_2024.tif"
+    # Find mosaic file (year-specific)
+    mosaic_file = MOSAICS_DIR / f"{viewport_id}_embeddings_{year}.tif"
     if not mosaic_file.exists():
         logger.warning(f"Mosaic file not found: {mosaic_file}")
-        return
+        return False
 
     logger.info("=" * 70)
-    logger.info("Creating FAISS Index for Embeddings")
+    logger.info(f"Creating FAISS Index for Embeddings ({year})")
     logger.info("=" * 70)
     logger.info(f"Viewport: {viewport_id}")
+    logger.info(f"Year: {year}")
     logger.info(f"Mosaic file: {mosaic_file.name}")
     logger.info(f"Sampling factor: {SAMPLING_FACTOR}×{SAMPLING_FACTOR}")
 
-    # Create output directory
-    output_dir = FAISS_INDICES_DIR / viewport_id
+    # Create output directory (year-specific)
+    output_dir = FAISS_INDICES_DIR / viewport_id / str(year)
     output_dir.mkdir(parents=True, exist_ok=True)
 
     try:
@@ -263,15 +256,15 @@ def create_faiss_index():
             logger.info(f"   ✓ Saved metadata: {metadata_file}")
 
     except Exception as e:
-        logger.error(f"Error creating FAISS index: {e}")
+        logger.error(f"Error creating FAISS index for {year}: {e}")
         import traceback
         traceback.print_exc()
         progress.error(f"FAISS creation failed: {e}")
-        sys.exit(1)
+        return False
 
     # Summary
     logger.info("\n" + "=" * 70)
-    logger.info("✅ FAISS index creation complete!")
+    logger.info(f"✅ FAISS index creation complete for {year}!")
     logger.info(f"\nFiles created in {output_dir}/:")
     logger.info(f"  - embeddings.index ({index_size_mb:.1f} MB)")
     logger.info(f"  - all_embeddings.npy ({embeddings_size_mb:.1f} MB)")
@@ -284,7 +277,44 @@ def create_faiss_index():
     logger.info("=" * 70)
 
     # Update progress to complete
-    progress.complete(f"Created FAISS index: {total_size:.1f} MB total")
+    progress.complete(f"Created FAISS index for {year}: {total_size:.1f} MB total")
+    return True
+
+
+def create_faiss_index():
+    """Create FAISS indices for all available years."""
+    # Check FAISS availability
+    if not check_faiss_installed():
+        sys.exit(1)
+
+    # Read active viewport
+    try:
+        viewport = get_active_viewport()
+        viewport_id = viewport['viewport_id']
+        bounds = viewport['bounds_tuple']
+    except Exception as e:
+        logger.error(f"Failed to read viewport: {e}")
+        sys.exit(1)
+
+    # Find available years (those with downloaded embeddings)
+    available_years = []
+    for year in YEARS:
+        mosaic_file = MOSAICS_DIR / f"{viewport_id}_embeddings_{year}.tif"
+        if mosaic_file.exists():
+            available_years.append(year)
+
+    if not available_years:
+        logger.error(f"No embeddings found for {viewport_id}")
+        sys.exit(1)
+
+    logger.info(f"Found embeddings for years: {available_years}")
+
+    # Create FAISS index for each available year
+    for year in available_years:
+        logger.info(f"\n📊 Creating FAISS index for year {year}...")
+        success = create_faiss_index_for_year(viewport_id, bounds, year)
+        if not success:
+            logger.warning(f"Failed to create FAISS index for {year}")
 
 
 if __name__ == "__main__":

@@ -19,7 +19,7 @@ from lib.viewport_utils import get_active_viewport
 DATA_DIR = Path.home() / "blore_data"
 MOSAICS_DIR = DATA_DIR / "mosaics"
 OUTPUT_DIR = DATA_DIR / "mosaics" / "rgb"
-YEARS = range(2024, 2025)  # 2024 only
+YEARS = range(2017, 2025)  # Support 2017-2024
 N_COMPONENTS = 3  # RGB
 CHUNK_SIZE = 1000  # Process in chunks to save memory
 
@@ -179,6 +179,12 @@ def main():
     success_count = 0
 
     for year in YEARS:
+        # Skip years without downloaded embeddings
+        input_file = MOSAICS_DIR / f"{viewport_id}_embeddings_{year}.tif"
+        if not input_file.exists():
+            print(f"⚠️  Skipping {year}: Embeddings not found")
+            continue
+
         if create_rgb_from_embeddings(year, viewport_id, bounds):
             success_count += 1
 

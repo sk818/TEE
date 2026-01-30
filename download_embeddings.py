@@ -22,7 +22,7 @@ from lib.progress_tracker import ProgressTracker
 import math
 
 # Configuration
-YEARS = range(2024, 2025)  # 2024 only for faster download
+YEARS = range(2017, 2025)  # Support 2017-2024 (Sentinel-2 availability)
 DATA_DIR = Path.home() / "blore_data"
 EMBEDDINGS_DIR = DATA_DIR / "embeddings"
 MOSAICS_DIR = DATA_DIR / "mosaics"
@@ -102,8 +102,8 @@ def download_embeddings():
     # Initialize GeoTessera with embeddings directory
     tessera = gt.GeoTessera(embeddings_dir=str(EMBEDDINGS_DIR))
 
-    # Track whether current viewport's mosaic was successfully created
-    viewport_mosaic_created = False
+    # Track successful downloads for metadata
+    successful_years = []
 
     for year in YEARS:
         print(f"\n📅 Processing year {year}...")
@@ -120,6 +120,7 @@ def download_embeddings():
         if cached_file:
             print(f"   ✓ Cache hit! Using existing mosaic: {cached_file}")
             progress.update("processing", f"Using cached embeddings for {year}", current_file=output_file.name, current_value=est_bytes, total_value=est_bytes)
+            successful_years.append(year)
             continue
 
         if output_file.exists():
@@ -127,10 +128,13 @@ def download_embeddings():
             actual_size_mb = output_file.stat().st_size / (1024 * 1024)
             print(f"     Actual size: {actual_size_mb:.1f} MB")
             progress.update("processing", f"Using existing mosaic for {year}", current_file=output_file.name, current_value=est_bytes, total_value=est_bytes)
+            successful_years.append(year)
             continue
 
         # Retry logic for download and validation
         max_retries = 3
+        year_success = False
+
         for attempt in range(1, max_retries + 1):
             try:
                 print(f"   Downloading and merging tiles (attempt {attempt}/{max_retries})...")
@@ -186,6 +190,7 @@ def download_embeddings():
                     actual_size_mb = output_file.stat().st_size / (1024 * 1024)
                     print(f"   File size: {actual_size_mb:.1f} MB (estimated: {est_mb:.1f} MB)")
                     progress.update("processing", f"✓ Saved {output_file.name}: {actual_size_mb:.1f} MB ({est_width} × {est_height} pixels)", current_file=output_file.name, current_value=est_bytes, total_value=est_bytes)
+                    year_success = True
                     break  # File is valid, exit retry loop
                 except Exception as val_error:
                     print(f"   ✗ File validation failed: {val_error}")
@@ -201,10 +206,8 @@ def download_embeddings():
 
             except Exception as e:
                 if attempt == max_retries:
-                    print(f"   ✗ Error processing {year} after {max_retries} attempts: {e}")
-                    import traceback
-                    traceback.print_exc()
-                    progress.error(f"Error downloading embeddings for {year}: {e}")
+                    print(f"   ⚠️  Year {year} not available: {e}")
+                    progress.update("processing", f"Year {year} not available, skipping...", current_file=output_file.name)
                     break
                 else:
                     print(f"   ⚠️  Attempt {attempt} failed, retrying: {e}")
@@ -213,43 +216,42 @@ def download_embeddings():
                     time.sleep(5)  # Wait before retry
                     continue
 
-        # Only continue to next year if this year was successful
-        if output_file.exists():
+        # Track successful downloads
+        if output_file.exists() and year_success:
             size_mb = output_file.stat().st_size / (1024*1024)
             print(f"   ✓ Saved: {output_file} ({size_mb:.2f} MB)")
             progress.update("processing", f"Saved {output_file.name} ({size_mb:.1f} MB)", current_value=int(size_mb), current_file=output_file.name)
-            viewport_mosaic_created = True
+            successful_years.append(year)
 
     print("\n" + "=" * 60)
     print("Download complete!")
     print(f"\nTiles cached in: {EMBEDDINGS_DIR.absolute()}")
     print(f"Mosaics saved in: {MOSAICS_DIR.absolute()}")
 
-    # Check if this viewport's mosaic was successfully created
-    viewport_mosaic_file = MOSAICS_DIR / f"{viewport_id}_embeddings_2024.tif"
+    # Save metadata about successful downloads
+    metadata_file = MOSAICS_DIR / f"{viewport_id}_years.json"
+    metadata = {'available_years': sorted(successful_years)}
+    with open(metadata_file, 'w') as f:
+        json.dump(metadata, f)
+    print(f"✓ Saved metadata: {metadata_file}")
+    print(f"Successfully downloaded years: {sorted(successful_years)}")
 
-    if viewport_mosaic_file.exists():
-        size_mb = viewport_mosaic_file.stat().st_size / (1024*1024)
-        compression_ratio = (size_mb / (est_mb / COMPRESSION_RATIO)) * 100 if est_mb > 0 else 0
-        print(f"\n✓ Created mosaic for {viewport_id}:")
-        print(f"  - {viewport_mosaic_file.name}")
-        print(f"    Expected size: {est_mb:.1f} MB")
-        print(f"    Actual size:   {size_mb:.1f} MB")
-        print(f"    Compression:   {compression_ratio:.1f}%")
-        progress.complete(f"Downloaded {size_mb:.1f} MB of embeddings")
+    # Check if any mosaics were successfully created
+    if successful_years:
+        print(f"\n✓ Created mosaics for {viewport_id}:")
+        total_size_mb = 0
+        for year in successful_years:
+            mosaic_file = MOSAICS_DIR / f"{viewport_id}_embeddings_{year}.tif"
+            if mosaic_file.exists():
+                size_mb = mosaic_file.stat().st_size / (1024*1024)
+                total_size_mb += size_mb
+                compression_ratio = (size_mb / (est_mb / COMPRESSION_RATIO)) * 100 if est_mb > 0 else 0
+                print(f"  - {mosaic_file.name} ({size_mb:.1f} MB, {compression_ratio:.1f}% compression)")
+        print(f"\nTotal downloaded: {total_size_mb:.1f} MB for {len(successful_years)} years")
+        progress.complete(f"Downloaded {total_size_mb:.1f} MB of embeddings ({len(successful_years)} years)")
     else:
-        # Check current status to avoid overwriting detailed error message
-        try:
-            with open(progress.progress_file, 'r') as f:
-                current_progress = json.load(f)
-                # Only set generic error if we don't already have a detailed error
-                if current_progress.get("status") != "error":
-                    print(f"\n✗ Error: Mosaic for {viewport_id} was not created (all downloads failed)")
-                    progress.error(f"Failed to download embeddings after {max_retries} attempts")
-        except (FileNotFoundError, json.JSONDecodeError):
-            # Progress file doesn't exist or is invalid, set generic error
-            print(f"\n✗ Error: Mosaic for {viewport_id} was not created (all downloads failed)")
-            progress.error(f"Failed to download embeddings after {max_retries} attempts")
+        print(f"\n✗ Error: No mosaics for {viewport_id} were created (all downloads failed)")
+        progress.error(f"Failed to download embeddings for any year")
 
 if __name__ == "__main__":
     download_embeddings()

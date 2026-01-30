@@ -343,7 +343,12 @@
             <div id="map-rgb" class="map"></div>
         </div>
         <div class="panel">
-            <div class="panel-header">Tessera Embeddings <span id="embedding-year">2024</span></div>
+            <div class="panel-header">
+                Tessera Embeddings
+                <select id="embedding-year-selector" style="margin-left: 10px; padding: 4px 8px; border: 1px solid #555; border-radius: 3px; background: #333; color: #fff; font-size: 13px;">
+                    <option value="2024">2024</option>
+                </select>
+            </div>
             <div id="map-embedding" class="map"></div>
             <div id="coords-display" style="position: absolute; bottom: 10px; left: 10px; background: rgba(0, 0, 0, 0.8); color: #00ff00; padding: 10px 15px; border-radius: 4px; font-family: monospace; font-size: 12px; font-weight: bold; pointer-events: none; display: none; z-index: 500; border: 1px solid #00ff00;">
                 <div id="coords-text">Lat: 0.000000 | Lon: 0.000000</div>
@@ -555,7 +560,67 @@
             // Synchronize maps
             syncMaps();
 
+            // Store reference to embedding layer for switching years
+            window.embeddingLayer = embeddingLayer;
+
             return embeddingLayer;
+        }
+
+        // Load available years and populate dropdown
+        async function loadAvailableYears() {
+            try {
+                const response = await fetch(`http://localhost:8001/api/viewports/${currentViewportName}/available-years`);
+                const data = await response.json();
+
+                if (data.success && data.years.length > 0) {
+                    const yearSelector = document.getElementById('embedding-year-selector');
+                    yearSelector.innerHTML = '';
+
+                    // Populate dropdown (newest first)
+                    data.years.forEach(year => {
+                        const option = document.createElement('option');
+                        option.value = year;
+                        option.textContent = year;
+                        if (year === 2024) option.selected = true;  // Default
+                        yearSelector.appendChild(option);
+                    });
+
+                    // Add change listener
+                    yearSelector.addEventListener('change', (e) => {
+                        switchEmbeddingYear(parseInt(e.target.value));
+                    });
+
+                    console.log(`✓ Available years: ${data.years.join(', ')}`);
+                }
+            } catch (error) {
+                console.error('Error loading available years:', error);
+            }
+        }
+
+        // Switch to different embedding year
+        function switchEmbeddingYear(year) {
+            console.log(`📅 Switching to year ${year}`);
+            currentEmbeddingYear = year.toString();
+
+            // Remove old layer
+            if (maps.embedding.hasLayer(window.embeddingLayer)) {
+                maps.embedding.removeLayer(window.embeddingLayer);
+            }
+
+            // Create new layer with selected year
+            window.embeddingLayer = L.tileLayer(
+                `${TILE_SERVER}/tiles/${currentViewportName}/${currentEmbeddingYear}/{z}/{x}/{y}.png`,
+                {
+                    tileSize: 2048,
+                    zoomOffset: -3,
+                    bounds: viewportBounds,
+                    maxNativeZoom: 14,
+                    minNativeZoom: 3
+                }
+            );
+
+            window.embeddingLayer.addTo(maps.embedding);
+            console.log(`✓ Switched to year ${year}`);
         }
 
         // Synchronize all maps
@@ -925,7 +990,7 @@
                 const response = await fetch('/api/embeddings/extract', {
                     method: 'POST',
                     headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify({lat, lon})
+                    body: JSON.stringify({lat, lon, year: parseInt(currentEmbeddingYear)})
                 });
                 const data = await response.json();
 
@@ -1336,7 +1401,7 @@
                 const extractResp = await fetch('/api/embeddings/extract', {
                     method: 'POST',
                     headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify({lat, lon})
+                    body: JSON.stringify({lat, lon, year: parseInt(currentEmbeddingYear)})
                 });
                 const extractData = await extractResp.json();
                 if (!extractData.success) {
@@ -1352,7 +1417,8 @@
                     body: JSON.stringify({
                         embedding: extractData.embedding,
                         threshold: cacheThreshold,
-                        viewport_id: currentViewportName
+                        viewport_id: currentViewportName,
+                        year: parseInt(currentEmbeddingYear)
                     })
                 });
                 const searchData = await searchResp.json();
@@ -1420,7 +1486,8 @@
                         body: JSON.stringify({
                             embedding: explorerResults.sourceEmbedding,
                             threshold: currentThreshold,
-                            viewport_id: currentViewportName
+                            viewport_id: currentViewportName,
+                            year: parseInt(currentEmbeddingYear)
                         })
                     });
                     const searchData = await searchResp.json();
@@ -1679,7 +1746,8 @@
                     const requestBody = {
                         embedding: embedding,
                         threshold: threshold,
-                        viewport_id: viewportId
+                        viewport_id: viewportId,
+                        year: parseInt(currentEmbeddingYear)
                     };
 
                     const response = await fetch('/api/embeddings/search-similar', {
@@ -2097,6 +2165,7 @@
 
             // Then create maps with correct viewport
             createMaps();
+            await loadAvailableYears();  // Load year selector
             loadLabels();
             updateThresholdDisplay();  // Initialize threshold display
 

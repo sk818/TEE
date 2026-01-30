@@ -36,7 +36,7 @@ DATA_DIR = Path.home() / "blore_data"
 MOSAICS_DIR = DATA_DIR / "mosaics"
 RGB_MOSAICS_DIR = DATA_DIR / "mosaics" / "rgb"
 PYRAMIDS_BASE_DIR = DATA_DIR / "pyramids"
-YEARS = range(2024, 2025)  # 2024 only
+YEARS = range(2017, 2025)  # Support 2017-2024
 NUM_ZOOM_LEVELS = 6  # 6 useful zoom levels (skip the very zoomed-out tiny levels)
 
 

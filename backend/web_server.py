@@ -881,6 +881,27 @@ def api_delete_viewport():
         return jsonify({'success': False, 'error': str(e)}), 400
 
 
+@app.route('/api/viewports/<viewport_name>/available-years', methods=['GET'])
+def api_get_available_years(viewport_name):
+    """Get list of years with available data for a viewport."""
+    try:
+        pyramid_years = []
+        viewport_pyramids_dir = PYRAMIDS_DIR / viewport_name
+        if viewport_pyramids_dir.exists():
+            for year in range(2017, 2025):
+                pyramid_file = viewport_pyramids_dir / str(year) / "level_0.tif"
+                if pyramid_file.exists():
+                    pyramid_years.append(year)
+
+        return jsonify({
+            'success': True,
+            'years': sorted(pyramid_years, reverse=True)  # Newest first
+        })
+    except Exception as e:
+        logger.error(f"Error getting available years: {e}")
+        return jsonify({'success': False, 'error': str(e)}), 400
+
+
 @app.route('/api/embeddings/extract', methods=['POST'])
 def api_extract_embedding():
     """Extract embedding vector at a given latitude/longitude coordinate."""
@@ -892,12 +913,13 @@ def api_extract_embedding():
         data = request.get_json()
         lat = float(data.get('lat'))
         lon = float(data.get('lon'))
+        year = int(data.get('year', 2024))  # Default to 2024
 
         # Get active viewport for mosaic file
         viewport_name = get_active_viewport_name()
 
-        # Open the embedding mosaic file (viewport-specific)
-        mosaic_file = MOSAICS_DIR / f'{viewport_name}_embeddings_2024.tif'
+        # Open the embedding mosaic file (year-specific)
+        mosaic_file = MOSAICS_DIR / f'{viewport_name}_embeddings_{year}.tif'
 
         if not mosaic_file.exists():
             return jsonify({
@@ -1020,6 +1042,7 @@ def api_search_similar_embeddings():
 
         threshold = float(data.get('threshold', 0.5))
         viewport_id = data.get('viewport_id') or get_active_viewport_name()
+        year = int(data.get('year', 2024))  # Default to 2024
 
         if query_embedding.size != 128:
             return jsonify({
@@ -1033,15 +1056,15 @@ def api_search_similar_embeddings():
                 'error': f'Invalid threshold: {threshold}, must be between 0.0 and 50.0'
             }), 400
 
-        logger.info(f"[SEARCH] Query: threshold={threshold}, viewport={viewport_id}")
+        logger.info(f"[SEARCH] Query: threshold={threshold}, viewport={viewport_id}, year={year}")
 
-        # Check if FAISS index exists
-        faiss_dir = FAISS_INDICES_DIR / viewport_id
+        # Check if FAISS index exists (year-specific)
+        faiss_dir = FAISS_INDICES_DIR / viewport_id / str(year)
         if not faiss_dir.exists():
             logger.warning(f"[SEARCH] FAISS index not found: {faiss_dir}")
             return jsonify({
                 'success': False,
-                'error': f'FAISS index not found for viewport {viewport_id}. Please run data processing first.'
+                'error': f'FAISS index not found for viewport {viewport_id} ({year}). Please run data processing first.'
             }), 404
 
         # Load FAISS data
