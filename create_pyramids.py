@@ -266,32 +266,33 @@ def main():
     for year in YEARS:
         # Use viewport-specific filename
         if viewport_id:
+            # Prefer cropped PCA mosaic (viewport-clipped RGB) if it exists
+            pca_file = PCA_MOSAICS_DIR / f"{viewport_id}_{year}_pca.tif"
             tessera_file = MOSAICS_DIR / f"{viewport_id}_embeddings_{year}.tif"
+
+            # Use PCA file if available (already cropped and RGB), otherwise extract from embeddings
+            if pca_file.exists():
+                rgb_file = pca_file
+                print(f"\nProcessing {pca_file.name} (cropped PCA mosaic)...")
+                progress.update("processing", f"Creating pyramids for {year} (from PCA)...", current_file=f"embeddings_{year}")
+            elif tessera_file.exists():
+                print(f"\nProcessing {tessera_file.name}...")
+                progress.update("processing", f"Creating pyramids for {year}...", current_file=f"embeddings_{year}")
+                # Extract RGB from first 3 bands (upscale 3x for maximum resolution when zoomed in)
+                rgb_temp_file = PYRAMIDS_BASE_DIR / f"temp_rgb_{year}.tif"
+                rgb_file = create_rgb_from_tessera(tessera_file, rgb_temp_file, upscale_factor=3)
+            else:
+                print(f"\n⚠️  Skipping {year}: Neither PCA nor embeddings file found")
+                progress.update("processing", f"Skipped {year}: file not found", current_file=f"embeddings_{year}")
+                continue
         else:
             tessera_file = None
-
-        if not tessera_file or not tessera_file.exists():
-            print(f"\n⚠️  Skipping {year}: File not found")
-            progress.update("processing", f"Skipped {year}: file not found", current_file=f"embeddings_{year}")
+            print(f"\n⚠️  Skipping {year}: No viewport ID")
+            progress.update("processing", f"Skipped {year}: no viewport", current_file=f"embeddings_{year}")
             continue
 
-        print(f"\nProcessing {tessera_file.name}...")
-        progress.update("processing", f"Creating pyramids for {year}...", current_file=f"embeddings_{year}")
-
-        # First, create RGB from first 3 bands (upscale 3x for maximum resolution when zoomed in)
-        rgb_temp_file = PYRAMIDS_BASE_DIR / f"temp_rgb_{year}.tif"
-        rgb_file = create_rgb_from_tessera(tessera_file, rgb_temp_file, upscale_factor=3)
-
         # Create viewport-specific pyramid directory
-        if viewport_id:
-            viewport_pyramids_dir = PYRAMIDS_BASE_DIR / viewport_id
-        else:
-            # Fallback: derive viewport name from mosaic filename
-            mosaic_stem = tessera_file.stem  # e.g., "bangalore_embeddings_2024" -> "bangalore"
-            fallback_name = mosaic_stem.split('_embeddings')[0] if '_embeddings' in mosaic_stem else mosaic_stem
-            print(f"⚠️  Warning: Could not determine viewport, using derived name: {fallback_name}")
-            viewport_pyramids_dir = PYRAMIDS_BASE_DIR / fallback_name
-
+        viewport_pyramids_dir = PYRAMIDS_BASE_DIR / viewport_id
         viewport_pyramids_dir.mkdir(parents=True, exist_ok=True)
 
         # Create pyramids from native resolution RGB
@@ -299,8 +300,13 @@ def main():
         create_pyramids_for_image(rgb_file, year_dir, f"Tessera {year}", upscale_factor=1)
         progress.update("processing", f"Created pyramid levels for {year}", current_file=f"embeddings_{year}", current_value=year-2023)
 
-        # Clean up temp file
-        rgb_temp_file.unlink()
+        # Clean up temp file if we created one from embeddings
+        rgb_temp_file = PYRAMIDS_BASE_DIR / f"temp_rgb_{year}.tif"
+        if rgb_temp_file.exists():
+            try:
+                rgb_temp_file.unlink()
+            except Exception as e:
+                print(f"  Warning: Could not clean up temp file {rgb_temp_file}: {e}")
 
     # Process satellite RGB (upscale 3x to match Tessera resolution for consistency)
     if viewport_id:
