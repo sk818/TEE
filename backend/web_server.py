@@ -105,7 +105,7 @@ def get_viewport_data_size(viewport_name, active_viewport_name):
 def trigger_data_download_and_processing(viewport_name):
     """Download embeddings and run full preprocessing pipeline:
     1. download_embeddings.py - Download GeoTessera embeddings (clipped to viewport)
-    2. create_pca_embeddings.py - Create RGB visualization from first 3 bands (clipped)
+    2. create_rgb_embeddings.py - Create RGB visualization from first 3 bands (clipped)
     3. create_pyramids.py - Create pyramid tiles for Tessera and RGB
     4. create_faiss_index.py - Create FAISS index for similarity search (clipped)
 
@@ -132,7 +132,7 @@ def trigger_data_download_and_processing(viewport_name):
 
             # Create RGB visualization from first 3 embedding bands
             logger.info(f"[DATA] Creating RGB visualization for '{viewport_name}'...")
-            result = run_script('create_pca_embeddings.py', timeout=1800)
+            result = run_script('create_rgb_embeddings.py', timeout=1800)
             if result.returncode != 0:
                 logger.error(f"[DATA] ✗ RGB visualization creation failed for '{viewport_name}':\n{result.stderr}")
                 return
