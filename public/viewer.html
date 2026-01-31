@@ -572,31 +572,54 @@
                 const response = await fetch(`http://localhost:8001/api/viewports/${currentViewportName}/available-years`);
                 const data = await response.json();
 
-                if (data.success && data.years && data.years.length > 1) {
-                    // Only show selector if more than 1 year available
-                    const yearSelector = document.getElementById('embedding-year-selector');
-                    yearSelector.style.display = 'inline-block';
-                    yearSelector.innerHTML = '';
+                if (data.success && data.years && data.years.length > 0) {
+                    // Set current year to first available year (or 2024 if available)
+                    const yearToUse = data.years.includes(2024) ? 2024 : data.years[0];
+                    currentEmbeddingYear = yearToUse.toString();
+                    console.log(`✓ Available years: ${data.years.join(', ')}, using: ${yearToUse}`);
 
-                    // Populate dropdown (newest first)
-                    data.years.forEach(year => {
-                        const option = document.createElement('option');
-                        option.value = year;
-                        option.textContent = year;
-                        if (year === 2024) option.selected = true;  // Default
-                        yearSelector.appendChild(option);
-                    });
+                    if (data.years.length > 1) {
+                        // Show selector if more than 1 year available
+                        const yearSelector = document.getElementById('embedding-year-selector');
+                        yearSelector.style.display = 'inline-block';
+                        yearSelector.innerHTML = '';
 
-                    // Add change listener
-                    yearSelector.addEventListener('change', (e) => {
-                        switchEmbeddingYear(parseInt(e.target.value));
-                    });
+                        // Populate dropdown (newest first)
+                        data.years.forEach(year => {
+                            const option = document.createElement('option');
+                            option.value = year;
+                            option.textContent = year;
+                            if (year === yearToUse) option.selected = true;
+                            yearSelector.appendChild(option);
+                        });
 
-                    console.log(`✓ Available years: ${data.years.join(', ')}`);
+                        // Add change listener
+                        yearSelector.addEventListener('change', (e) => {
+                            switchEmbeddingYear(parseInt(e.target.value));
+                        });
+                    } else {
+                        // Hide selector if only 1 year
+                        const yearSelector = document.getElementById('embedding-year-selector');
+                        yearSelector.style.display = 'none';
+                    }
+
+                    // Reload embedding layer with correct year
+                    if (embeddingLayer) {
+                        maps.embedding.removeLayer(embeddingLayer);
+                    }
+                    embeddingLayer = L.tileLayer(
+                        `${TILE_SERVER}/tiles/${currentViewportName}/${currentEmbeddingYear}/{z}/{x}/{y}.png`,
+                        {
+                            tileSize: 2048,
+                            zoomOffset: -3,
+                            bounds: viewportBounds,
+                            maxNativeZoom: 14,
+                            minNativeZoom: 3
+                        }
+                    );
+                    embeddingLayer.addTo(maps.embedding);
                 } else {
-                    // Hide selector if 0 or 1 year
-                    const yearSelector = document.getElementById('embedding-year-selector');
-                    yearSelector.style.display = 'none';
+                    console.warn('No available years found');
                 }
             } catch (error) {
                 console.error('Error loading available years:', error);

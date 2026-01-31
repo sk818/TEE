@@ -62,13 +62,9 @@ logger.info(f"Using Python: {VENV_PYTHON}")
 def run_script(script_name, *args, timeout=1800):
     """Run a Python script using the venv Python interpreter."""
     cmd = [str(VENV_PYTHON), str(PROJECT_ROOT / script_name)] + list(args)
-    logger.info(f"[RUN_SCRIPT] Executing command: {' '.join(cmd)}")
     result = subprocess.run(cmd, cwd=PROJECT_ROOT, capture_output=True, text=True, timeout=timeout)
-    logger.info(f"[RUN_SCRIPT] Command returned code: {result.returncode}")
-    if result.stdout:
-        logger.info(f"[RUN_SCRIPT] stdout (first 200 chars): {result.stdout[:200]}")
-    if result.stderr:
-        logger.info(f"[RUN_SCRIPT] stderr (first 200 chars): {result.stderr[:200]}")
+    if result.returncode != 0:
+        logger.error(f"Script {script_name} failed with code {result.returncode}: {result.stderr[:500]}")
     return result
 
 def wait_for_file(file_path, min_size_bytes=1024, max_retries=30, retry_interval=1.0):
@@ -153,7 +149,7 @@ def trigger_data_download_and_processing(viewport_name, years=None):
     def download_and_process():
         try:
             project_root = Path(__file__).parent.parent
-            logger.info(f"[PIPELINE] Starting serial preprocessing for viewport '{viewport_name}'...")
+            logger.info(f"[PIPELINE] Starting preprocessing for viewport '{viewport_name}' (years: {years})...")
 
             # Set this viewport as active before processing
             logger.info(f"[PIPELINE] Setting {viewport_name} as active viewport...")
@@ -357,10 +353,9 @@ def api_switch_viewport():
             'faiss_ready': False
         }
 
-        # Step 1: Check if mosaics exist, trigger download if not
+        # Step 1: Check if mosaics exist
         if not check_viewport_mosaics_exist(viewport_name):
-            logger.info(f"[DATA] Mosaics not found for viewport '{viewport_name}', triggering download...")
-            trigger_data_download_and_processing(viewport_name)
+            logger.info(f"[DATA] Mosaics not found for viewport '{viewport_name}'. Download should have been triggered during creation.")
             response_data['data_ready'] = False
             response_data['message'] += f'\nDownloading data and creating pyramids (this may take 15-30 minutes)...'
 
@@ -1015,6 +1010,60 @@ def api_get_data_status(viewport_name):
     except Exception as e:
         logger.error(f"Error checking data status: {e}")
         return jsonify({'success': False, 'error': str(e)}), 400
+
+
+@app.route('/api/viewports/<viewport_name>/is-ready', methods=['GET'])
+def api_is_viewport_ready(viewport_name):
+    """Simple synchronous check: is this viewport ready to view?"""
+    try:
+        # Check embeddings
+        embedding_files = list(MOSAICS_DIR.glob(f"{viewport_name}_embeddings_*.tif"))
+        has_embeddings = len(embedding_files) > 0
+
+        # Check pyramids
+        pyramid_dir = PYRAMIDS_DIR / viewport_name
+        has_pyramids = False
+        if pyramid_dir.exists():
+            for year_dir in pyramid_dir.glob("*"):
+                if year_dir.is_dir() and year_dir.name not in ['satellite', 'rgb']:
+                    if (year_dir / "level_0.tif").exists():
+                        has_pyramids = True
+                        break
+
+        # Check FAISS
+        has_faiss = False
+        faiss_dir = FAISS_INDICES_DIR / viewport_name
+        if faiss_dir.exists():
+            for year_dir in faiss_dir.glob("*"):
+                if year_dir.is_dir() and (year_dir / "embeddings.index").exists():
+                    has_faiss = True
+                    break
+
+        # Determine readiness and message
+        is_ready = has_embeddings and has_pyramids and has_faiss
+
+        if is_ready:
+            message = "✓ Ready to view!"
+        elif not has_embeddings:
+            message = "⏳ Downloading embeddings..."
+        elif not has_pyramids:
+            message = "⏳ Creating pyramids..."
+        elif not has_faiss:
+            message = "⏳ Building FAISS index..."
+        else:
+            message = "⏳ Processing..."
+
+        return jsonify({
+            'ready': is_ready,
+            'message': message,
+            'has_embeddings': has_embeddings,
+            'has_pyramids': has_pyramids,
+            'has_faiss': has_faiss
+        }), 200
+
+    except Exception as e:
+        logger.error(f"Error checking viewport readiness: {e}")
+        return jsonify({'ready': False, 'message': f'Error: {str(e)}'}), 400
 
 
 @app.route('/api/embeddings/extract', methods=['POST'])

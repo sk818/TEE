@@ -33,13 +33,6 @@ parser = argparse.ArgumentParser(description='Download Tessera embeddings')
 parser.add_argument('--years', type=str, help='Comma-separated years to download (e.g., 2017,2018,2024)')
 args = parser.parse_args()
 
-# DEBUG: Log what we received
-print(f"\n{'='*60}")
-print(f"DOWNLOAD SCRIPT ARGS:")
-print(f"  sys.argv: {sys.argv}")
-print(f"  args.years: {args.years}")
-print(f"{'='*60}\n")
-
 if args.years:
     try:
         # Parse comma-separated years and convert to integers

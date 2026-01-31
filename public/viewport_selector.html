@@ -576,12 +576,18 @@
                     </div>
                 </div>
 
+                <!-- Processing Status -->
+                <div class="section" id="processingSection" style="display: none; background: #f0f4ff; padding: 12px; border-radius: 6px; border-left: 3px solid #667eea;">
+                    <div style="font-size: 12px; color: #667eea; font-weight: 600; margin-bottom: 8px;">Processing Viewport</div>
+                    <div id="processingMessage" style="font-size: 13px; color: #333; line-height: 1.4;">⏳ Downloading and processing data...</div>
+                </div>
+
                 <!-- Create New Viewport -->
                 <div class="section">
                     <button class="btn btn-toggle" onclick="toggleCreateForm()">+ Create New Viewport</button>
 
                     <div class="create-form" id="createForm">
-                        <div style="font-size: 12px; color: #333; margin-bottom: 12px; padding: 10px; background: #e8f4f8; border-radius: 6px; border-left: 3px solid #667eea;">
+                        <div id="mapClickInstruction" style="font-size: 12px; color: #333; margin-bottom: 12px; padding: 10px; background: #e8f4f8; border-radius: 6px; border-left: 3px solid #667eea;">
                             📍 <strong>Click on the map</strong> to create a 5km × 5km viewport centered at that location
                         </div>
                         <div id="formFields" style="display: none;">
@@ -851,34 +857,44 @@
                         previewBox = null;
                     }
 
-                    // Check if data is being prepared in background
-                    if (data.data_preparing) {
-                        // Data is being downloaded/processed - show real-time progress
-                        console.log('[VIEWPORT CREATE] Data preparing in background:', data.message);
+                    // Data is being prepared in background
+                    console.log('[VIEWPORT CREATE] Viewport created:', name);
+                    console.log('[VIEWPORT CREATE] Waiting for data to be ready...');
 
-                        // Show progress modal with real-time updates
-                        await pollAllOperations(name);
+                    // Update current viewport and refresh UI to show it as active
+                    currentViewport = data.viewport;
+                    updateCurrentViewportDisplay();
+                    loadViewports(); // Refresh list to show as active
+                    drawViewportBox();
 
-                        // After operations complete, switch to the new viewport as active
-                        await switchViewport(name);
+                    // Hide the create form and show processing status in left sidebar
+                    document.getElementById('createForm').classList.remove('open');
+                    document.getElementById('mapClickInstruction').style.display = 'none';
+                    document.getElementById('processingSection').style.display = 'block';
+                    document.getElementById('mapInfoLabel').textContent = '';
+                    document.getElementById('mapInfoValue').textContent = '';
+
+                    // Wait for viewport to be ready
+                    const isReady = await waitForViewportReady(name);
+
+                    // Hide processing section
+                    document.getElementById('processingSection').style.display = 'none';
+
+                    if (isReady) {
+                        console.log('[VIEWPORT CREATE] ✓ Data is ready, navigating to viewer...');
+                        window.location.href = 'viewer.html';
                     } else {
-                        // Data is ready immediately, switch to the new viewport as active
-                        await switchViewport(name);
-                        loadCurrentViewport();
-
-                        // Restore viewport box after form closes
-                        drawViewportBox();
-
-                        // Reset message after 3 seconds
-                        setTimeout(() => {
-                            document.getElementById('mapInfoLabel').textContent = 'Click on map';
-                            document.getElementById('mapInfoValue').textContent = 'to select viewport center';
-                        }, 3000);
+                        console.log('[VIEWPORT CREATE] ✗ Timeout waiting for data');
+                        document.getElementById('processingMessage').textContent = '✗ Processing timeout - please check back in a few minutes';
+                        // Keep processing section visible to show error message
+                        document.getElementById('mapClickInstruction').style.display = 'inline-block';
                     }
 
                     // Clear pending bounds
                     pendingViewportBounds = null;
                 } else {
+                    document.getElementById('processingSection').style.display = 'none';
+                    document.getElementById('mapClickInstruction').style.display = 'inline-block';
                     document.getElementById('mapInfoLabel').textContent = '✗ Error creating viewport';
                     document.getElementById('mapInfoValue').textContent = data.error || 'Unknown error';
 
@@ -895,6 +911,8 @@
                     }, 2000);
                 }
             } catch (error) {
+                document.getElementById('processingSection').style.display = 'none';
+                document.getElementById('mapClickInstruction').style.display = 'inline-block';
                 document.getElementById('mapInfoLabel').textContent = '✗ Error creating viewport';
                 document.getElementById('mapInfoValue').textContent = error.message;
 
@@ -919,6 +937,8 @@
             document.getElementById('formFields').style.display = 'none';
             document.getElementById('closeButton').style.display = 'block';
             document.getElementById('viewportName').value = '';
+            document.getElementById('mapClickInstruction').style.display = 'inline-block';
+            document.getElementById('processingSection').style.display = 'none';
             pendingViewportBounds = null;
 
             // Remove preview box
@@ -1061,28 +1081,28 @@
             }
         }
 
-        async function goToViewer() {
-            // Check data readiness before allowing navigation
+        async function goToViewer(viewportName) {
+            // Simple version: check readiness, then navigate if ready
+            const name = viewportName || (currentViewport ? currentViewport.name : null);
+
+            if (!name) {
+                alert('No viewport selected');
+                return;
+            }
+
             try {
-                const response = await fetch(`/api/viewports/${currentViewport.name}/data-status`);
+                const response = await fetch(`/api/viewports/${name}/is-ready`);
                 const result = await response.json();
-                const status = result.data;
 
-                // Require pyramids and FAISS to be ready
-                if (!status.pyramids || !status.faiss) {
-                    let missing = [];
-                    if (!status.pyramids) missing.push('Pyramids');
-                    if (!status.faiss) missing.push('FAISS index');
-
-                    alert(`Data not ready yet.\n\nStill processing: ${missing.join(', ')}\n\nPlease wait a few minutes and try again.`);
-                    return;
+                if (result.ready) {
+                    console.log(`[VIEWER] ${name} is ready, navigating to viewer.html`);
+                    window.location.href = 'viewer.html';
+                } else {
+                    alert(`Data not ready yet.\n\n${result.message}\n\nPlease wait and try again.`);
                 }
-
-                // Data is ready, navigate to viewer
-                window.location.href = 'viewer.html';
             } catch (error) {
-                console.error('Error checking data status:', error);
-                alert('Error checking data status. Please try again.');
+                console.error('[VIEWER] Error checking readiness:', error);
+                alert('Error checking data status');
             }
         }
 
@@ -1225,112 +1245,43 @@ Max Lon: ${bounds.maxLon.toFixed(4)}°
         // Progress tracking functions
         let progressPollInterval = null;
 
-        function showProgressModal(title) {
-            console.log(`[PROGRESS] Starting operation: ${title}`);
-            document.getElementById('progress-title').textContent = title;
-            document.getElementById('progress-overlay').classList.add('active');
-        }
+        async function waitForViewportReady(viewportName, maxWaitMs = 1800000) {
+            // Simple synchronous polling: check is-ready endpoint every 3 seconds
+            const startTime = Date.now();
+            const pollIntervalMs = 3000;  // 3 seconds
 
-        function hideProgressModal() {
-            console.log('[PROGRESS] Hiding progress modal');
-            document.getElementById('progress-overlay').classList.remove('active');
-
-            if (progressPollInterval) {
-                clearInterval(progressPollInterval);
-                progressPollInterval = null;
-            }
-        }
-
-        function updateProgressUI(data) {
-            // Update message
-            document.getElementById('progress-message').textContent = data.message || '';
-
-            // Update current file
-            const fileEl = document.getElementById('progress-file');
-            if (data.current_file) {
-                fileEl.textContent = `File: ${data.current_file}`;
-                fileEl.style.display = 'block';
-            } else {
-                fileEl.style.display = 'none';
-            }
-
-            // Update progress bar
-            const percent = data.percent || 0;
-            const progressBar = document.getElementById('progress-bar');
-            const progressBarText = document.getElementById('progress-bar-text');
-            progressBar.style.width = percent + '%';
-            if (percent > 0) {
-                progressBarText.textContent = percent + '%';
-            }
-
-            // Update percent display
-            document.getElementById('progress-percent').textContent = percent + '%';
-
-            // Update status
-            const statusEl = document.getElementById('progress-status');
-            statusEl.textContent = (data.status || 'processing').toUpperCase();
-            statusEl.className = 'progress-status ' + (data.status || 'processing');
-        }
-
-        async function pollOperationProgress(operationId, title) {
-            showProgressModal(title);
+            console.log(`[WAIT] Starting to wait for ${viewportName} to be ready...`);
 
             return new Promise((resolve) => {
-                progressPollInterval = setInterval(async () => {
+                const pollInterval = setInterval(async () => {
                     try {
-                        const response = await fetch(`/api/operations/progress/${operationId}`);
+                        const response = await fetch(`/api/viewports/${viewportName}/is-ready`);
                         const result = await response.json();
 
-                        if (result.success && result.status) {
-                            const data = result;
-                            updateProgressUI(data);
+                        console.log(`[WAIT] ${viewportName}: ${result.message} (ready: ${result.ready})`);
 
-                            console.log(`[PROGRESS] ${operationId}: ${data.message} (${data.percent}%)`);
+                        // Update status display in sidebar
+                        document.getElementById('processingMessage').textContent = result.message;
 
-                            // Check if operation is complete or failed
-                            if (data.status === 'complete' || data.status === 'error') {
-                                // Show final message for 2 seconds
-                                setTimeout(() => {
-                                    hideProgressModal();
-                                    resolve();
-                                }, 2000);
+                        if (result.ready) {
+                            console.log(`[WAIT] ✓ ${viewportName} is ready!`);
+                            clearInterval(pollInterval);
+                            resolve(true);
+                            return;
+                        }
 
-                                // Clear interval
-                                clearInterval(progressPollInterval);
-                                progressPollInterval = null;
-                            }
+                        // Check timeout
+                        if (Date.now() - startTime > maxWaitMs) {
+                            console.log(`[WAIT] ✗ Timeout waiting for ${viewportName}`);
+                            clearInterval(pollInterval);
+                            resolve(false);
+                            return;
                         }
                     } catch (error) {
-                        console.error('[PROGRESS] Error polling progress:', error);
+                        console.error(`[WAIT] Error checking readiness:`, error);
                     }
-                }, 500); // Poll every 500ms
+                }, pollIntervalMs);
             });
-        }
-
-        async function pollAllOperations(viewportId) {
-            const operations = ['embeddings', 'pyramids', 'faiss'];
-            const titles = {
-                'embeddings': '📥 Downloading Embeddings',
-                'pyramids': '🔨 Creating Pyramids',
-                'faiss': '🔍 Building FAISS Index'
-            };
-
-            for (const op of operations) {
-                const operationId = `${viewportId}_${op}`;
-                try {
-                    const response = await fetch(`/api/operations/progress/${operationId}`);
-                    const result = await response.json();
-
-                    if (result.success && result.status && result.status !== 'complete') {
-                        console.log(`[PROGRESS] Found ongoing operation: ${operationId}`);
-                        await pollOperationProgress(operationId, titles[op]);
-                        // Small delay before checking next operation
-                        await new Promise(resolve => setTimeout(resolve, 500));
-                    }
-                } catch (error) {
-                    // Operation not found - continue to next
-                }
-            }
         }
 
         // Switch to viewport
@@ -1352,16 +1303,6 @@ Max Lon: ${bounds.maxLon.toFixed(4)}°
 
                     // Check and display data status
                     await checkAndDisplayDataStatus(name);
-
-                    // Show progress tracking for any ongoing operations
-                    if (!data.faiss_ready) {
-                        console.log(`[VIEWPORT] Starting progress tracking for "${name}"`);
-                        await pollAllOperations(name);
-                        // Update status after operations complete
-                        await checkAndDisplayDataStatus(name);
-                    } else {
-                        console.log(`[VIEWPORT] FAISS index ready for "${name}"`);
-                    }
                 } else {
                     alert(`Error: ${data.error}`);
                 }
