@@ -36,3 +36,11 @@ faiss_indices/
 *.tiff
 *.npy
 *.index
+
+# Private planning files
+CANVAS_HANDOFF_TO_SONNET.md
+DEBUG_IMPORT.md
+SETUP.md
+TEST_IMPORT_WORKFLOW.md
+BACKUP_README.md
+PLAN_FAISS_INTEGRATION.md
