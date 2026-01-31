@@ -48,3 +48,6 @@ PLAN_FAISS_INTEGRATION.md
 # Private test/development scripts
 test_full_workflow.py
 cleanup_orphaned_data.py
+
+# Deprecated code
+deprecated/
