@@ -342,7 +342,7 @@ For multiple years (2017-2024), processing runs sequentially through the pipelin
 
 ## License
 
-[Specify your license here]
+MIT
 
 ## Related Resources
 
