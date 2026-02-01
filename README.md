@@ -38,6 +38,46 @@ TEE (Tessera Embeddings Explorer) integrates geospatial data processing with dee
 - Visualize search results with similarity thresholds
 - Real-time distance metrics
 
+### Experimental Viewer: Persistent Labels
+The **Experimental Viewer** extends the standard viewer with an advanced persistent labeling system:
+
+#### Features
+- **One-Click Similarity Search** - Click any pixel to instantly search for similar pixels across the viewport
+- **Real-Time Threshold Control** - Adjust the similarity slider to dynamically filter results (no re-querying)
+- **Persistent Colored Overlays** - Save similarity search results as named labels with custom colors
+- **Label Management** - Toggle label visibility, delete labels, view pixel counts per label
+- **Temporal Label Tracking** - Automatically refresh labels across different years to see how classifications change
+- **Year-Based Label Updates** - When switching years, labels re-compute which pixels match the original criteria in that year's embeddings
+
+#### How to Use
+1. Open the **Viewport Selector** and choose a viewport
+2. Select **"Experimental Viewer (Persistent Labels)"** from the viewer dropdown
+3. **Search for similar pixels:**
+   - Click any pixel on the embedding map (right panel)
+   - Yellow overlay shows matching pixels
+   - Adjust the similarity threshold slider for real-time results
+4. **Save searches as labels:**
+   - Click "💾 Save Current as Label"
+   - Enter a name (e.g., "grass", "water", "buildings")
+   - Choose a color
+   - Click "Save"
+5. **Manage labels:**
+   - View all saved labels in the left sidebar
+   - Click the eye icon to toggle visibility
+   - Click the trash icon to delete
+   - Use "Toggle All Overlays" to show/hide all at once
+6. **Analyze temporal changes:**
+   - Create labels in one year (e.g., 2020)
+   - Switch to a different year (e.g., 2021)
+   - Labels automatically update to show matching pixels in that year's data
+   - Compare land cover changes across time
+
+#### Label Data
+- Labels are saved as **persistent JSON files** in `viewports/{viewport_name}_labels.json`
+- Includes source pixel coordinates, threshold settings, and matched pixels with distances
+- Survives page reloads - your labels are always preserved
+- Can be exported or shared independently
+
 ## Quick Start
 
 ### Prerequisites
@@ -102,7 +142,8 @@ blore/
 ├── requirements.txt                   # Python dependencies
 │
 ├── public/                            # Web interface
-│   ├── viewer.html                    # Embedding viewer with map interface
+│   ├── viewer.html                    # Standard embedding viewer with map interface
+│   ├── experimental_viewer.html       # Advanced viewer with persistent label overlay system
 │   ├── viewport_selector.html         # Viewport creation and management
 │   └── README.md                      # Frontend documentation
 │

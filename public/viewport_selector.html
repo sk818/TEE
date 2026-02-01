@@ -645,6 +645,16 @@
                     <div id="dataStatusMessage" style="font-size: 12px; color: #666; margin-bottom: 10px; padding: 10px; background: #f5f5f5; border-radius: 4px; display: none;">
                         <div id="dataStatusText">Loading...</div>
                     </div>
+
+                    <!-- Viewer Type Selection -->
+                    <div style="margin-bottom: 10px;">
+                        <label style="font-size: 13px; color: #666; display: block; margin-bottom: 5px;">Viewer Type:</label>
+                        <select id="viewer-type-selector" style="width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 4px; font-size: 13px; background: white; color: #333;">
+                            <option value="viewer.html">Standard Viewer</option>
+                            <option value="experimental_viewer.html">Experimental Viewer (Persistent Labels)</option>
+                        </select>
+                    </div>
+
                     <button class="btn-download" id="quickViewerBtn" onclick="goToViewer()" style="width: 100%; border-color: #667eea; color: #667eea; background: #f0f4ff;">
                         <span>▶ Open Viewer</span>
                     </button>
@@ -1095,8 +1105,14 @@
                 const result = await response.json();
 
                 if (result.ready) {
-                    console.log(`[VIEWER] ${name} is ready, navigating to viewer.html`);
-                    window.location.href = 'viewer.html';
+                    // Get selected viewer type
+                    const viewerType = document.getElementById('viewer-type-selector').value;
+
+                    // Save preference to localStorage
+                    localStorage.setItem('preferredViewer', viewerType);
+
+                    console.log(`[VIEWER] ${name} is ready, navigating to ${viewerType}`);
+                    window.location.href = viewerType;
                 } else {
                     alert(`Data not ready yet.\n\n${result.message}\n\nPlease wait and try again.`);
                 }
@@ -1529,6 +1545,12 @@ Max Lon: ${bounds.maxLon.toFixed(4)}°
 
         // Initialize on page load
         window.addEventListener('DOMContentLoaded', function() {
+            // Restore viewer preference from localStorage
+            const savedViewer = localStorage.getItem('preferredViewer');
+            if (savedViewer) {
+                document.getElementById('viewer-type-selector').value = savedViewer;
+            }
+
             initMap();
             loadCurrentViewport();
             loadViewports();

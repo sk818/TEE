@@ -51,3 +51,6 @@ cleanup_orphaned_data.py
 
 # Deprecated code
 deprecated/
+
+# User-generated viewport labels
+viewports/*_labels.json

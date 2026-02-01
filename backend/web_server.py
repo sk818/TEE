@@ -16,6 +16,7 @@ import time
 import json
 import numpy as np
 import subprocess
+from datetime import datetime
 
 # Add parent directory to path for lib imports
 sys.path.insert(0, str(Path(__file__).parent.parent))
@@ -1492,6 +1493,118 @@ def api_relabel_by_similarity():
         logger.error(f"[RELABEL] Unexpected error: {e}")
         import traceback
         traceback.print_exc()
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+# ============================================================================
+# PERSISTENT LABELS API
+# ============================================================================
+
+VIEWPORTS_DIR = Path.home() / 'blore' / 'viewports'
+
+@app.route('/api/viewports/<viewport_name>/labels', methods=['GET'])
+def api_get_viewport_labels(viewport_name):
+    """Load all saved labels for a viewport."""
+    try:
+        labels_file = VIEWPORTS_DIR / f'{viewport_name}_labels.json'
+
+        if not labels_file.exists():
+            return jsonify({
+                'success': True,
+                'labels': [],
+                'label_count': 0
+            })
+
+        with open(labels_file, 'r') as f:
+            data = json.load(f)
+
+        return jsonify({
+            'success': True,
+            'labels': data.get('labels', []),
+            'label_count': len(data.get('labels', []))
+        })
+    except Exception as e:
+        logger.error(f"Error loading labels for viewport {viewport_name}: {e}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/api/viewports/<viewport_name>/labels', methods=['POST'])
+def api_save_viewport_label(viewport_name):
+    """Save a new label to a viewport."""
+    try:
+        label_data = request.get_json()
+        labels_file = VIEWPORTS_DIR / f'{viewport_name}_labels.json'
+
+        # Ensure viewports directory exists
+        VIEWPORTS_DIR.mkdir(parents=True, exist_ok=True)
+
+        # Load existing or create new
+        if labels_file.exists():
+            with open(labels_file, 'r') as f:
+                data = json.load(f)
+        else:
+            data = {
+                'viewport_name': viewport_name,
+                'created': datetime.utcnow().isoformat() + 'Z',
+                'labels': []
+            }
+
+        # Generate unique ID and add metadata
+        label_id = f"label_{int(datetime.utcnow().timestamp() * 1000)}"
+        label_data['id'] = label_id
+        label_data['created'] = datetime.utcnow().isoformat() + 'Z'
+        label_data['pixel_count'] = len(label_data.get('pixels', []))
+
+        # Append and save
+        data['labels'].append(label_data)
+        data['modified'] = datetime.utcnow().isoformat() + 'Z'
+
+        with open(labels_file, 'w') as f:
+            json.dump(data, f, indent=2)
+
+        logger.info(f"✓ Saved label '{label_data.get('name')}' for viewport '{viewport_name}'")
+
+        return jsonify({
+            'success': True,
+            'label_id': label_id,
+            'pixel_count': label_data['pixel_count']
+        })
+
+    except Exception as e:
+        logger.error(f"Error saving label for viewport {viewport_name}: {e}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/api/viewports/<viewport_name>/labels/<label_id>', methods=['DELETE'])
+def api_delete_viewport_label(viewport_name, label_id):
+    """Delete a specific label from a viewport."""
+    try:
+        labels_file = VIEWPORTS_DIR / f'{viewport_name}_labels.json'
+
+        if not labels_file.exists():
+            return jsonify({'success': False, 'error': 'Labels file not found'}), 404
+
+        with open(labels_file, 'r') as f:
+            data = json.load(f)
+
+        # Filter out the label
+        original_count = len(data['labels'])
+        data['labels'] = [l for l in data['labels'] if l['id'] != label_id]
+
+        if len(data['labels']) == original_count:
+            return jsonify({'success': False, 'error': 'Label not found'}), 404
+
+        data['modified'] = datetime.utcnow().isoformat() + 'Z'
+
+        with open(labels_file, 'w') as f:
+            json.dump(data, f, indent=2)
+
+        logger.info(f"✓ Deleted label '{label_id}' from viewport '{viewport_name}'")
+
+        return jsonify({'success': True, 'label_id': label_id})
+
+    except Exception as e:
+        logger.error(f"Error deleting label from viewport {viewport_name}: {e}")
         return jsonify({'success': False, 'error': str(e)}), 500
 
 
