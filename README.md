@@ -1,6 +1,6 @@
 # TEE: Tessera Embeddings Explorer
 
-A comprehensive system for downloading, processing, and visualizing Sentinel-2 satellite embeddings across multiple years (2017-2024) with an interactive web interface for geographic viewports.
+A comprehensive system for downloading, processing, and visualizing Sentinel-2 satellite embeddings across multiple years (2017-2025) with an interactive web interface for geographic viewports.
 
 ## Overview
 
@@ -15,7 +15,7 @@ TEE (Tessera Embeddings Explorer) integrates geospatial data processing with dee
 ## Features
 
 ### Multi-Year Support
-- Download embeddings for years 2017-2024 (depending on data availability)
+- Download embeddings for years 2017-2025 (depending on data availability)
 - Select which years to process during viewport creation
 - Switch between years instantly in the viewer
 - Temporal coherence in similarity search through year-specific FAISS indices
@@ -38,45 +38,52 @@ TEE (Tessera Embeddings Explorer) integrates geospatial data processing with dee
 - Visualize search results with similarity thresholds
 - Real-time distance metrics
 
-### Experimental Viewer: Persistent Labels
-The **Experimental Viewer** extends the standard viewer with an advanced persistent labeling system:
+### Advanced Viewer: 6-Panel Exploration & Temporal Analysis
+The **Advanced Viewer** extends the standard viewer with a comprehensive 6-panel layout for advanced analysis:
+
+#### Layout
+1. **Panel 1 (OSM)** - OpenStreetMap base layer (geographic reference)
+2. **Panel 2 (RGB)** - Satellite RGB imagery with label painting tools
+3. **Panel 3 (Embeddings Y1)** - First year embeddings with similarity search
+4. **Panel 4 (UMAP)** - 2D UMAP projection of embedding space (auto-computed on load)
+5. **Panel 5 (Heatmap)** - Temporal distance heatmap (Y1 vs Y2 pixel-by-pixel differences)
+6. **Panel 6 (Embeddings Y2)** - Second year embeddings for temporal comparison
 
 #### Features
 - **One-Click Similarity Search** - Click any pixel to instantly search for similar pixels across the viewport
-- **Real-Time Threshold Control** - Adjust the similarity slider to dynamically filter results (no re-querying)
+- **Real-Time Threshold Control** - Adjust the similarity slider to dynamically filter results
 - **Persistent Colored Overlays** - Save similarity search results as named labels with custom colors
+- **UMAP Visualization** - Automatic 2D projection of 128D embeddings with satellite RGB coloring
+- **Temporal Distance Heatmap** - Tile-based L2 distance computation between years with adaptive subsampling
+- **Temporal Analysis** - Switch Panel 6 year independently to compare embedding changes over time
 - **Label Management** - Toggle label visibility, delete labels, view pixel counts per label
-- **Temporal Label Tracking** - Automatically refresh labels across different years to see how classifications change
-- **Year-Based Label Updates** - When switching years, labels re-compute which pixels match the original criteria in that year's embeddings
+- **Year-Based Label Updates** - Labels automatically refresh when switching years to show changes in classification
 
 #### How to Use
 1. Open the **Viewport Selector** and choose a viewport
-2. Select **"Experimental Viewer (Persistent Labels)"** from the viewer dropdown
-3. **Search for similar pixels:**
-   - Click any pixel on the embedding map (right panel)
-   - Yellow overlay shows matching pixels
-   - Adjust the similarity threshold slider for real-time results
-4. **Save searches as labels:**
-   - Click "💾 Save Current as Label"
-   - Enter a name (e.g., "grass", "water", "buildings")
-   - Choose a color
-   - Click "Save"
-5. **Manage labels:**
-   - View all saved labels in the left sidebar
-   - Click the eye icon to toggle visibility
-   - Click the trash icon to delete
-   - Use "Toggle All Overlays" to show/hide all at once
-6. **Analyze temporal changes:**
-   - Create labels in one year (e.g., 2020)
-   - Switch to a different year (e.g., 2021)
-   - Labels automatically update to show matching pixels in that year's data
-   - Compare land cover changes across time
+2. Select **"Advanced Viewer"** from the viewer dropdown
+3. **Explore embeddings:**
+   - Panel 3/6: Click pixels to search for similar locations
+   - Adjust threshold slider for real-time filtering
+   - All panels stay synchronized as you pan/zoom
+4. **Analyze UMAP projection:**
+   - Panel 4 automatically shows 2D embedding space
+   - Colors reflect satellite RGB at each location
+   - Click UMAP points to highlight corresponding geographic locations
+5. **Compare temporal changes:**
+   - Select different year in Panel 6
+   - Panel 5 shows pixel-by-pixel embedding distance between years
+   - Blue = similar embeddings, Red = different embeddings
+6. **Create labels:**
+   - Click "💾 Save Current as Label" to save similarity search results
+   - Labels automatically color-code UMAP points
+   - Toggle visibility or delete as needed
 
 #### Label Data
 - Labels are saved as **persistent JSON files** in `viewports/{viewport_name}_labels.json`
 - Includes source pixel coordinates, threshold settings, and matched pixels with distances
 - Survives page reloads - your labels are always preserved
-- Can be exported or shared independently
+- Automatically refresh when switching years to track temporal changes
 
 ## Quick Start
 
@@ -143,7 +150,7 @@ blore/
 │
 ├── public/                            # Web interface
 │   ├── viewer.html                    # Standard embedding viewer with map interface
-│   ├── experimental_viewer.html       # Advanced viewer with persistent label overlay system
+│   ├── experimental_viewer.html       # Advanced 6-panel viewer with UMAP & temporal analysis
 │   ├── viewport_selector.html         # Viewport creation and management
 │   └── README.md                      # Frontend documentation
 │
@@ -164,6 +171,9 @@ blore/
 ├── create_rgb_embeddings.py           # Convert embeddings to RGB
 ├── create_pyramids.py                 # Build zoom-level pyramid structure
 ├── create_faiss_index.py              # Build similarity search indices
+├── compute_umap.py                    # Compute 2D UMAP projection for embeddings
+├── setup_viewport.py                  # Orchestrate full workflow (download → FAISS → UMAP)
+├── SETUP_WORKFLOW.md                  # Comprehensive workflow documentation
 │
 ├── save.sh                            # Backup script
 ├── restore.sh                         # Restore script
@@ -208,10 +218,40 @@ python3 create_faiss_index.py
 - Enables fast similarity queries
 - Output: `blore_data/faiss_indices/{viewport}/{year}/`
 
-### 5. View in Browser
+### 5. Compute UMAP (Optional)
+```bash
+python3 compute_umap.py {viewport_name} {year}
+```
+- Computes 2D UMAP projection of all embeddings
+- Used by Advanced Viewer for visualization (Panel 4)
+- Takes 1-2 minutes for 264K embeddings
+- Output: `blore_data/faiss_indices/{viewport}/{year}/umap_coords.npy`
+
+### 6. View in Browser
 - Pyramid tiles served at http://localhost:5125
 - Embeddings displayed in interactive viewer
 - Similarity search uses FAISS indices
+- Advanced Viewer shows UMAP with automatic computation on first load
+
+## Workflow: Complete Setup with UMAP
+
+For a complete end-to-end setup with UMAP visualization:
+
+```bash
+./venv/bin/python3 setup_viewport.py --years 2023,2024,2025 --umap-year 2024
+```
+
+This orchestrates:
+1. Download embeddings for 2023, 2024, 2025
+2. Create FAISS indices for each year
+3. Compute UMAP for 2024 (or specified year)
+4. Output summary of created data
+
+Then start viewing:
+```bash
+bash restart.sh
+# Open http://localhost:8001
+```
 
 ## API Reference
 
@@ -359,12 +399,15 @@ Set the active viewport first, then run pipeline scripts.
 
 | File | Purpose |
 |------|---------|
+| `setup_viewport.py` | Orchestrate complete workflow (download → FAISS → UMAP) |
 | `download_embeddings.py` | Download Tessera embeddings for selected years |
 | `create_rgb_embeddings.py` | Generate RGB preview from embeddings |
 | `create_pyramids.py` | Build pyramid tile structure for web viewing |
 | `create_faiss_index.py` | Create similarity search indices |
+| `compute_umap.py` | Compute 2D UMAP projection for Advanced Viewer (Panel 4) |
 | `backend/web_server.py` | Flask API and viewport management |
-| `public/viewer.html` | Interactive embedding viewer |
+| `public/viewer.html` | Standard embedding viewer |
+| `public/experimental_viewer.html` | Advanced 6-panel viewer with UMAP & temporal analysis |
 | `public/viewport_selector.html` | Viewport creation interface |
 
 ## Performance Benchmarks
@@ -383,7 +426,12 @@ For multiple years (2017-2024), processing runs sequentially through the pipelin
 
 ## License
 
-MIT
+MIT License - See LICENSE file for details
+
+## Authors
+
+- **S. Keshav** - Primary development and design
+- **Anthropic Haiku** - AI-assisted development and feature implementation
 
 ## Related Resources
 
@@ -405,10 +453,10 @@ For issues or questions:
 If you use this project in research, please cite:
 
 ```bibtex
-@software{tee2024,
+@software{tee2025,
   title={TEE: Tessera Embeddings Explorer},
-  author={Your Name},
-  year={2024},
+  author={Keshav, S. and Anthropic Haiku},
+  year={2025},
   url={https://github.com/sk818/TEE}
 }
 ```
