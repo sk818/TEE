@@ -680,8 +680,10 @@
 
                         // Click on embedding map triggers similarity search
                         if (panel === 'embedding') {
+                            console.log(`[CLICK] Panel 3 (embeddings) at ${e.latlng.lat.toFixed(6)}, ${e.latlng.lng.toFixed(6)}`);
                             explorerClick(e.latlng.lat, e.latlng.lng);
                         } else if (panel === 'rgb') {
+                            console.log(`[CLICK] Panel 2 (Bing maps) at ${e.latlng.lat.toFixed(6)}, ${e.latlng.lng.toFixed(6)}`);
                             // Bing maps (Panel 2): Highlight location in UMAP
                             highlightUMAPPoint(e.latlng.lat, e.latlng.lng);
                         }
@@ -2920,13 +2922,20 @@
         // Handle click on UMAP canvas
         // Highlight a source point in the UMAP by lat/lon
         function highlightUMAPPoint(lat, lon) {
-            if (!umapData || !maps.umap) return;
+            console.log(`[UMAP] highlightUMAPPoint called: lat=${lat.toFixed(6)}, lon=${lon.toFixed(6)}`);
+            console.log(`[UMAP] umapData=${!!umapData}, maps.umap=${!!maps.umap}`);
+
+            if (!umapData || !maps.umap) {
+                console.log('[UMAP] Missing data or map - returning');
+                return;
+            }
 
             // Find the UMAP point matching this lat/lon
             let matchingPoint = umapData.find(p =>
                 Math.abs(p.lat - lat) < 0.0000001 && Math.abs(p.lon - lon) < 0.0000001
             );
 
+            console.log(`[UMAP] Found matching point: ${!!matchingPoint}`);
             if (!matchingPoint) return;
 
             // Remove old marker if exists
