@@ -158,6 +158,7 @@ blore/
 │   └── web_server.py                  # API endpoints and server
 │
 ├── lib/                               # Python utilities
+│   ├── pipeline.py                    # Unified pipeline orchestration (single source of truth)
 │   ├── viewport_utils.py              # Viewport file operations
 │   ├── viewport_writer.py             # Viewport configuration writer
 │   └── progress_tracker.py            # Progress tracking utilities
@@ -182,49 +183,64 @@ blore/
 
 ## Data Pipeline
 
-The system processes satellite embeddings through five main stages:
+The system processes satellite embeddings through five main stages with **parallel multi-year processing**:
+
+### Unified Orchestration (lib/pipeline.py)
+
+All pipeline execution flows through `lib/pipeline.py::PipelineRunner`, providing a single source of truth for:
+- Both web-based viewport creation (`api_create_viewport`)
+- Command-line setup (`setup_viewport.py`)
+- Consistent error handling and verification across entry points
+
+### Pipeline Stages (Parallel Per-Year)
+
+Each stage processes **all selected years in parallel** through single script calls:
 
 ### 1. Download Embeddings
 ```bash
-python3 download_embeddings.py
+python3 download_embeddings.py --years 2017,2021,2025
 ```
 - Connects to GeoTessera
-- Downloads Sentinel-2 embeddings for selected years
+- Downloads Sentinel-2 embeddings for selected years (in parallel)
 - Saves as GeoTIFF files in `blore_data/mosaics/`
+- ✓ Multi-year support: Downloads all years concurrently
 
 ### 2. Create RGB Visualizations
 ```bash
 python3 create_rgb_embeddings.py
 ```
 - Converts 512D embeddings to RGB using PCA
-- Generates visual preview of embeddings
+- Processes all downloaded years in parallel
 - Outputs to `blore_data/mosaics/rgb/`
 
 ### 3. Build Pyramid Structure
 ```bash
 python3 create_pyramids.py
 ```
-- Creates multi-level zoom pyramids (0-5)
+- Creates multi-level zoom pyramids (0-5) for all years
 - Stores tiles at different resolutions
 - Enables efficient web-based viewing
+- **✓ Viewer becomes available** once ANY year has pyramids
 - Output: `blore_data/pyramids/{viewport}/{year}/`
 
 ### 4. Create FAISS Indices
 ```bash
 python3 create_faiss_index.py
 ```
-- Builds vector similarity search indices
+- Builds vector similarity search indices for all years
 - Year-specific indices for temporal coherence
 - Enables fast similarity queries
+- **✓ Labeling controls become available** once ANY year has FAISS
 - Output: `blore_data/faiss_indices/{viewport}/{year}/`
 
 ### 5. Compute UMAP (Optional)
 ```bash
 python3 compute_umap.py {viewport_name} {year}
 ```
-- Computes 2D UMAP projection of all embeddings
+- Computes 2D UMAP projection from first completed year
 - Used by Advanced Viewer for visualization (Panel 4)
 - Takes 1-2 minutes for 264K embeddings
+- **✓ UMAP visualization becomes available** once computed
 - Output: `blore_data/faiss_indices/{viewport}/{year}/umap_coords.npy`
 
 ### 6. View in Browser
@@ -233,24 +249,115 @@ python3 compute_umap.py {viewport_name} {year}
 - Similarity search uses FAISS indices
 - Advanced Viewer shows UMAP with automatic computation on first load
 
+### Incremental Feature Availability
+
+Features become available progressively as processing completes:
+
+| Stage | Feature | Available When |
+|-------|---------|-----------------|
+| After Stage 3 (Pyramids) | Basic viewer with maps | ANY year has pyramids |
+| After Stage 4 (FAISS) | Labeling/similarity search | ANY year has FAISS index |
+| After Stage 5 (UMAP) | UMAP visualization (Panel 4) | UMAP computed for any year |
+
 ## Workflow: Complete Setup with UMAP
 
-For a complete end-to-end setup with UMAP visualization:
+For a complete end-to-end setup with UMAP visualization (CLI mode):
 
 ```bash
 ./venv/bin/python3 setup_viewport.py --years 2023,2024,2025 --umap-year 2024
 ```
 
-This orchestrates:
-1. Download embeddings for 2023, 2024, 2025
-2. Create FAISS indices for each year
-3. Compute UMAP for 2024 (or specified year)
-4. Output summary of created data
+This orchestrates through unified pipeline (`lib/pipeline.py`):
+1. Download embeddings for 2023, 2024, 2025 (in parallel)
+2. Create RGB visualizations for all years
+3. Build pyramid tiles for all years (**viewer available after this**)
+4. Create FAISS indices for each year (**labeling available after this**)
+5. Compute UMAP for 2024 (**UMAP visualization available after this**)
+6. Output summary of created data
 
-Then start viewing:
+Or use the web interface:
 ```bash
 bash restart.sh
 # Open http://localhost:8001
+# Click "+ Create New Viewport"
+# Select years and click Create
+# Processing happens in background with status tracking
+# Viewer automatically switches on when pyramids are ready
+```
+
+### Web-Based Viewport Creation
+
+When creating a viewport through the web interface:
+1. **api_create_viewport()** calls **trigger_data_download_and_processing()**
+2. Full pipeline (`PipelineRunner`) runs in background
+3. Status is tracked and accessible via `/api/operations/pipeline-status/{viewport_name}`
+4. **Viewer only monitors** - it does NOT initiate any processes
+5. Features become available progressively as each stage completes
+
+### Key Architectural Change
+
+**Single Source of Truth**: All pipeline logic is now in `lib/pipeline.py::PipelineRunner`, used by:
+- Web-based viewport creation
+- Command-line `setup_viewport.py`
+- Manual API calls
+
+This ensures consistent behavior regardless of entry point.
+
+## Pipeline Architecture
+
+### Unified Orchestration System
+
+TEE uses a unified pipeline orchestration system (`lib/pipeline.py`) that ensures consistent processing regardless of entry point:
+
+```
+┌─ Web UI (api_create_viewport)     ─┐
+│                                    │
+├─ CLI (setup_viewport.py)           ├─→ PipelineRunner.run_full_pipeline()
+│                                    │   ├─ Download embeddings
+│  All entry points converge on      │   ├─ Create RGB
+│  single pipeline implementation    │   ├─ Create pyramids ← Viewer available
+│                                    │   ├─ Create FAISS ← Labeling available
+└─ Direct API calls                  ┘   └─ Compute UMAP ← UMAP available
+```
+
+### Key Design Principles
+
+1. **Single Source of Truth**: All pipeline logic in `lib/pipeline.py`
+2. **Incremental Feature Availability**: Features activate as soon as their dependencies complete
+3. **Monitoring Only**: Viewer monitors pipeline progress but never initiates processes
+4. **Parallel Multi-Year Processing**: All stages process multiple years in parallel
+5. **Robust Error Tracking**: All stages track success/failure with detailed error messages
+
+### Status Tracking
+
+Pipeline status is tracked in memory via operation_id: `{viewport_name}_full_pipeline`
+
+```
+Status values:
+- 'starting': Pipeline initializing
+- 'success': All stages completed successfully
+- 'failed': One or more stages failed
+
+Current stage tracking:
+- 'downloading_embeddings'
+- 'creating_rgb'
+- 'creating_pyramids'
+- 'creating_faiss'
+- 'complete' (or 'exception'/'timeout' on error)
+```
+
+Check status via:
+```bash
+curl http://localhost:8001/api/operations/pipeline-status/{viewport_name}
+```
+
+Response includes:
+```json
+{
+  "status": "success",
+  "current_stage": "complete",
+  "error": null
+}
 ```
 
 ## API Reference
@@ -414,15 +521,20 @@ Set the active viewport first, then run pipeline scripts.
 
 Typical processing times on standard hardware:
 
-| Stage | Time (per year) |
-|-------|-----------------|
-| Download embeddings | 5-15 min |
-| Create RGB | 2-5 min |
-| Build pyramids | 5-10 min |
-| Create FAISS index | 5-15 min |
-| **Total** | **17-45 min** |
+| Stage | Time (per year) | Notes |
+|-------|-----------------|-------|
+| Download embeddings | 5-15 min | All years download in parallel |
+| Create RGB | 2-5 min | All years process in parallel |
+| Build pyramids | 5-10 min | All years process in parallel |
+| Create FAISS index | 5-15 min | All years process in parallel |
+| **Total** | **17-45 min** | Same time for 1 year or 8 years |
 
-For multiple years (2017-2024), processing runs sequentially through the pipeline.
+**Parallel Processing**: Multiple years are downloaded and processed concurrently. The total time is approximately the same whether you request 1 year or 8 years (limited by the slowest stage).
+
+**Incremental Availability**: You don't need to wait for all years - features become available as each year completes:
+- Viewer available after first year completes Stage 3 (pyramids)
+- Labeling available after first year completes Stage 4 (FAISS)
+- UMAP available once computed (typically ~1-2 min)
 
 ## License
 
