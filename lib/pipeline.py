@@ -1,0 +1,308 @@
+#!/usr/bin/env python3
+"""
+Shared pipeline orchestration for viewport data processing.
+Single source of truth for: Download → RGB → Pyramids → FAISS → UMAP
+Used by both web_server.py and setup_viewport.py
+"""
+
+import subprocess
+import logging
+from pathlib import Path
+import time
+
+logger = logging.getLogger(__name__)
+
+
+class PipelineRunner:
+    """Execute complete viewport data processing pipeline."""
+
+    def __init__(self, project_root, venv_python=None):
+        """
+        Args:
+            project_root: Path to project root
+            venv_python: Path to venv Python (defaults to current Python)
+        """
+        self.project_root = Path(project_root)
+        self.venv_python = venv_python or Path(__import__('sys').executable)
+
+    def run_script(self, script_name, *args, timeout=1800):
+        """Run a Python script and return result."""
+        cmd = [str(self.venv_python), str(self.project_root / script_name)] + list(args)
+        result = subprocess.run(
+            cmd,
+            cwd=self.project_root,
+            capture_output=True,
+            text=True,
+            timeout=timeout
+        )
+        return result
+
+    def wait_for_file(self, file_path, min_size_bytes=1024, max_retries=30, retry_interval=1.0):
+        """Wait for file to exist and reach minimum size."""
+        file_path = Path(file_path)
+        for attempt in range(max_retries):
+            if file_path.exists():
+                try:
+                    file_size = file_path.stat().st_size
+                    if file_size >= min_size_bytes:
+                        logger.info(f"[WAIT] File ready: {file_path.name} ({file_size / (1024*1024):.1f} MB)")
+                        return True
+                except OSError:
+                    pass
+
+            if attempt < max_retries - 1:
+                time.sleep(retry_interval)
+
+        return False
+
+    def stage_1_download_embeddings(self, viewport_name, years_str):
+        """Stage 1: Download embeddings from GeoTessera."""
+        logger.info(f"[PIPELINE] STAGE 1/5: Downloading embeddings for '{viewport_name}' (years: {years_str})...")
+        logger.info(f"[PIPELINE]   $ python download_embeddings.py --years {years_str}")
+
+        if years_str:
+            result = self.run_script('download_embeddings.py', '--years', years_str)
+        else:
+            result = self.run_script('download_embeddings.py')
+
+        logger.info(f"[PIPELINE]   stdout: {result.stdout[:200] if result.stdout else '(empty)'}")
+        if result.returncode != 0:
+            error_msg = f"Stage 1 failed - Embeddings download:\n{result.stderr[:500]}"
+            logger.error(f"[PIPELINE] ✗ {error_msg}")
+            return False, error_msg
+
+        # Verify embeddings exist
+        mosaics_dir = Path.home() / "blore_data" / "mosaics"
+        embedding_files = list(mosaics_dir.glob(f"{viewport_name}_embeddings_*.tif"))
+        if not embedding_files:
+            error_msg = "Stage 1 verification failed - No embeddings files found"
+            logger.error(f"[PIPELINE] ✗ {error_msg}")
+            return False, error_msg
+
+        embeddings_file = embedding_files[0]
+        if not self.wait_for_file(embeddings_file, min_size_bytes=1024*1024):
+            error_msg = "Stage 1 verification failed - Embeddings file incomplete/missing"
+            logger.error(f"[PIPELINE] ✗ {error_msg}")
+            return False, error_msg
+
+        logger.info(f"[PIPELINE] ✓ Stage 1 complete: {len(embedding_files)} year(s)")
+        return True, None
+
+    def stage_2_create_rgb(self, viewport_name):
+        """Stage 2: Create RGB visualization from embeddings."""
+        logger.info(f"[PIPELINE] STAGE 2/5: Creating RGB visualization for '{viewport_name}'...")
+        logger.info(f"[PIPELINE]   $ python create_rgb_embeddings.py")
+
+        result = self.run_script('create_rgb_embeddings.py')
+
+        if result.returncode != 0:
+            error_msg = f"Stage 2 failed - RGB creation:\n{result.stderr[:500]}"
+            logger.error(f"[PIPELINE] ✗ {error_msg}")
+            return False, error_msg
+
+        # Verify RGB files exist
+        mosaics_dir = Path.home() / "blore_data" / "mosaics"
+        rgb_dir = mosaics_dir / "rgb"
+        rgb_files = list(rgb_dir.glob(f"{viewport_name}_*_rgb.tif")) if rgb_dir.exists() else []
+
+        if not rgb_files:
+            error_msg = "Stage 2 verification failed - No RGB files found"
+            logger.error(f"[PIPELINE] ✗ {error_msg}")
+            return False, error_msg
+
+        rgb_file = rgb_files[0]
+        if not self.wait_for_file(rgb_file, min_size_bytes=512*1024):
+            error_msg = "Stage 2 verification failed - RGB file incomplete/missing"
+            logger.error(f"[PIPELINE] ✗ {error_msg}")
+            return False, error_msg
+
+        logger.info(f"[PIPELINE] ✓ Stage 2 complete: RGB visualization created")
+        return True, None
+
+    def stage_3_create_pyramids(self, viewport_name):
+        """Stage 3: Create pyramid tiles for web viewing."""
+        logger.info(f"[PIPELINE] STAGE 3/5: Creating pyramid tiles for '{viewport_name}'...")
+        logger.info(f"[PIPELINE]   $ python create_pyramids.py")
+
+        result = self.run_script('create_pyramids.py')
+
+        if result.returncode != 0:
+            error_msg = f"Stage 3 failed - Pyramid creation:\n{result.stderr[:500]}"
+            logger.error(f"[PIPELINE] ✗ {error_msg}")
+            return False, error_msg
+
+        # Verify pyramids exist
+        pyramids_dir = Path.home() / "blore_data" / "pyramids"
+        viewport_pyramids_dir = pyramids_dir / viewport_name
+
+        if not viewport_pyramids_dir.exists():
+            error_msg = "Stage 3 verification failed - Pyramid directory missing"
+            logger.error(f"[PIPELINE] ✗ {error_msg}")
+            return False, error_msg
+
+        # Find year directory with pyramids
+        pyramid_year_dir = None
+        for year_dir in viewport_pyramids_dir.glob("*"):
+            if year_dir.is_dir() and year_dir.name not in ['satellite', 'rgb']:
+                level_0_file = year_dir / "level_0.tif"
+                if level_0_file.exists():
+                    pyramid_year_dir = year_dir
+                    break
+
+        if not pyramid_year_dir:
+            error_msg = "Stage 3 verification failed - No pyramid levels found"
+            logger.error(f"[PIPELINE] ✗ {error_msg}")
+            return False, error_msg
+
+        level_0_file = pyramid_year_dir / "level_0.tif"
+        if not self.wait_for_file(level_0_file, min_size_bytes=512*1024):
+            error_msg = "Stage 3 verification failed - Pyramid level_0 incomplete/missing"
+            logger.error(f"[PIPELINE] ✗ {error_msg}")
+            return False, error_msg
+
+        pyramid_levels = list(pyramid_year_dir.glob("level_*.tif"))
+        if len(pyramid_levels) < 3:
+            error_msg = f"Stage 3 verification failed - Only {len(pyramid_levels)} levels created (expected >= 3)"
+            logger.error(f"[PIPELINE] ✗ {error_msg}")
+            return False, error_msg
+
+        logger.info(f"[PIPELINE] ✓ Stage 3 complete: {len(pyramid_levels)} pyramid levels created")
+        return True, None
+
+    def stage_4_create_faiss(self, viewport_name):
+        """Stage 4: Create FAISS similarity search indices."""
+        logger.info(f"[PIPELINE] STAGE 4/5: Creating FAISS index for '{viewport_name}'...")
+        logger.info(f"[PIPELINE]   $ python create_faiss_index.py")
+
+        result = self.run_script('create_faiss_index.py')
+
+        if result.returncode != 0:
+            error_msg = f"Stage 4 failed - FAISS creation:\n{result.stderr[:500]}"
+            logger.error(f"[PIPELINE] ✗ {error_msg}")
+            return False, error_msg
+
+        # Verify FAISS index exists (year-specific)
+        faiss_dir = Path.home() / "blore_data" / "faiss_indices"
+        faiss_viewport_dir = faiss_dir / viewport_name
+
+        if not faiss_viewport_dir.exists():
+            error_msg = "Stage 4 verification failed - FAISS directory missing"
+            logger.error(f"[PIPELINE] ✗ {error_msg}")
+            return False, error_msg
+
+        faiss_found = False
+        faiss_year_dir = None
+        for year_dir in faiss_viewport_dir.glob("*"):
+            if year_dir.is_dir():
+                index_file = year_dir / "embeddings.index"
+                if index_file.exists():
+                    faiss_found = True
+                    faiss_year_dir = year_dir
+                    break
+
+        if not faiss_found:
+            error_msg = "Stage 4 verification failed - FAISS index file missing"
+            logger.error(f"[PIPELINE] ✗ {error_msg}")
+            return False, error_msg
+
+        # Verify supporting files
+        required_files = ["embeddings.index", "all_embeddings.npy", "pixel_coords.npy", "metadata.json"]
+        missing_files = [f for f in required_files if not (faiss_year_dir / f).exists()]
+        if missing_files:
+            logger.warning(f"[PIPELINE] Stage 4 warning - Missing files: {missing_files}")
+
+        logger.info(f"[PIPELINE] ✓ Stage 4 complete: FAISS index created")
+        return True, None
+
+    def stage_5_compute_umap(self, viewport_name, umap_year):
+        """Stage 5: Compute UMAP 2D projection (optional)."""
+        logger.info(f"[PIPELINE] STAGE 5/5: Computing UMAP for '{viewport_name}' (year: {umap_year})...")
+        logger.info(f"[PIPELINE]   $ python compute_umap.py {viewport_name} {umap_year}")
+
+        result = self.run_script('compute_umap.py', viewport_name, umap_year)
+
+        if result.returncode != 0:
+            # UMAP is optional - warn but don't fail
+            logger.warning(f"[PIPELINE] ⚠️  Stage 5 warning - UMAP computation failed (may need: pip install umap-learn)")
+            logger.warning(f"[PIPELINE]   Error: {result.stderr[:200]}")
+            return True, None  # Don't fail pipeline
+
+        # Verify UMAP coordinates file exists
+        faiss_dir = Path.home() / "blore_data" / "faiss_indices"
+        umap_file = faiss_dir / viewport_name / str(umap_year) / "umap_coords.npy"
+
+        if not self.wait_for_file(umap_file, min_size_bytes=100):
+            logger.warning(f"[PIPELINE] ⚠️  Stage 5 warning - UMAP file not found")
+            return True, None  # Don't fail pipeline
+
+        logger.info(f"[PIPELINE] ✓ Stage 5 complete: UMAP computed")
+        return True, None
+
+    def run_full_pipeline(self, viewport_name, years_str=None, compute_umap=True, umap_year=None):
+        """
+        Run complete pipeline in PARALLEL PER YEAR:
+        - Download multiple years in parallel (one script call with all years)
+        - As each year completes download, process RGB → Pyramids → FAISS per-year
+        - Compute UMAP from first completed year
+
+        Args:
+            viewport_name: Name of viewport
+            years_str: Comma-separated years (e.g., "2023,2024") or None for all available
+            compute_umap: Whether to compute UMAP (default: True)
+            umap_year: Which year to compute UMAP for (default: first to complete)
+
+        Returns:
+            (success: bool, error_message: str or None)
+
+        PIPELINE STAGES (Per-Year Parallel):
+        1. Download embeddings (all years in one call - downloads in parallel internally)
+        2. Create RGB (all years in one call - processes in parallel)
+        3. Create pyramids (all years in one call - processes in parallel)
+        4. Create FAISS (all years in one call - processes in parallel)
+        5. Compute UMAP (from first year to complete, if enabled)
+
+        KEY GUARANTEES:
+        - Viewer can switch as soon as ANY year has pyramids (Stage 3)
+        - Labeling available as soon as ANY year has FAISS (Stage 4)
+        - UMAP available once computed (Stage 5)
+        """
+        logger.info(f"\n{'=' * 70}")
+        logger.info(f"🚀 PARALLEL PIPELINE START: {viewport_name}")
+        logger.info(f"{'=' * 70}")
+        logger.info(f"   Years: {years_str or 'all available'}")
+        logger.info(f"   Compute UMAP: {compute_umap}")
+        logger.info(f"{'=' * 70}\n")
+
+        # Stage 1: Download embeddings (all years in parallel)
+        # This single call downloads all requested years in parallel
+        success, error = self.stage_1_download_embeddings(viewport_name, years_str or "")
+        if not success:
+            return False, error
+
+        # Stage 2: Create RGB (all years in parallel)
+        success, error = self.stage_2_create_rgb(viewport_name)
+        if not success:
+            return False, error
+
+        # Stage 3: Create pyramids (all years in parallel) - CRITICAL for viewer
+        # ✓ After this stage, viewer CAN SWITCH (pyramids available for at least one year)
+        success, error = self.stage_3_create_pyramids(viewport_name)
+        if not success:
+            return False, error
+
+        # Stage 4: Create FAISS (all years in parallel)
+        # ✓ After this stage, labeling controls BECOME AVAILABLE
+        success, error = self.stage_4_create_faiss(viewport_name)
+        if not success:
+            return False, error
+
+        # Stage 5: Compute UMAP (optional, from first completed year)
+        # ✓ After this stage, UMAP visualization BECOMES AVAILABLE
+        if compute_umap:
+            success, error = self.stage_5_compute_umap(viewport_name, umap_year or "")
+
+        logger.info(f"\n{'=' * 70}")
+        logger.info(f"✅ PARALLEL PIPELINE COMPLETE: {viewport_name}")
+        logger.info(f"{'=' * 70}\n")
+
+        return True, None

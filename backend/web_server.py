@@ -29,6 +29,7 @@ from lib.viewport_utils import (
     read_viewport_file
 )
 from lib.viewport_writer import set_active_viewport, create_viewport_from_bounds
+from lib.pipeline import PipelineRunner
 
 # Configure logging
 logging.basicConfig(
@@ -102,15 +103,25 @@ def wait_for_file(file_path, min_size_bytes=1024, max_retries=30, retry_interval
     return False
 
 def check_viewport_mosaics_exist(viewport_name):
-    """Check if embeddings mosaic exists for a viewport (satellite uses Esri/Bing imagery)."""
-    embeddings_file = MOSAICS_DIR / f"{viewport_name}_embeddings_2024.tif"
-    return embeddings_file.exists()
+    """Check if embeddings mosaic exists for a viewport (checks for ANY year available)."""
+    if not MOSAICS_DIR.exists():
+        return False
+    # Check if any embeddings file exists for this viewport
+    embeddings_files = list(MOSAICS_DIR.glob(f"{viewport_name}_embeddings_*.tif"))
+    return len(embeddings_files) > 0
 
 def check_viewport_pyramids_exist(viewport_name):
-    """Check if pyramid tiles exist for a viewport (embeddings only, satellite uses Esri/Bing)."""
+    """Check if pyramid tiles exist for a viewport (checks for ANY year available)."""
     viewport_pyramids_dir = PYRAMIDS_DIR / viewport_name
-    pyramid_file = viewport_pyramids_dir / "2024" / "level_0.tif"
-    return pyramid_file.exists()
+    if not viewport_pyramids_dir.exists():
+        return False
+    # Check if any year directory has pyramid level_0.tif
+    for year_dir in viewport_pyramids_dir.glob("*"):
+        if year_dir.is_dir() and year_dir.name not in ['satellite', 'rgb']:
+            level_0_file = year_dir / "level_0.tif"
+            if level_0_file.exists():
+                return True
+    return False
 
 def get_viewport_data_size(viewport_name, active_viewport_name):
     """Calculate total data size for a viewport in MB."""
@@ -140,13 +151,16 @@ def get_viewport_data_size(viewport_name, active_viewport_name):
     return round(total_size / (1024 * 1024), 1)
 
 def trigger_data_download_and_processing(viewport_name, years=None):
-    """Download embeddings and run full preprocessing pipeline:
-    1. download_embeddings.py - Download GeoTessera embeddings (clipped to viewport)
-    2. create_rgb_embeddings.py - Create RGB visualization from first 3 bands (clipped)
-    3. create_pyramids.py - Create pyramid tiles for Tessera and RGB
-    4. create_faiss_index.py - Create FAISS index for similarity search (clipped)
+    """Download embeddings and run full preprocessing pipeline using shared PipelineRunner.
 
-    Satellite data uses Bing/Esri imagery (not downloaded locally).
+    Pipeline stages:
+    1. download_embeddings.py - Download GeoTessera embeddings
+    2. create_rgb_embeddings.py - Create RGB visualization
+    3. create_pyramids.py - Create pyramid tiles (CRITICAL for viewer)
+    4. create_faiss_index.py - Create FAISS similarity search index
+    5. (Optional) compute_umap.py - Compute 2D UMAP projection
+
+    Uses single source of truth: lib.pipeline.PipelineRunner
     """
     operation_id = f"{viewport_name}_full_pipeline"
 
@@ -155,157 +169,35 @@ def trigger_data_download_and_processing(viewport_name, years=None):
             with tasks_lock:
                 tasks[operation_id] = {'status': 'starting', 'current_stage': 'initialization', 'error': None}
 
-            project_root = Path(__file__).parent.parent
-            logger.info(f"[PIPELINE] Starting preprocessing for viewport '{viewport_name}' (years: {years})...")
-
             # Set this viewport as active before processing
             logger.info(f"[PIPELINE] Setting {viewport_name} as active viewport...")
             set_active_viewport(viewport_name)
 
-            # ===== STAGE 1: Download embeddings =====
-            with tasks_lock:
-                tasks[operation_id]['current_stage'] = 'downloading_embeddings'
+            # Create pipeline runner and execute
+            project_root = Path(__file__).parent.parent
+            runner = PipelineRunner(project_root, VENV_PYTHON)
 
-            if years:
-                years_str = ','.join(str(y) for y in years)
-                logger.info(f"[PIPELINE] STAGE 1/4: Downloading embeddings for '{viewport_name}' (years: {years_str})...")
-                logger.info(f"[PIPELINE]   Calling: python download_embeddings.py --years {years_str}")
-                result = run_script('download_embeddings.py', '--years', years_str, timeout=1800)
-                logger.info(f"[PIPELINE]   Script stdout: {result.stdout[:500] if result.stdout else '(empty)'}")
-                logger.info(f"[PIPELINE]   Script stderr: {result.stderr[:500] if result.stderr else '(empty)'}")
+            # Convert years list to comma-separated string
+            years_str = ','.join(str(y) for y in years) if years else None
+
+            # Run the full pipeline (stages 1-4, optional UMAP)
+            # Note: UMAP is only computed if explicitly enabled; web UI doesn't compute it
+            success, error = runner.run_full_pipeline(
+                viewport_name=viewport_name,
+                years_str=years_str,
+                compute_umap=False  # Web UI doesn't compute UMAP; it's optional for CLI
+            )
+
+            if success:
+                logger.info(f"[PIPELINE] ✓✓✓ SUCCESS: All stages complete for viewport '{viewport_name}' ✓✓✓")
+                with tasks_lock:
+                    tasks[operation_id] = {'status': 'success', 'current_stage': 'complete', 'error': None}
             else:
-                logger.info(f"[PIPELINE] STAGE 1/4: Downloading embeddings for '{viewport_name}' (all available years)...")
-                result = run_script('download_embeddings.py', timeout=1800)
-            if result.returncode != 0:
-                error_msg = f"Stage 1 failed - Embeddings download:\n{result.stderr}"
-                logger.error(f"[PIPELINE] ✗ {error_msg}")
                 with tasks_lock:
-                    tasks[operation_id] = {'status': 'failed', 'current_stage': 'downloading_embeddings', 'error': error_msg}
-                return
-
-            # Verify embeddings file exists (check for any year)
-            embedding_files = list(MOSAICS_DIR.glob(f"{viewport_name}_embeddings_*.tif"))
-            if not embedding_files:
-                logger.error(f"[PIPELINE] ✗ Stage 1 verification failed - No embeddings files found")
-                return
-            embeddings_file = embedding_files[0]  # Use first found embeddings file
-            if not wait_for_file(embeddings_file, min_size_bytes=1024*1024):  # At least 1 MB
-                logger.error(f"[PIPELINE] ✗ Stage 1 verification failed - Embeddings file missing/incomplete")
-                return
-            logger.info(f"[PIPELINE] ✓ Stage 1 complete: Embeddings downloaded for {len(embedding_files)} year(s) ({embeddings_file.stat().st_size / (1024*1024):.1f} MB per file)")
-
-            # ===== STAGE 2: Create RGB visualization =====
-            with tasks_lock:
-                tasks[operation_id]['current_stage'] = 'creating_rgb'
-
-            logger.info(f"[PIPELINE] STAGE 2/4: Creating RGB visualization for '{viewport_name}'...")
-            result = run_script('create_rgb_embeddings.py', timeout=1800)
-            if result.returncode != 0:
-                error_msg = f"Stage 2 failed - RGB creation:\n{result.stderr}"
-                logger.error(f"[PIPELINE] ✗ {error_msg}")
-                with tasks_lock:
-                    tasks[operation_id] = {'status': 'failed', 'current_stage': 'creating_rgb', 'error': error_msg}
-                return
-
-            # Verify RGB file exists and is properly written (check for any year)
-            rgb_dir = MOSAICS_DIR / "rgb"
-            rgb_files = list(rgb_dir.glob(f"{viewport_name}_*_rgb.tif")) if rgb_dir.exists() else []
-            if not rgb_files:
-                logger.error(f"[PIPELINE] ✗ Stage 2 verification failed - No RGB files found")
-                return
-            rgb_file = rgb_files[0]  # Use first found RGB file
-            if not wait_for_file(rgb_file, min_size_bytes=512*1024):  # At least 512 KB
-                logger.error(f"[PIPELINE] ✗ Stage 2 verification failed - RGB file missing/incomplete")
-                return
-            logger.info(f"[PIPELINE] ✓ Stage 2 complete: RGB visualization created ({rgb_file.stat().st_size / (1024*1024):.1f} MB)")
-
-            # ===== STAGE 3: Create pyramids =====
-            with tasks_lock:
-                tasks[operation_id]['current_stage'] = 'creating_pyramids'
-
-            logger.info(f"[PIPELINE] STAGE 3/4: Creating pyramids for '{viewport_name}'...")
-            result = run_script('create_pyramids.py', timeout=1800)
-            if result.returncode != 0:
-                error_msg = f"Stage 3 failed - Pyramid creation:\n{result.stderr}"
-                logger.error(f"[PIPELINE] ✗ {error_msg}")
-                with tasks_lock:
-                    tasks[operation_id] = {'status': 'failed', 'current_stage': 'creating_pyramids', 'error': error_msg}
-                return
-
-            # Verify pyramid files exist (check for any year)
-            viewport_pyramids_dir = PYRAMIDS_DIR / viewport_name
-            if not viewport_pyramids_dir.exists():
-                logger.error(f"[PIPELINE] ✗ Stage 3 verification failed - Pyramid directory missing")
-                return
-
-            # Find any year directory with pyramids
-            pyramid_year_dir = None
-            for year_dir in viewport_pyramids_dir.glob("*"):
-                if year_dir.is_dir() and year_dir.name not in ['satellite', 'rgb']:
-                    level_0_file = year_dir / "level_0.tif"
-                    if level_0_file.exists():
-                        pyramid_year_dir = year_dir
-                        break
-
-            if not pyramid_year_dir:
-                logger.error(f"[PIPELINE] ✗ Stage 3 verification failed - No pyramid levels found")
-                return
-
-            level_0_file = pyramid_year_dir / "level_0.tif"
-            if not wait_for_file(level_0_file, min_size_bytes=512*1024):  # At least 512 KB
-                logger.error(f"[PIPELINE] ✗ Stage 3 verification failed - Pyramid level_0 missing/incomplete")
-                return
-
-            # Check that at least 3 pyramid levels were created
-            pyramid_levels = list(pyramid_year_dir.glob("level_*.tif"))
-            if len(pyramid_levels) < 3:
-                logger.error(f"[PIPELINE] ✗ Stage 3 verification failed - Only {len(pyramid_levels)} pyramid levels created (expected >= 3)")
-                return
-            logger.info(f"[PIPELINE] ✓ Stage 3 complete: Pyramids created ({len(pyramid_levels)} levels for {pyramid_year_dir.name})")
-
-            # ===== STAGE 4: Create FAISS index =====
-            with tasks_lock:
-                tasks[operation_id]['current_stage'] = 'creating_faiss'
-
-            logger.info(f"[PIPELINE] STAGE 4/4: Creating FAISS index for '{viewport_name}'...")
-            result = run_script('create_faiss_index.py', timeout=1800)
-            if result.returncode != 0:
-                error_msg = f"Stage 4 failed - FAISS index creation:\n{result.stderr}"
-                logger.error(f"[PIPELINE] ✗ {error_msg}")
-                with tasks_lock:
-                    tasks[operation_id] = {'status': 'failed', 'current_stage': 'creating_faiss', 'error': error_msg}
-                return
-
-            # Verify FAISS index files exist (year-specific - look for any year with FAISS)
-            faiss_viewport_dir = FAISS_INDICES_DIR / viewport_name
-            faiss_found = False
-            for year_dir in faiss_viewport_dir.glob("*"):
-                if year_dir.is_dir():
-                    faiss_index_file = year_dir / "embeddings.index"
-                    if faiss_index_file.exists():
-                        faiss_found = True
-                        faiss_dir = year_dir
-                        logger.info(f"[PIPELINE] ✓ Stage 4 complete: FAISS index created for {year_dir.name}")
-                        break
-
-            if not faiss_found:
-                logger.error(f"[PIPELINE] ✗ Stage 4 verification failed - FAISS index missing/incomplete")
-                return
-
-            # Check for supporting FAISS files
-            required_files = ["embeddings.index", "all_embeddings.npy", "pixel_coords.npy", "metadata.json"]
-            missing_files = [f for f in required_files if not (faiss_dir / f).exists()]
-            if missing_files:
-                logger.warning(f"[PIPELINE] Stage 4 warning - Missing FAISS files: {missing_files}")
-            else:
-                logger.info(f"[PIPELINE] ✓ Stage 4 complete: All FAISS index files created")
-
-            logger.info(f"[PIPELINE] ✓✓✓ SUCCESS: All 4 stages complete for viewport '{viewport_name}' ✓✓✓")
-            with tasks_lock:
-                tasks[operation_id] = {'status': 'success', 'current_stage': 'complete', 'error': None}
+                    tasks[operation_id] = {'status': 'failed', 'current_stage': 'pipeline_error', 'error': error}
 
         except subprocess.TimeoutExpired:
-            error_msg = f"Timeout during preprocessing"
+            error_msg = "Timeout during preprocessing"
             logger.error(f"[PIPELINE] ✗ {error_msg} for '{viewport_name}'")
             with tasks_lock:
                 tasks[operation_id] = {'status': 'failed', 'current_stage': 'timeout', 'error': error_msg}
@@ -370,7 +262,7 @@ def api_current_viewport():
 
 @app.route('/api/viewports/switch', methods=['POST'])
 def api_switch_viewport():
-    """Switch to a different viewport and ensure data and FAISS index exist."""
+    """Switch to a different viewport and report processing status (monitoring only, no process initiation)."""
     try:
         data = request.get_json()
         viewport_name = data.get('name')
@@ -389,68 +281,45 @@ def api_switch_viewport():
             'message': f'Switched to viewport: {viewport_name}',
             'viewport': viewport,
             'data_ready': True,
+            'pyramids_ready': True,
             'faiss_ready': False
         }
 
-        # Step 1: Check if mosaics exist
+        # Check if full pipeline is running for this viewport
+        operation_id = f"{viewport_name}_full_pipeline"
+        pipeline_status = None
+        current_stage = None
+        with tasks_lock:
+            if operation_id in tasks:
+                pipeline_status = tasks[operation_id].get('status')
+                current_stage = tasks[operation_id].get('current_stage')
+                logger.info(f"[MONITOR] Pipeline for '{viewport_name}': status={pipeline_status}, stage={current_stage}")
+
+        # Monitor data availability (no initiation)
         if not check_viewport_mosaics_exist(viewport_name):
-            logger.info(f"[DATA] Mosaics not found for viewport '{viewport_name}'. Download should have been triggered during creation.")
             response_data['data_ready'] = False
-            response_data['message'] += f'\nDownloading data and creating pyramids (this may take 15-30 minutes)...'
+            if pipeline_status:
+                response_data['message'] += f'\nPipeline processing (current stage: {current_stage}). This may take 15-30 minutes...'
+            else:
+                response_data['message'] += '\nData not available. No processing was initiated at viewport creation.'
 
-        # Step 2: Check if pyramids exist
+        # Monitor pyramid availability (no initiation)
         if not check_viewport_pyramids_exist(viewport_name):
-            if response_data['data_ready']:
-                logger.info(f"[PYRAMIDS] Pyramids not found for viewport '{viewport_name}', triggering creation...")
-                # If data is ready but pyramids aren't, trigger pyramid creation
-                def create_pyramids_in_background():
-                    try:
-                        logger.info(f"[PYRAMIDS] Starting pyramid creation for '{viewport_name}'...")
-                        result = run_script('create_pyramids.py', timeout=1800)
-                        if result.returncode == 0:
-                            logger.info(f"[PYRAMIDS] ✓ Pyramid creation complete for '{viewport_name}'")
-                        else:
-                            logger.error(f"[PYRAMIDS] ✗ Pyramid creation failed for '{viewport_name}':\n{result.stderr}")
-                    except subprocess.TimeoutExpired:
-                        logger.error(f"[PYRAMIDS] ✗ Pyramid creation timeout for '{viewport_name}'")
-                    except Exception as e:
-                        logger.error(f"[PYRAMIDS] ✗ Error creating pyramids for '{viewport_name}': {e}")
+            response_data['pyramids_ready'] = False
+            if not pipeline_status:
+                response_data['message'] += '\nPyramids not ready. Waiting for data to complete...'
 
-                thread = threading.Thread(target=create_pyramids_in_background, daemon=True)
-                thread.start()
-                response_data['message'] += '\nCreating pyramids (this may take 10-15 minutes)...'
-
-        # Step 3: Check if FAISS index exists (only if data and pyramids are ready)
+        # Monitor FAISS availability (no initiation)
         faiss_dir = FAISS_INDICES_DIR / viewport_name
         faiss_index_file = faiss_dir / 'all_embeddings.npy'
 
-        if response_data['data_ready'] and not faiss_index_file.exists():
-            logger.info(f"[FAISS] Index not found for viewport '{viewport_name}', triggering creation...")
-
-            # Trigger FAISS index creation in background thread
-            def create_faiss_in_background():
-                try:
-                    logger.info(f"[FAISS] Starting index creation for '{viewport_name}'...")
-                    result = run_script('create_faiss_index.py', timeout=600)
-                    if result.returncode == 0:
-                        logger.info(f"[FAISS] ✓ Index creation complete for '{viewport_name}'")
-                    else:
-                        logger.error(f"[FAISS] ✗ Index creation failed for '{viewport_name}':\n{result.stderr}")
-                except subprocess.TimeoutExpired:
-                    logger.error(f"[FAISS] ✗ Index creation timeout for '{viewport_name}'")
-                except Exception as e:
-                    logger.error(f"[FAISS] ✗ Error creating index for '{viewport_name}': {e}")
-
-            thread = threading.Thread(target=create_faiss_in_background, daemon=True)
-            thread.start()
-            response_data['message'] += '\nCreating FAISS index for similarity search (this may take 2-5 minutes)...'
-            response_data['faiss_ready'] = False
-        elif faiss_index_file.exists():
-            logger.info(f"[FAISS] ✓ Index ready for viewport '{viewport_name}'")
+        if faiss_index_file.exists():
             response_data['faiss_ready'] = True
+            logger.info(f"[MONITOR] FAISS ready for '{viewport_name}'")
         else:
-            logger.info(f"[FAISS] Waiting for data and pyramids before creating index for '{viewport_name}'")
             response_data['faiss_ready'] = False
+            if pipeline_status:
+                response_data['message'] += '\nWaiting for FAISS index (created during pipeline processing)...'
 
         return jsonify(response_data)
     except FileNotFoundError:

@@ -2514,11 +2514,11 @@
                     this.ctx.strokeStyle = '#FF8C00';
                     this.ctx.lineWidth = 2;
 
-                    // Triangle pointing down to highlighted location
+                    // Triangle pointing down - TIP at the highlighted point
                     this.ctx.beginPath();
-                    this.ctx.moveTo(canvasX - 8, canvasY - 10);
-                    this.ctx.lineTo(canvasX + 8, canvasY - 10);
-                    this.ctx.lineTo(canvasX, canvasY + 18);
+                    this.ctx.moveTo(canvasX - 10, canvasY - 20);  // Top left
+                    this.ctx.lineTo(canvasX + 10, canvasY - 20);  // Top right
+                    this.ctx.lineTo(canvasX, canvasY);            // Bottom tip (exactly at point)
                     this.ctx.closePath();
                     this.ctx.fill();
                     this.ctx.stroke();
@@ -2840,7 +2840,15 @@
                     umapCanvasLayer = new UMAPCanvasLayer(umapData);
                     console.log(`[UMAP] Adding canvas layer to map...`);
                     umapCanvasLayer.addTo(maps.umap);
-                    console.log(`✓ UMAP rendered: ${data.num_points} points (all grey on startup)`);
+
+                    // Apply labels to UMAP if they were loaded before UMAP
+                    if (savedLabels && savedLabels.length > 0) {
+                        console.log(`[UMAP] Applying ${savedLabels.length} labels to UMAP colors...`);
+                        updateUMAPColorsFromLabels();
+                        console.log(`✓ UMAP rendered: ${data.num_points} points (colored by labels)`);
+                    } else {
+                        console.log(`✓ UMAP rendered: ${data.num_points} points (all grey)`);
+                    }
                 } else {
                     console.error(`[UMAP] Error: ${data.error}`);
                 }
