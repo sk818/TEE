@@ -75,18 +75,36 @@ def main():
     if not run_command(cmd, f"Download embeddings for {args.years}"):
         return 1
 
-    # Step 2: Create FAISS indexes
+    # Step 2: Create RGB visualizations
     logger.info(f"\n{'=' * 70}")
-    logger.info(f"STEP 2: Create FAISS Indexes")
+    logger.info(f"STEP 2: Create RGB Visualizations")
+    logger.info(f"{'=' * 70}")
+
+    cmd = ['./venv/bin/python3', 'create_rgb_embeddings.py']
+    if not run_command(cmd, f"Create RGB visualizations for all downloaded years"):
+        return 1
+
+    # Step 3: Create pyramids (CRITICAL for viewer to work)
+    logger.info(f"\n{'=' * 70}")
+    logger.info(f"STEP 3: Create Pyramid Tiles")
+    logger.info(f"{'=' * 70}")
+
+    cmd = ['./venv/bin/python3', 'create_pyramids.py']
+    if not run_command(cmd, f"Create pyramid tiles for web viewing"):
+        return 1
+
+    # Step 4: Create FAISS indexes
+    logger.info(f"\n{'=' * 70}")
+    logger.info(f"STEP 4: Create FAISS Indexes")
     logger.info(f"{'=' * 70}")
 
     cmd = ['./venv/bin/python3', 'create_faiss_index.py']
     if not run_command(cmd, f"Create FAISS indexes for all downloaded years"):
         return 1
 
-    # Step 3: Compute UMAP
+    # Step 5: Compute UMAP
     logger.info(f"\n{'=' * 70}")
-    logger.info(f"STEP 3: Compute UMAP")
+    logger.info(f"STEP 5: Compute UMAP")
     logger.info(f"{'=' * 70}")
 
     # First, get viewport name from active viewport
@@ -110,6 +128,7 @@ def main():
     logger.info(f"\n📊 Results:")
     logger.info(f"   Viewport: {viewport_name}")
     logger.info(f"   Years downloaded: {args.years}")
+    logger.info(f"   Pyramids: Created for web viewing")
     logger.info(f"   FAISS indexes: Created for each year")
     logger.info(f"   UMAP: Computed for {umap_year}")
     logger.info(f"\n🚀 Next steps:")
