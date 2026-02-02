@@ -2812,13 +2812,7 @@
                     umapCanvasLayer = new UMAPCanvasLayer(umapData);
                     console.log(`[UMAP] Adding canvas layer to map...`);
                     umapCanvasLayer.addTo(maps.umap);
-                    console.log(`✓ UMAP rendered: ${data.num_points} points`);
-                    // Apply saved labels to UMAP visualization
-                    if (savedLabels && savedLabels.length > 0) {
-                        umapCanvasLayer.updateLabelColors(savedLabels);
-                        console.log(`[UMAP] Applied ${savedLabels.length} labels to visualization`);
-                    }
-                    umapCanvasLayer.loadRGBColors().catch(() => {});
+                    console.log(`✓ UMAP rendered: ${data.num_points} points (all grey on startup)`);
                 } else {
                     console.error(`[UMAP] Error: ${data.error}`);
                 }
