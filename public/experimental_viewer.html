@@ -2507,15 +2507,29 @@
                     this.ctx.fill();
                 }
 
-                // Draw highlight circle if a point is selected
+                // Draw pushpin marker if a point is selected
                 if (this.highlightedPoint) {
                     const canvasX = padding + (this.highlightedPoint.x - this.xMin) * scaleX;
                     const canvasY = size.y - (padding + (this.highlightedPoint.y - this.yMin) * scaleY);
 
-                    this.ctx.strokeStyle = '#FFD700';
-                    this.ctx.lineWidth = 3;
+                    // Draw pushpin: circle head + triangle point
+                    this.ctx.fillStyle = '#FFD700';
+                    this.ctx.strokeStyle = '#FF8C00';
+                    this.ctx.lineWidth = 2;
+
+                    // Circle head (8px radius)
                     this.ctx.beginPath();
                     this.ctx.arc(canvasX, canvasY, 8, 0, 2 * Math.PI);
+                    this.ctx.fill();
+                    this.ctx.stroke();
+
+                    // Triangle point pointing down
+                    this.ctx.beginPath();
+                    this.ctx.moveTo(canvasX, canvasY + 8);
+                    this.ctx.lineTo(canvasX - 6, canvasY + 16);
+                    this.ctx.lineTo(canvasX + 6, canvasY + 16);
+                    this.ctx.closePath();
+                    this.ctx.fill();
                     this.ctx.stroke();
                 }
             }
