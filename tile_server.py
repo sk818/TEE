@@ -18,7 +18,7 @@ CORS(app)
 
 DATA_DIR = Path.home() / "blore_data"
 PYRAMIDS_BASE_DIR = DATA_DIR / "pyramids"
-YEARS = [str(y) for y in range(2017, 2025)] + ['satellite']
+YEARS = [str(y) for y in range(2017, 2026)] + ['satellite']
 
 # Cache for tile readers
 readers = {}
@@ -172,7 +172,7 @@ def health():
                 viewport_name = viewport_dir.name
                 available_maps = []
 
-                # Check for year directories (2017-2024)
+                # Check for year directories (2017-2025)
                 for year in YEARS:
                     if year != 'satellite':
                         year_dir = viewport_dir / year / 'level_0.tif'

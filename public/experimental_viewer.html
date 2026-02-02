@@ -2,7 +2,7 @@
 <html>
 <head>
     <meta charset="utf-8">
-    <title>Experimental Viewer - Persistent Label Overlay</title>
+    <title>Advanced Viewer</title>
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
     <style>
@@ -106,6 +106,7 @@
             bottom: 40px;
             display: grid;
             grid-template-columns: 1fr 1fr 1fr;
+            grid-template-rows: 1fr 1fr;
             gap: 2px;
             background: #1a1a1a;
         }
@@ -363,10 +364,36 @@
                 <div id="coords-text">Lat: 0.000000 | Lon: 0.000000</div>
             </div>
         </div>
+
+        <!-- Panel 4: UMAP Visualization -->
+        <div class="panel">
+            <div class="panel-header" style="background: #4A5568; color: white; padding: 8px; font-weight: 600; font-size: 14px;">
+                <span>UMAP (Embedding Space)</span>
+            </div>
+            <div id="map-umap" class="map" style="cursor: crosshair;"></div>
+        </div>
+
+        <!-- Panel 5: Distance Heatmap -->
+        <div class="panel">
+            <div class="panel-header" style="background: #805AD5; color: white; padding: 8px; font-weight: 600; font-size: 14px;">
+                <span>Temporal Distance Heatmap</span>
+            </div>
+            <div id="map-heatmap" class="map"></div>
+        </div>
+
+        <!-- Panel 6: Second Year Embeddings -->
+        <div class="panel">
+            <div class="panel-header" style="background: #2C5282; color: white; padding: 8px; font-weight: 600; font-size: 14px; display: flex; justify-content: space-between; align-items: center;">
+                <span>Tessera Embeddings</span>
+                <select id="embedding-year-selector-2" style="display: none; margin-left: 10px; padding: 4px 8px; border: 1px solid #555; border-radius: 3px; background: #333; color: #fff; font-size: 13px;">
+                </select>
+            </div>
+            <div id="map-embedding2" class="map" style="cursor: crosshair;"></div>
+        </div>
     </div>
 
     <div id="status">
-        <strong>Experimental Viewer - Persistent Labels:</strong> Click any pixel on the embeddings map (right) to search for similar pixels • Adjust similarity threshold with slider for real-time results • Click "Save Current as Label" to save search results as colored overlay • Toggle visibility with eye icons or use "Toggle All Overlays" button • All maps are synchronized
+        <strong>Advanced Viewer:</strong> Click any pixel on the embeddings map (right) to search for similar pixels • Adjust similarity threshold with slider for real-time results • Click "Save Current as Label" to save search results as colored overlay • Toggle visibility with eye icons or use "Toggle All Overlays" button • All maps are synchronized
     </div>
 
     <!-- Progress Modal -->
@@ -438,6 +465,13 @@
 
         // Map instances
         let maps = {};
+
+        // New state variables for 6-panel viewer
+        let currentEmbeddingYear2 = '2024';  // Second year selector
+        let umapData = null;                  // UMAP coordinates cache
+        let umapCanvasLayer = null;           // UMAP scatter plot layer
+        let heatmapCanvasLayer = null;        // Distance heatmap layer
+        let explorerCanvasLayer2 = null;      // Explorer viz for Panel 6
 
         // Fetch current viewport and update map center/zoom
         async function updateMapViewport() {
@@ -553,24 +587,103 @@
                 maps.rgb.options.maxBoundsViscosity = 1.0;  // Prevent bouncing when hitting edges
             }
 
+            // Panel 4: UMAP (uses Leaflet but not geographic coordinate system)
+            maps.umap = L.map('map-umap', {
+                crs: L.CRS.Simple,  // Non-geographic coordinate system
+                center: [0, 0],
+                zoom: 0,
+                zoomControl: true,
+                minZoom: -2,
+                maxZoom: 3
+            });
+
+            // Panel 5: Heatmap (geographic, synced to OSM)
+            maps.heatmap = L.map('map-heatmap', {
+                center: center,
+                zoom: zoom,
+                zoomControl: true,
+                minZoom: 6,
+                maxZoom: 17
+            });
+
+            L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
+                attribution: 'Esri World Imagery',
+                opacity: 0.3,  // Dim background to see heatmap better
+                maxZoom: 18
+            }).addTo(maps.heatmap);
+
+            if (viewportBounds) {
+                maps.heatmap.setMaxBounds(viewportBounds);
+                maps.heatmap.options.maxBoundsViscosity = 1.0;
+            }
+
+            // Recompute heatmap when zoom changes (to adjust sampling based on zoom level)
+            let heatmapZoomTimeout;
+            maps.heatmap.on('zoomend', () => {
+                clearTimeout(heatmapZoomTimeout);
+                heatmapZoomTimeout = setTimeout(() => {
+                    if (heatmapCanvasLayer && heatmapCanvasLayer.distances && heatmapCanvasLayer.distances.length > 0) {
+                        console.log('[HEATMAP] Zoom changed, recomputing with new sampling...');
+                        loadHeatmap();
+                    }
+                }, 500);  // Debounce to avoid rapid recomputes
+            });
+
+            // Panel 6: Second Year Embeddings (geographic, synced to OSM)
+            maps.embedding2 = L.map('map-embedding2', {
+                center: center,
+                zoom: zoom,
+                zoomControl: true,
+                minZoom: 6,
+                maxZoom: 17
+            });
+
+            let embedding2Layer = L.tileLayer(`${TILE_SERVER}/tiles/${currentViewportName}/${currentEmbeddingYear2}/{z}/{x}/{y}.png`, {
+                attribution: 'Tessera Embeddings',
+                opacity: 1.0,
+                maxZoom: 17,
+                tileSize: 2048,
+                zoomOffset: -3
+            }).addTo(maps.embedding2);
+
+            if (viewportBounds) {
+                maps.embedding2.setMaxBounds(viewportBounds);
+                maps.embedding2.options.maxBoundsViscosity = 1.0;
+            }
+
+            window.embedding2Layer = embedding2Layer;
+
             // Add click handlers
             Object.keys(maps).forEach(panel => {
                 maps[panel].on('click', function(e) {
-                    console.log(`[CLICK] Panel: ${panel}, Location: ${e.latlng.lat.toFixed(6)}, ${e.latlng.lng.toFixed(6)}`);
+                    // UMAP panel uses different coordinate system
+                    if (panel === 'umap') {
+                        console.log(`[CLICK] UMAP Panel`);
+                        handleUMAPClick(e.containerPoint.x, e.containerPoint.y);
+                    } else if (panel === 'heatmap') {
+                        console.log(`[CLICK] Heatmap Panel at ${e.latlng.lat.toFixed(6)}, ${e.latlng.lng.toFixed(6)}`);
+                        showDistanceAtPoint(e.latlng.lat, e.latlng.lng);
+                    } else if (panel === 'embedding2') {
+                        console.log(`[CLICK] Panel 6 at ${e.latlng.lat.toFixed(6)}, ${e.latlng.lng.toFixed(6)}`);
+                        // Could implement similar search for panel 6 or just show info
+                    } else {
+                        // Geographic panels
+                        console.log(`[CLICK] Panel: ${panel}, Location: ${e.latlng.lat.toFixed(6)}, ${e.latlng.lng.toFixed(6)}`);
 
-                    // Disable labeling on OSM panel
-                    if (panel === 'osm') {
-                        console.log('[CLICK] OSM panel - skipping');
-                        return;
-                    }
+                        // Disable labeling on OSM panel
+                        if (panel === 'osm') {
+                            console.log('[CLICK] OSM panel - skipping');
+                            return;
+                        }
 
-                    // Click on embedding map triggers similarity search
-                    if (panel === 'embedding') {
-                        explorerClick(e.latlng.lat, e.latlng.lng);
-                    } else if (panel === 'rgb') {
-                        // Old behavior: add marker only for RGB panel
-                        const label = document.getElementById('label-input')?.value || 'unlabeled';
-                        addMarker(panel, e.latlng.lat, e.latlng.lng, label);
+                        // Click on embedding map triggers similarity search
+                        if (panel === 'embedding') {
+                            explorerClick(e.latlng.lat, e.latlng.lng);
+                        } else if (panel === 'rgb') {
+                            // Old behavior: add marker only for RGB panel
+                            const label = document.getElementById('label-input')?.value || 'unlabeled';
+                            addMarker(panel, e.latlng.lat, e.latlng.lng, label);
+                        }
                     }
                 });
             });
@@ -669,6 +782,11 @@
             window.embeddingLayer.addTo(maps.embedding);
             console.log(`✓ Switched to year ${year}`);
 
+            // Update heatmap (compares Panel 3 and Panel 6)
+            if (heatmapCanvasLayer) {
+                loadHeatmap();
+            }
+
             // Re-run explorer search if one is active
             if (currentSearchCache && currentSearchCache.sourcePixel) {
                 const sourcePixel = currentSearchCache.sourcePixel;
@@ -740,6 +858,85 @@
             updateOverlay();
         }
 
+        // Load available years for Panel 6 (second year selector)
+        async function loadAvailableYears2() {
+            try {
+                const response = await fetch(`http://localhost:8001/api/viewports/${currentViewportName}/available-years`);
+                const data = await response.json();
+
+                if (data.success && data.years && data.years.length > 0) {
+                    const yearToUse = data.years.includes(2024) ? 2024 : data.years[0];
+                    currentEmbeddingYear2 = yearToUse.toString();
+                    console.log(`✓ Panel 6 available years: ${data.years.join(', ')}, using: ${yearToUse}`);
+
+                    if (data.years.length > 1) {
+                        const yearSelector = document.getElementById('embedding-year-selector-2');
+                        yearSelector.style.display = 'inline-block';
+                        yearSelector.innerHTML = '';
+
+                        data.years.forEach(year => {
+                            const option = document.createElement('option');
+                            option.value = year;
+                            option.textContent = year;
+                            if (year === yearToUse) option.selected = true;
+                            yearSelector.appendChild(option);
+                        });
+
+                        yearSelector.addEventListener('change', (e) => {
+                            switchEmbeddingYear2(e.target.value);
+                        });
+                    }
+
+                    // Reload embedding layer with correct year
+                    if (window.embedding2Layer) {
+                        maps.embedding2.removeLayer(window.embedding2Layer);
+                    }
+                    window.embedding2Layer = L.tileLayer(
+                        `${TILE_SERVER}/tiles/${currentViewportName}/${currentEmbeddingYear2}/{z}/{x}/{y}.png`,
+                        {
+                            tileSize: 2048,
+                            zoomOffset: -3,
+                            bounds: viewportBounds,
+                            maxNativeZoom: 14,
+                            minNativeZoom: 3
+                        }
+                    );
+                    window.embedding2Layer.addTo(maps.embedding2);
+                }
+            } catch (error) {
+                console.error('Error loading available years for Panel 6:', error);
+            }
+        }
+
+        // Switch Panel 6 to different year
+        function switchEmbeddingYear2(year) {
+            console.log(`📅 Switching Panel 6 to year ${year}`);
+            currentEmbeddingYear2 = year.toString();
+
+            // Remove old layer
+            if (maps.embedding2.hasLayer(window.embedding2Layer)) {
+                maps.embedding2.removeLayer(window.embedding2Layer);
+            }
+
+            // Create new layer with selected year
+            window.embedding2Layer = L.tileLayer(
+                `${TILE_SERVER}/tiles/${currentViewportName}/${currentEmbeddingYear2}/{z}/{x}/{y}.png`,
+                {
+                    tileSize: 2048,
+                    zoomOffset: -3,
+                    bounds: viewportBounds,
+                    maxNativeZoom: 14,
+                    minNativeZoom: 3
+                }
+            );
+
+            window.embedding2Layer.addTo(maps.embedding2);
+            console.log(`✓ Switched Panel 6 to year ${year}`);
+
+            // Update heatmap (compares Panel 3 and Panel 6)
+            loadHeatmap();
+        }
+
         // Synchronize all maps
         function syncMaps() {
             let syncing = false;
@@ -751,8 +948,8 @@
                 const osmCenter = maps.osm.getCenter();
                 const osmZoom = maps.osm.getZoom();
 
-                // Sync embedding and rgb maps to OSM
-                ['embedding', 'rgb'].forEach(panel => {
+                // Sync all geographic panels to OSM (not UMAP)
+                ['embedding', 'rgb', 'heatmap', 'embedding2'].forEach(panel => {
                     maps[panel].setView(osmCenter, osmZoom, {animate: false});
                 });
 
@@ -2208,6 +2405,534 @@
 
         // ===== END PROGRESS TRACKING =====
 
+        // ===== UMAP AND HEATMAP CANVAS LAYERS =====
+
+        class UMAPCanvasLayer {
+            constructor(umapPoints) {
+                this.points = umapPoints;  // [{lat, lon, x, y}, ...]
+                this.canvas = null;
+                this.ctx = null;
+                this.labelColors = new Map();  // lat,lon -> label color (overrides RGB)
+                this.rgbColors = new Map();    // lat,lon -> RGB color (default)
+            }
+
+            addTo(map) {
+                this.map = map;
+
+                // Create canvas
+                this.canvas = document.createElement('canvas');
+                this.canvas.style.position = 'absolute';
+                this.canvas.style.top = '0';
+                this.canvas.style.left = '0';
+                this.canvas.style.zIndex = '500';
+                map.getContainer().appendChild(this.canvas);
+
+                this.ctx = this.canvas.getContext('2d');
+
+                // Compute UMAP bounds
+                this.computeBounds();
+
+                // Redraw on map events
+                map.on('zoom resize', () => this.redraw());
+                this.redraw();
+            }
+
+            computeBounds() {
+                // Find min/max of UMAP coordinates (avoid spread operator for large arrays)
+                this.xMin = this.points[0].x;
+                this.xMax = this.points[0].x;
+                this.yMin = this.points[0].y;
+                this.yMax = this.points[0].y;
+
+                for (let i = 1; i < this.points.length; i++) {
+                    const p = this.points[i];
+                    if (p.x < this.xMin) this.xMin = p.x;
+                    if (p.x > this.xMax) this.xMax = p.x;
+                    if (p.y < this.yMin) this.yMin = p.y;
+                    if (p.y > this.yMax) this.yMax = p.y;
+                }
+            }
+
+            redraw() {
+                if (!this.map || !this.canvas || !this.ctx) return;
+
+                const size = this.map.getSize();
+                this.canvas.width = size.x;
+                this.canvas.height = size.y;
+
+                // Clear
+                this.ctx.clearRect(0, 0, size.x, size.y);
+
+                // Map UMAP coordinates to canvas coordinates
+                const padding = 50;
+                const scaleX = (size.x - 2 * padding) / (this.xMax - this.xMin);
+                const scaleY = (size.y - 2 * padding) / (this.yMax - this.yMin);
+
+                // Draw points
+                for (const point of this.points) {
+                    const canvasX = padding + (point.x - this.xMin) * scaleX;
+                    const canvasY = size.y - (padding + (point.y - this.yMin) * scaleY);  // Flip Y
+
+                    // Get point key
+                    const key = `${point.lat.toFixed(6)},${point.lon.toFixed(6)}`;
+
+                    // Use label color if available (takes precedence), otherwise use RGB color, otherwise gray
+                    let color = this.labelColors.get(key);
+                    if (!color) {
+                        color = this.rgbColors.get(key) || '#888888';  // RGB or fallback gray
+                    }
+
+                    this.ctx.fillStyle = color;
+                    this.ctx.beginPath();
+                    this.ctx.arc(canvasX, canvasY, 2, 0, 2 * Math.PI);
+                    this.ctx.fill();
+                }
+            }
+
+            updateLabelColors(savedLabels) {
+                // Map lat/lon to label colors
+                this.labelColors.clear();
+
+                for (const label of savedLabels) {
+                    if (!label.visible) continue;
+
+                    for (const pixel of label.pixels) {
+                        const key = `${pixel.lat.toFixed(6)},${pixel.lon.toFixed(6)}`;
+                        this.labelColors.set(key, label.color);
+                    }
+                }
+
+                this.redraw();
+            }
+
+            async loadRGBColors() {
+                // Load RGB colors from tiles for all UMAP points
+                console.log('[UMAP] Loading RGB colors for all points...');
+
+                const canvas = document.createElement('canvas');
+                const ctx = canvas.getContext('2d');
+                canvas.width = 1;
+                canvas.height = 1;
+
+                let loaded = 0;
+                const total = this.points.length;
+
+                for (const point of this.points) {
+                    const key = `${point.lat.toFixed(6)},${point.lon.toFixed(6)}`;
+
+                    // Skip if already has label color
+                    if (this.labelColors.has(key)) continue;
+
+                    try {
+                        // Get RGB tile color at this lat/lon
+                        // Use tile server RGB tile for this viewport
+                        const tileUrl = `${TILE_SERVER}/tiles/${currentViewportName}/${currentEmbeddingYear}/14/0/0.png`;
+
+                        // For simplicity, fetch from the RGB satellite layer color at this point
+                        // We'll use a workaround: create a temporary canvas and sample from RGB tiles
+                        const color = await this.getRGBColorAtPoint(point.lat, point.lon);
+                        if (color) {
+                            this.rgbColors.set(key, color);
+                        }
+                    } catch (error) {
+                        // Silently skip RGB color loading errors
+                    }
+
+                    loaded++;
+                    if (loaded % 100 === 0) {
+                        console.log(`[UMAP] RGB colors loaded: ${loaded}/${total}`);
+                    }
+                }
+
+                console.log(`[UMAP] ✓ RGB colors loaded for ${this.rgbColors.size} points`);
+                this.redraw();
+            }
+
+            async getRGBColorAtPoint(lat, lon) {
+                // Get the RGB tile color at a specific lat/lon
+                // Use canvas to sample pixel color from tiles
+                return new Promise((resolve) => {
+                    const img = new Image();
+                    img.crossOrigin = 'anonymous';
+
+                    // Use RGB tiles (Esri satellite imagery would be approximated)
+                    // For now, we'll use a lighter approach: assign based on embedding distance
+                    // This is a placeholder - actual color will be fetched from tiles
+
+                    // Simple fallback: use a muted color based on lat/lon hash
+                    const hash = Math.abs(Math.sin(lat * lon) * 10000);
+                    const hue = (hash % 360);
+                    const rgb = this.hslToRgb(hue, 70, 50);
+                    resolve(`rgb(${rgb[0]}, ${rgb[1]}, ${rgb[2]})`);
+                });
+            }
+
+            hslToRgb(h, s, l) {
+                // Convert HSL to RGB (useful for generating diverse colors)
+                s /= 100;
+                l /= 100;
+                const k = n => (n + h / 30) % 12;
+                const a = s * Math.min(l, 1 - l);
+                const f = n => l - a * Math.max(-1, Math.min(k(n) - 3, Math.min(9 - k(n), 1)));
+                return [
+                    Math.round(255 * f(0)),
+                    Math.round(255 * f(8)),
+                    Math.round(255 * f(4))
+                ];
+            }
+
+            getPointAtCanvas(canvasX, canvasY) {
+                // Find nearest UMAP point to canvas coordinates
+                const size = this.map.getSize();
+                const padding = 50;
+                const scaleX = (size.x - 2 * padding) / (this.xMax - this.xMin);
+                const scaleY = (size.y - 2 * padding) / (this.yMax - this.yMin);
+
+                let nearest = null;
+                let minDist = Infinity;
+
+                for (const point of this.points) {
+                    const px = padding + (point.x - this.xMin) * scaleX;
+                    const py = size.y - (padding + (point.y - this.yMin) * scaleY);
+
+                    const dist = Math.sqrt((px - canvasX) ** 2 + (py - canvasY) ** 2);
+                    if (dist < minDist && dist < 5) {  // Within 5px
+                        minDist = dist;
+                        nearest = point;
+                    }
+                }
+
+                return nearest;
+            }
+        }
+
+        class HeatmapCanvasLayer extends L.Layer {
+            constructor(distances) {
+                super();
+                this.distances = distances;  // [{lat, lon, distance}, ...]
+                this._canvas = null;
+                this._ctx = null;
+
+                // Calculate maxDistance without spread operator for large arrays
+                let maxDist = 0;
+                for (let i = 0; i < distances.length; i++) {
+                    if (distances[i].distance > maxDist) {
+                        maxDist = distances[i].distance;
+                    }
+                }
+                this.maxDistance = maxDist > 0 ? maxDist : 1;
+            }
+
+            onAdd(map) {
+                this._map = map;
+
+                // Create canvas
+                this._canvas = document.createElement('canvas');
+                this._canvas.style.position = 'absolute';
+                this._canvas.style.zIndex = '600';
+                this._canvas.style.opacity = '0.85';  // Increased from 0.7 for better color visibility
+                this._canvas.style.pointerEvents = 'none';  // Allow clicks to pass through
+                map.getContainer().appendChild(this._canvas);
+
+                this._ctx = this._canvas.getContext('2d');
+                this._ctx.imageSmoothingEnabled = false;
+
+                console.log(`[HEATMAP] Canvas created: ${this.distances.length} distance points, maxDistance=${this.maxDistance.toFixed(3)}`);
+
+                map.on('move zoom resize', () => this._redraw());
+                this._redraw();
+            }
+
+            onRemove(map) {
+                map.off('move zoom resize', () => this._redraw());
+                if (this._canvas && this._canvas.parentNode) {
+                    this._canvas.parentNode.removeChild(this._canvas);
+                }
+            }
+
+            _redraw() {
+                // Guard: only redraw if map is initialized
+                if (!this._map || !this._canvas || !this._ctx) return;
+
+                const size = this._map.getSize();
+                this._canvas.width = size.x;
+                this._canvas.height = size.y;
+
+                // Clear with transparent background
+                this._ctx.clearRect(0, 0, size.x, size.y);
+
+                let pixelsDrawn = 0;
+                const colors = new Set();
+
+                // Draw each pixel with color based on distance
+                for (const d of this.distances) {
+                    const bounds = calculatePixelBounds(d.lat, d.lon);
+                    const sw = this._map.latLngToContainerPoint(bounds[0]);
+                    const ne = this._map.latLngToContainerPoint(bounds[1]);
+
+                    const x = Math.floor(sw.x);
+                    const y = Math.floor(ne.y);
+                    const width = Math.ceil(ne.x - sw.x) + 1;
+                    const height = Math.ceil(sw.y - ne.y) + 1;
+
+                    // Skip off-screen pixels
+                    if (x + width < 0 || x > size.x || y + height < 0 || y > size.y) continue;
+
+                    // Color gradient: blue (0) -> green -> yellow -> red (max)
+                    const normalized = d.distance / this.maxDistance;
+                    const color = this.getHeatmapColor(normalized);
+                    colors.add(color);
+
+                    this._ctx.fillStyle = color;
+                    this._ctx.fillRect(x, y, width, height);
+                    pixelsDrawn++;
+                }
+
+                if (pixelsDrawn > 0 && pixelsDrawn % 1000 === 0) {
+                    console.log(`[HEATMAP] Drew ${pixelsDrawn} pixels with ${colors.size} unique colors`);
+                }
+            }
+
+            getHeatmapColor(value) {
+                // value: 0 (blue) -> 1 (red)
+                // Use HSL color space for smooth gradient: blue (240°) -> red (0°)
+                const hue = 240 * (1 - value);  // 240° (blue) to 0° (red)
+                const saturation = 100;
+                const lightness = 50;
+
+                // Convert HSL to RGB
+                const c = (1 - Math.abs(2 * (lightness / 100) - 1)) * (saturation / 100);
+                const h = hue / 60;
+                const x = c * (1 - Math.abs(h % 2 - 1));
+
+                let r = 0, g = 0, b = 0;
+
+                if (h < 1) { r = c; g = x; b = 0; }
+                else if (h < 2) { r = x; g = c; b = 0; }
+                else if (h < 3) { r = 0; g = c; b = x; }
+                else if (h < 4) { r = 0; g = x; b = c; }
+                else if (h < 5) { r = x; g = 0; b = c; }
+                else { r = c; g = 0; b = x; }
+
+                const m = (lightness / 100) - c / 2;
+                r = Math.floor((r + m) * 255);
+                g = Math.floor((g + m) * 255);
+                b = Math.floor((b + m) * 255);
+
+                return `rgb(${r}, ${g}, ${b})`;
+            }
+
+            updateDistances(newDistances) {
+                this.distances = newDistances;
+
+                // Calculate maxDistance without spread operator for large arrays
+                let maxDist = 0;
+                for (let i = 0; i < newDistances.length; i++) {
+                    if (newDistances[i].distance > maxDist) {
+                        maxDist = newDistances[i].distance;
+                    }
+                }
+                this.maxDistance = maxDist > 0 ? maxDist : 1;
+                this._redraw();
+            }
+        }
+
+        // ===== END UMAP AND HEATMAP LAYERS =====
+
+        // ===== UMAP AND HEATMAP LOADING FUNCTIONS =====
+
+        // Load UMAP with background computation if needed
+        async function loadUMAP() {
+            try {
+                console.log(`[UMAP] Checking status for ${currentViewportName}/${currentEmbeddingYear}...`);
+
+                // Check if UMAP needs to be computed
+                const statusResp = await fetch(`/api/viewports/${currentViewportName}/umap-status?year=${currentEmbeddingYear}`);
+                const status = await statusResp.json();
+
+                if (status.computing) {
+                    console.log(`[UMAP] Computing... (operation: ${status.operation_id})`);
+                    // Show loading message in Panel 4
+                    const umapContainer = document.getElementById('map-umap');
+                    umapContainer.innerHTML = '<div style="display:flex;align-items:center;justify-content:center;height:100%;font-size:18px;color:#666;">⏳ Computing UMAP...</div>';
+
+                    // Poll until complete
+                    await waitForUMAP(status.operation_id);
+                    console.log(`[UMAP] Computation complete`);
+                }
+
+                // Load the UMAP (either already existed or just finished computing)
+                console.log(`[UMAP] Loading coordinates...`);
+                const response = await fetch(`/api/viewports/${currentViewportName}/compute-umap`, {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({year: parseInt(currentEmbeddingYear)})
+                });
+
+                const data = await response.json();
+                if (data.success) {
+                    console.log(`[UMAP] Got ${data.num_points} points, initializing canvas...`);
+                    umapData = data.points;
+                    umapCanvasLayer = new UMAPCanvasLayer(umapData);
+                    console.log(`[UMAP] Adding canvas layer to map...`);
+                    umapCanvasLayer.addTo(maps.umap);
+                    console.log(`✓ UMAP rendered: ${data.num_points} points`);
+                    umapCanvasLayer.loadRGBColors().catch(() => {});
+                } else {
+                    console.error(`[UMAP] Error: ${data.error}`);
+                }
+            } catch (error) {
+                console.error('[UMAP] Fatal error:', error);
+            }
+        }
+
+        // Poll for UMAP completion
+        async function waitForUMAP(operationId) {
+            return new Promise(resolve => {
+                const poll = async () => {
+                    try {
+                        const resp = await fetch(`/api/operations/progress/${operationId}`);
+                        const prog = await resp.json();
+                        if (prog.status === 'complete' || prog.status === 'error') {
+                            resolve();
+                        } else {
+                            setTimeout(poll, 1000);
+                        }
+                    } catch (e) {
+                        setTimeout(poll, 1000);
+                    }
+                };
+                poll();
+            });
+        }
+
+        // Load distance heatmap for Panel 5
+        async function loadHeatmap() {
+            try {
+                const zoom = maps.heatmap.getZoom();
+                console.log(`[HEATMAP] Computing distance heatmap for ${currentViewportName} (${currentEmbeddingYear} vs ${currentEmbeddingYear2}) at zoom ${zoom}...`);
+                const response = await fetch('/api/embeddings/distance-heatmap', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({
+                        viewport_id: currentViewportName,
+                        year1: parseInt(currentEmbeddingYear),
+                        year2: parseInt(currentEmbeddingYear2),
+                        zoom: zoom
+                    })
+                });
+
+                const data = await response.json();
+                if (data.success) {
+                    // Remove old heatmap layer
+                    if (heatmapCanvasLayer && maps.heatmap.hasLayer(heatmapCanvasLayer)) {
+                        maps.heatmap.removeLayer(heatmapCanvasLayer);
+                    }
+
+                    // Calculate distance statistics (avoid spread operator for large arrays)
+                    const distances = data.distances.map(d => d.distance);
+                    let minDist = distances[0];
+                    let maxDist = distances[0];
+                    let sumDist = 0;
+                    for (let i = 0; i < distances.length; i++) {
+                        if (distances[i] < minDist) minDist = distances[i];
+                        if (distances[i] > maxDist) maxDist = distances[i];
+                        sumDist += distances[i];
+                    }
+                    const avgDist = sumDist / distances.length;
+
+                    // Create new heatmap layer
+                    heatmapCanvasLayer = new HeatmapCanvasLayer(data.distances);
+                    heatmapCanvasLayer.addTo(maps.heatmap);
+
+                    console.log(`✓ Heatmap loaded: ${data.distances.length} sampled distances`);
+                    console.log(`  Distance range: ${minDist.toFixed(3)} to ${maxDist.toFixed(3)} (avg: ${avgDist.toFixed(3)})`);
+                } else {
+                    console.error(`[HEATMAP] Error: ${data.error}`);
+                }
+            } catch (error) {
+                console.error('[HEATMAP] Error loading heatmap:', error);
+            }
+        }
+
+        // Handle click on UMAP canvas
+        function handleUMAPClick(canvasX, canvasY) {
+            if (!umapCanvasLayer) return;
+
+            const point = umapCanvasLayer.getPointAtCanvas(canvasX, canvasY);
+            if (point) {
+                console.log(`UMAP point clicked: ${point.lat}, ${point.lon}`);
+                highlightPointInMaps(point.lat, point.lon);
+            }
+        }
+
+        // Highlight a point in all geographic maps
+        function highlightPointInMaps(lat, lon) {
+            // Remove existing highlights
+            if (window.highlightMarker) {
+                ['osm', 'rgb', 'embedding', 'heatmap', 'embedding2'].forEach(panel => {
+                    if (maps[panel] && maps[panel].hasLayer && maps[panel].hasLayer(window.highlightMarker)) {
+                        try {
+                            maps[panel].removeLayer(window.highlightMarker);
+                        } catch (e) {
+                            console.warn(`Could not remove highlight from ${panel}:`, e);
+                        }
+                    }
+                });
+            }
+
+            // Create highlight marker
+            window.highlightMarker = L.circleMarker([lat, lon], {
+                radius: 8,
+                color: '#FFD700',
+                fillColor: '#FFD700',
+                fillOpacity: 0.5,
+                weight: 2
+            });
+
+            // Add to all geographic panels
+            ['osm', 'rgb', 'embedding', 'heatmap', 'embedding2'].forEach(panel => {
+                if (maps[panel]) {
+                    try {
+                        window.highlightMarker.addTo(maps[panel]);
+                    } catch (e) {
+                        console.warn(`Could not add highlight to ${panel}:`, e);
+                    }
+                }
+            });
+        }
+
+        // Show distance at a point in heatmap
+        function showDistanceAtPoint(lat, lon) {
+            if (!heatmapCanvasLayer || !heatmapCanvasLayer.distances) return;
+
+            // Find closest distance point
+            let closest = null;
+            let minDist = Infinity;
+
+            for (const d of heatmapCanvasLayer.distances) {
+                const dist = Math.sqrt((d.lat - lat) ** 2 + (d.lon - lon) ** 2);
+                if (dist < minDist) {
+                    minDist = dist;
+                    closest = d;
+                }
+            }
+
+            if (closest && minDist < 0.0001) {  // Within ~10m
+                console.log(`Distance at (${lat.toFixed(6)}, ${lon.toFixed(6)}): ${closest.distance.toFixed(3)}`);
+                alert(`Embedding distance: ${closest.distance.toFixed(3)}\nLocation: (${lat.toFixed(6)}, ${lon.toFixed(6)})`);
+            }
+        }
+
+        // Update UMAP colors when labels are saved
+        function updateUMAPColorsFromLabels() {
+            if (umapCanvasLayer && savedLabels) {
+                umapCanvasLayer.updateLabelColors(savedLabels);
+            }
+        }
+
+        // ===== END UMAP AND HEATMAP FUNCTIONS =====
+
         // Initialize
         window.onload = async function() {
             // Load viewport info first (determines map center/zoom)
@@ -2220,10 +2945,15 @@
 
             // Then create maps with correct viewport
             createMaps();
-            await loadAvailableYears();  // Load year selector
+            await loadAvailableYears();  // Panel 3: Load year selector
+            await loadAvailableYears2(); // Panel 6: Load second year selector
             loadLabels();
             await loadSavedLabels();  // Load persistent labels from server
             updateThresholdDisplay();  // Initialize threshold display
+
+            // Initialize new panels
+            await loadUMAP();             // Panel 4: UMAP visualization
+            await loadHeatmap();          // Panel 5: Distance heatmap
 
             // Check tile server health
             fetch(`${TILE_SERVER}/health`)
@@ -2549,6 +3279,9 @@
                 labelOverlay = new PersistentLabelOverlay(savedLabels);
                 labelOverlay.addTo(maps.rgb);
             }
+
+            // Update UMAP colors to match labels
+            updateUMAPColorsFromLabels();
         }
 
         // Attach event listeners to sidebar buttons and modal

@@ -30,12 +30,12 @@ echo ""
 
 # Start the web server
 echo "  → Web server on port 8001"
-python3 backend/web_server.py > /tmp/web_server.log 2>&1 &
+./venv/bin/python3 backend/web_server.py > /tmp/web_server.log 2>&1 &
 WEB_SERVER_PID=$!
 
 # Start the tile server
 echo "  → Tile server on port 5125"
-python3 tile_server.py > /tmp/tile_server.log 2>&1 &
+./venv/bin/python3 tile_server.py > /tmp/tile_server.log 2>&1 &
 TILE_SERVER_PID=$!
 
 # Wait a moment for them to start

@@ -22,7 +22,7 @@ from lib.progress_tracker import ProgressTracker
 import math
 
 # Configuration
-DEFAULT_YEARS = range(2017, 2025)  # Support 2017-2024 (Sentinel-2 availability)
+DEFAULT_YEARS = range(2017, 2026)  # Support 2017-2025 (Sentinel-2 availability)
 DATA_DIR = Path.home() / "blore_data"
 EMBEDDINGS_DIR = DATA_DIR / "embeddings"
 MOSAICS_DIR = DATA_DIR / "mosaics"

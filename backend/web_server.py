@@ -17,6 +17,7 @@ import json
 import numpy as np
 import subprocess
 from datetime import datetime
+import faiss
 
 # Add parent directory to path for lib imports
 sys.path.insert(0, str(Path(__file__).parent.parent))
@@ -1491,6 +1492,287 @@ def api_relabel_by_similarity():
 
     except Exception as e:
         logger.error(f"[RELABEL] Unexpected error: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+# ============================================================================
+# UMAP AND HEATMAP API
+# ============================================================================
+
+@app.route('/api/viewports/<viewport_name>/compute-umap', methods=['POST'])
+def api_compute_umap(viewport_name):
+    """Compute UMAP 2D projection for all viewport embeddings."""
+    """Load pre-computed UMAP coordinates for visualization."""
+    try:
+        data = request.get_json()
+        year = data.get('year', 2024)
+
+        faiss_dir = FAISS_INDICES_DIR / viewport_name / str(year)
+        if not faiss_dir.exists():
+            return jsonify({
+                'success': False,
+                'error': f'FAISS index not found for {viewport_name} ({year})'
+            }), 404
+
+        # Load pre-computed UMAP coordinates
+        umap_file = faiss_dir / 'umap_coords.npy'
+        pixel_coords_file = faiss_dir / 'pixel_coords.npy'
+        metadata_file = faiss_dir / 'metadata.json'
+
+        if not umap_file.exists():
+            return jsonify({
+                'success': False,
+                'error': f'UMAP not computed. Run: python3 compute_umap.py {viewport_name} {year}'
+            }), 404
+
+        try:
+            # Load pre-computed data
+            umap_coords = np.load(str(umap_file))        # (N, 2)
+            pixel_coords = np.load(str(pixel_coords_file))  # (N, 2)
+
+            with open(metadata_file) as f:
+                metadata = json.load(f)
+
+            # Convert pixel coordinates to lat/lon using geotransform
+            geotransform = metadata['geotransform']
+            a = geotransform['a']
+            b = geotransform['b']
+            c = geotransform['c']
+            d = geotransform['d']
+            e = geotransform['e']
+            f = geotransform['f']
+
+            lons = c + a * pixel_coords[:, 0] + b * pixel_coords[:, 1]
+            lats = f + d * pixel_coords[:, 0] + e * pixel_coords[:, 1]
+
+        except Exception as e:
+            logger.error(f"[UMAP] Error loading pre-computed UMAP: {e}")
+            return jsonify({
+                'success': False,
+                'error': f'Error loading UMAP data: {str(e)}'
+            }), 500
+
+        # Package result
+        points = []
+        for i in range(len(lats)):
+            points.append({
+                'lat': float(lats[i]),
+                'lon': float(lons[i]),
+                'x': float(umap_coords[i, 0]),
+                'y': float(umap_coords[i, 1])
+            })
+
+        logger.info(f"[UMAP] ✓ Loaded pre-computed UMAP for {len(points):,} points")
+        return jsonify({
+            'success': True,
+            'points': points,
+            'num_points': len(points)
+        })
+
+    except Exception as e:
+        logger.error(f"[UMAP] Unexpected error: {e}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/api/viewports/<viewport_name>/umap-status', methods=['GET'])
+def api_umap_status(viewport_name):
+    """Check if UMAP exists and trigger computation if not."""
+    try:
+        year = request.args.get('year', '2024')
+        faiss_dir = FAISS_INDICES_DIR / viewport_name / str(year)
+        umap_file = faiss_dir / 'umap_coords.npy'
+        operation_id = f"{viewport_name}_umap_{year}"
+        progress_file = Path(f"/tmp/{operation_id}_progress.json")
+
+        # Already computed
+        if umap_file.exists():
+            return jsonify({'exists': True, 'computing': False})
+
+        # Check if already computing
+        if progress_file.exists():
+            with open(progress_file) as f:
+                progress = json.load(f)
+            if progress.get('status') == 'in_progress':
+                return jsonify({'exists': False, 'computing': True, 'operation_id': operation_id})
+            elif progress.get('status') == 'complete':
+                return jsonify({'exists': True, 'computing': False})
+
+        # Start computation in background
+        logger.info(f"[UMAP] Starting computation for {viewport_name}/{year}")
+
+        def compute_background():
+            try:
+                with open(progress_file, 'w') as f:
+                    json.dump({'status': 'in_progress', 'message': f'Computing UMAP...'}, f)
+
+                repo_dir = Path(__file__).parent.parent
+                subprocess.run(
+                    [str(repo_dir / 'venv' / 'bin' / 'python3'), str(repo_dir / 'compute_umap.py'),
+                     viewport_name, str(year)],
+                    cwd=repo_dir,
+                    capture_output=True,
+                    timeout=600
+                )
+
+                with open(progress_file, 'w') as f:
+                    json.dump({'status': 'complete'}, f)
+
+            except Exception as e:
+                logger.error(f"[UMAP] Error: {e}")
+                with open(progress_file, 'w') as f:
+                    json.dump({'status': 'error', 'error': str(e)}, f)
+
+        thread = threading.Thread(target=compute_background, daemon=True)
+        thread.start()
+
+        return jsonify({'exists': False, 'computing': True, 'operation_id': operation_id})
+
+    except Exception as e:
+        logger.error(f"[UMAP] Status error: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/embeddings/distance-heatmap', methods=['POST'])
+def api_distance_heatmap():
+    """Compute pixel-wise Euclidean distance between two years of embeddings (tile-based)."""
+    try:
+        data = request.get_json()
+        viewport_id = data.get('viewport_id')
+        year1 = data.get('year1', 2024)
+        year2 = data.get('year2', 2024)
+        zoom = data.get('zoom', 12)  # Map zoom level (default 12)
+
+        if not viewport_id:
+            return jsonify({
+                'success': False,
+                'error': 'viewport_id required'
+            }), 400
+
+        logger.info(f"[HEATMAP] Computing distance between {year1} and {year2} for {viewport_id}...")
+
+        # Load FAISS indices for both years
+        faiss_dir1 = FAISS_INDICES_DIR / viewport_id / str(year1)
+        faiss_dir2 = FAISS_INDICES_DIR / viewport_id / str(year2)
+
+        for faiss_dir in [faiss_dir1, faiss_dir2]:
+            if not faiss_dir.exists():
+                return jsonify({
+                    'success': False,
+                    'error': f'FAISS index not found: {faiss_dir}'
+                }), 404
+
+        try:
+            # Load embeddings and metadata from both years
+            all_emb1 = np.load(str(faiss_dir1 / 'all_embeddings.npy'))
+            pixel_coords1 = np.load(str(faiss_dir1 / 'pixel_coords.npy'))
+            with open(faiss_dir1 / 'metadata.json') as f:
+                metadata1 = json.load(f)
+
+            all_emb2 = np.load(str(faiss_dir2 / 'all_embeddings.npy'))
+            pixel_coords2 = np.load(str(faiss_dir2 / 'pixel_coords.npy'))
+            with open(faiss_dir2 / 'metadata.json') as f:
+                metadata2 = json.load(f)
+
+            # Convert pixel coordinates to lat/lon using geotransform for year1
+            geotransform1 = metadata1['geotransform']
+            a1 = geotransform1['a']
+            b1 = geotransform1['b']
+            c1 = geotransform1['c']
+            d1 = geotransform1['d']
+            e1 = geotransform1['e']
+            f1 = geotransform1['f']
+
+            lons1 = c1 + a1 * pixel_coords1[:, 0] + b1 * pixel_coords1[:, 1]
+            lats1 = f1 + d1 * pixel_coords1[:, 0] + e1 * pixel_coords1[:, 1]
+
+            # Convert pixel coordinates to lat/lon using geotransform for year2
+            geotransform2 = metadata2['geotransform']
+            a2 = geotransform2['a']
+            b2 = geotransform2['b']
+            c2 = geotransform2['c']
+            d2 = geotransform2['d']
+            e2 = geotransform2['e']
+            f2 = geotransform2['f']
+
+            lons2 = c2 + a2 * pixel_coords2[:, 0] + b2 * pixel_coords2[:, 1]
+            lats2 = f2 + d2 * pixel_coords2[:, 0] + e2 * pixel_coords2[:, 1]
+
+        except Exception as e:
+            logger.error(f"[HEATMAP] Error loading FAISS data: {e}")
+            import traceback
+            traceback.print_exc()
+            return jsonify({
+                'success': False,
+                'error': f'Error loading embeddings: {str(e)}'
+            }), 500
+
+        # Create lookup for year1 pixels by lat/lon
+        # Build a dictionary for faster lookup
+        pixel_lookup = {}
+        for i in range(len(lats1)):
+            lat_key = round(lats1[i], 6)
+            lon_key = round(lons1[i], 6)
+            pixel_lookup[(lat_key, lon_key)] = i
+
+        # Build pixel lookup for year2
+        pixel_lookup2 = {}
+        for i in range(len(lats2)):
+            lat_key = round(lats2[i], 6)
+            lon_key = round(lons2[i], 6)
+            pixel_lookup2[(lat_key, lon_key)] = i
+
+        # Determine sampling factor based on zoom level (minimal subsampling to avoid pixellation)
+        # Higher zoom = lower sampling (more detail)
+        if zoom >= 12:
+            sampling = 1    # Full resolution
+        elif zoom >= 10:
+            sampling = 2    # 2×2 subsampling
+        else:
+            sampling = 4    # 4×4 subsampling for very low zoom
+
+        # Compute distances for matching pixels (with sampling)
+        distances = []
+        matched = 0
+        mismatched = 0
+        sampled_count = 0
+
+        for i in range(0, len(lats1), sampling):  # Sample every Nth pixel
+            lat_key = round(lats1[i], 6)
+            lon_key = round(lons1[i], 6)
+
+            if (lat_key, lon_key) in pixel_lookup2:
+                idx2 = pixel_lookup2[(lat_key, lon_key)]
+                emb1 = all_emb1[i].astype(np.float32)
+                emb2 = all_emb2[idx2].astype(np.float32)
+
+                # Compute L2 distance
+                distance = float(np.sqrt(np.sum((emb1 - emb2) ** 2)))
+                distances.append({
+                    'lat': float(lats1[i]),
+                    'lon': float(lons1[i]),
+                    'distance': distance
+                })
+                matched += 1
+                sampled_count += 1
+            else:
+                mismatched += 1
+
+        logger.info(f"[HEATMAP] ✓ Zoom {zoom}: sampling {sampling}×{sampling}, computed {sampled_count:,} distances")
+
+        return jsonify({
+            'success': True,
+            'distances': distances,
+            'stats': {
+                'matched': matched,
+                'unmatched': mismatched,
+                'total': len(lats1)
+            }
+        })
+
+    except Exception as e:
+        logger.error(f"[HEATMAP] Unexpected error: {e}")
         import traceback
         traceback.print_exc()
         return jsonify({'success': False, 'error': str(e)}), 500

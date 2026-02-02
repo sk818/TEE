@@ -36,7 +36,7 @@ DATA_DIR = Path.home() / "blore_data"
 MOSAICS_DIR = DATA_DIR / "mosaics"
 RGB_MOSAICS_DIR = DATA_DIR / "mosaics" / "rgb"
 PYRAMIDS_BASE_DIR = DATA_DIR / "pyramids"
-YEARS = range(2017, 2025)  # Support 2017-2024
+YEARS = range(2017, 2026)  # Support 2017-2025
 NUM_ZOOM_LEVELS = 6  # 6 useful zoom levels (skip the very zoomed-out tiny levels)
 
 
@@ -262,7 +262,7 @@ def main():
 
     PYRAMIDS_BASE_DIR.mkdir(exist_ok=True)
 
-    # Process Tessera embeddings (2017-2024)
+    # Process Tessera embeddings (2017-2025)
     for year in YEARS:
         # Use viewport-specific filename
         if viewport_id:
@@ -335,7 +335,7 @@ def main():
     else:
         print(f"\n⚠️  Satellite RGB file not found: {satellite_file}")
 
-    # Process RGB from embeddings (2017-2024)
+    # Process RGB from embeddings (2017-2025)
     print("\n" + "=" * 70)
     print("Processing RGB Embeddings")
     print("=" * 70)

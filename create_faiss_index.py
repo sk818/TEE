@@ -35,7 +35,7 @@ MOSAICS_DIR = DATA_DIR / "mosaics"
 FAISS_INDICES_DIR = DATA_DIR / "faiss_indices"
 SAMPLING_FACTOR = 4  # Every 4×4 pixels (reduces 19M → 1.2M vectors)
 EMBEDDING_DIM = 128
-YEARS = range(2017, 2025)  # Support 2017-2024
+YEARS = range(2017, 2026)  # Support 2017-2025
 
 def check_faiss_installed():
     """Check if FAISS is installed, provide helpful message if not."""
