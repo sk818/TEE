@@ -1719,22 +1719,13 @@ def api_distance_heatmap():
             lon_key = round(lons2[i], 6)
             pixel_lookup2[(lat_key, lon_key)] = i
 
-        # Determine sampling factor based on zoom level (minimal subsampling to avoid pixellation)
-        # Higher zoom = lower sampling (more detail)
-        if zoom >= 12:
-            sampling = 1    # Full resolution
-        elif zoom >= 10:
-            sampling = 2    # 2×2 subsampling
-        else:
-            sampling = 4    # 4×4 subsampling for very low zoom
-
-        # Compute distances for matching pixels (with sampling)
+        # Compute distances for ALL matching pixels (no subsampling to avoid banding artifacts)
+        # We compute all distances to get accurate min/max for proper normalization
         distances = []
         matched = 0
         mismatched = 0
-        sampled_count = 0
 
-        for i in range(0, len(lats1), sampling):  # Sample every Nth pixel
+        for i in range(len(lats1)):  # Process all pixels for accurate statistics
             lat_key = round(lats1[i], 6)
             lon_key = round(lons1[i], 6)
 
@@ -1751,11 +1742,22 @@ def api_distance_heatmap():
                     'distance': distance
                 })
                 matched += 1
-                sampled_count += 1
             else:
                 mismatched += 1
 
-        logger.info(f"[HEATMAP] ✓ Zoom {zoom}: sampling {sampling}×{sampling}, computed {sampled_count:,} distances")
+        logger.info(f"[HEATMAP] ✓ Computed {matched:,} distances for {len(lats1):,} pixels")
+
+        # Compute distance statistics for proper frontend normalization
+        if distances:
+            distance_values = np.array([d['distance'] for d in distances])
+            min_dist = float(np.min(distance_values))
+            max_dist = float(np.max(distance_values))
+            mean_dist = float(np.mean(distance_values))
+            median_dist = float(np.median(distance_values))
+        else:
+            min_dist = max_dist = mean_dist = median_dist = 0.0
+
+        logger.info(f"[HEATMAP] Distance stats - min: {min_dist:.3f}, max: {max_dist:.3f}, mean: {mean_dist:.3f}, median: {median_dist:.3f}")
 
         return jsonify({
             'success': True,
@@ -1763,7 +1765,11 @@ def api_distance_heatmap():
             'stats': {
                 'matched': matched,
                 'unmatched': mismatched,
-                'total': len(lats1)
+                'total': len(lats1),
+                'min_distance': min_dist,
+                'max_distance': max_dist,
+                'mean_distance': mean_dist,
+                'median_distance': median_dist
             }
         })
 

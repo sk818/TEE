@@ -2617,20 +2617,27 @@
         }
 
         class HeatmapCanvasLayer extends L.Layer {
-            constructor(distances) {
+            constructor(distances, stats = null) {
                 super();
                 this.distances = distances;  // [{lat, lon, distance}, ...]
                 this._canvas = null;
                 this._ctx = null;
 
-                // Calculate maxDistance without spread operator for large arrays
-                let maxDist = 0;
-                for (let i = 0; i < distances.length; i++) {
-                    if (distances[i].distance > maxDist) {
-                        maxDist = distances[i].distance;
+                // Use backend-provided max distance if available, otherwise calculate locally
+                if (stats && stats.max_distance > 0) {
+                    this.maxDistance = stats.max_distance;
+                    console.log(`[HEATMAP] Using backend max distance: ${this.maxDistance.toFixed(3)}`);
+                } else {
+                    // Fallback: calculate maxDistance locally without spread operator
+                    let maxDist = 0;
+                    for (let i = 0; i < distances.length; i++) {
+                        if (distances[i].distance > maxDist) {
+                            maxDist = distances[i].distance;
+                        }
                     }
+                    this.maxDistance = maxDist > 0 ? maxDist : 1;
+                    console.log(`[HEATMAP] Calculated local max distance: ${this.maxDistance.toFixed(3)}`);
                 }
-                this.maxDistance = maxDist > 0 ? maxDist : 1;
             }
 
             onAdd(map) {
@@ -2871,24 +2878,17 @@
                         maps.heatmap.removeLayer(heatmapCanvasLayer);
                     }
 
-                    // Calculate distance statistics (avoid spread operator for large arrays)
-                    const distances = data.distances.map(d => d.distance);
-                    let minDist = distances[0];
-                    let maxDist = distances[0];
-                    let sumDist = 0;
-                    for (let i = 0; i < distances.length; i++) {
-                        if (distances[i] < minDist) minDist = distances[i];
-                        if (distances[i] > maxDist) maxDist = distances[i];
-                        sumDist += distances[i];
-                    }
-                    const avgDist = sumDist / distances.length;
-
-                    // Create new heatmap layer
-                    heatmapCanvasLayer = new HeatmapCanvasLayer(data.distances);
+                    // Create new heatmap layer with backend statistics for proper normalization
+                    heatmapCanvasLayer = new HeatmapCanvasLayer(data.distances, data.stats);
                     heatmapCanvasLayer.addTo(maps.heatmap);
 
-                    console.log(`✓ Heatmap loaded: ${data.distances.length} sampled distances`);
-                    console.log(`  Distance range: ${minDist.toFixed(3)} to ${maxDist.toFixed(3)} (avg: ${avgDist.toFixed(3)})`);
+                    // Log distance statistics from backend
+                    if (data.stats) {
+                        console.log(`✓ Heatmap loaded: ${data.distances.length} distances (${data.stats.matched} matched)`);
+                        console.log(`  Distance range: ${data.stats.min_distance.toFixed(3)} to ${data.stats.max_distance.toFixed(3)} (mean: ${data.stats.mean_distance.toFixed(3)}, median: ${data.stats.median_distance.toFixed(3)})`);
+                    } else {
+                        console.log(`✓ Heatmap loaded: ${data.distances.length} distances`);
+                    }
                 } else {
                     console.error(`[HEATMAP] Error: ${data.error}`);
                 }
