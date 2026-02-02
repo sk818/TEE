@@ -2952,6 +2952,9 @@
                 weight: 2
             }).addTo(maps.umap);
 
+            // Pan to the marker and set zoom level to show it
+            maps.umap.setView([matchingPoint.y, matchingPoint.x], 1);
+
             console.log(`[UMAP] Marked source pixel at UMAP coords (${matchingPoint.x.toFixed(2)}, ${matchingPoint.y.toFixed(2)})`);
         }
 
