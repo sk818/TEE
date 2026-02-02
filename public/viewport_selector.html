@@ -1061,17 +1061,18 @@
 
                 // Build status message
                 let message = '';
-                let ready = status.pyramids && status.faiss;
+                let ready = status.pyramids;  // Viewer is ready once pyramids exist (FAISS is optional)
 
-                if (status.pyramids && status.faiss) {
-                    message = `✅ Ready to view (${status.years_available.length} year${status.years_available.length !== 1 ? 's' : ''})`;
+                if (status.pyramids) {
+                    let suffix = '';
+                    if (!status.faiss) {
+                        suffix = ' (FAISS index building...)';
+                    }
+                    message = `✅ Ready to view (${status.years_available.length} year${status.years_available.length !== 1 ? 's' : ''})${suffix}`;
                     statusEl.style.background = '#e8f5e9';
                     statusEl.style.color = '#2e7d32';
                 } else {
-                    let processing = [];
-                    if (!status.pyramids) processing.push('Creating pyramids');
-                    if (!status.faiss) processing.push('Building FAISS index');
-                    message = `⏳ Processing: ${processing.join(', ')}`;
+                    message = `⏳ Processing: Creating pyramids`;
                     statusEl.style.background = '#fff3cd';
                     statusEl.style.color = '#856404';
                 }
