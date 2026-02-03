@@ -3051,11 +3051,10 @@
             // Load viewport info first (determines map center/zoom)
             await updateMapViewport();
 
-            // NOTE: Don't poll for operations here - viewer already has usable data.
-            // Any additional years being processed (embeddings, pyramids, FAISS) should
-            // happen silently in the background without showing a progress bar that blocks
-            // the UI. User can already interact with the available year's data.
-            // Additional years will become available automatically as they complete.
+            // Check if any background operations are still running (silently, no progress bar)
+            if (currentViewportName) {
+                checkOperationStatusSilently(currentViewportName);
+            }
 
             // Then create maps with correct viewport
             createMaps();
@@ -3108,6 +3107,26 @@
                 } catch (error) {
                     // Operation not found or error checking - continue to next operation
                 }
+            }
+        }
+
+        // Check operation status silently (no progress bar, just logging)
+        async function checkOperationStatusSilently(viewportId) {
+            try {
+                const response = await fetch(`/api/operations/pipeline-status/${viewportId}`);
+                const result = await response.json();
+
+                if (result.success) {
+                    if (result.status === 'success') {
+                        console.log(`[STATUS] ✓ ${viewportId} pipeline completed successfully`);
+                    } else if (result.status === 'failed') {
+                        console.error(`[STATUS] ✗ ${viewportId} pipeline failed: ${result.error}`);
+                    } else if (result.status === 'in_progress') {
+                        console.log(`[STATUS] ⏳ ${viewportId} still processing: ${result.current_stage}`);
+                    }
+                }
+            } catch (error) {
+                // Silent fail - operation might not exist yet
             }
         }
 
