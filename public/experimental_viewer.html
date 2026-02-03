@@ -2731,10 +2731,12 @@
                     const sw = this._map.latLngToContainerPoint(bounds[0]);
                     const ne = this._map.latLngToContainerPoint(bounds[1]);
 
-                    const x = Math.floor(sw.x);
-                    const y = Math.floor(ne.y);
-                    const width = Math.ceil(ne.x - sw.x) + 1;
-                    const height = Math.ceil(sw.y - ne.y) + 1;
+                    // Use floating-point coordinates to preserve precision
+                    // This eliminates rounding artifacts that cause banding at all zoom levels
+                    const x = sw.x;
+                    const y = ne.y;
+                    const width = ne.x - sw.x;
+                    const height = sw.y - ne.y;
 
                     // Skip off-screen pixels
                     if (x + width < 0 || x > size.x || y + height < 0 || y > size.y) continue;
