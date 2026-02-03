@@ -2778,8 +2778,15 @@
                     pixelsDrawn++;
                 }
 
-                if (pixelsDrawn > 0 && pixelsDrawn % 1000 === 0) {
-                    console.log(`[HEATMAP] Drew ${pixelsDrawn} pixels with ${colors.size} unique colors`);
+                // Log detailed heatmap rendering info
+                if (pixelsDrawn > 0) {
+                    console.log(`[HEATMAP] Rendered: ${pixelsDrawn} pixels, ${colors.size} unique colors`);
+                    if (colors.size > 0) {
+                        const colorArray = Array.from(colors).slice(0, 5);
+                        console.log(`[HEATMAP] Sample colors: ${colorArray.join(', ')}`);
+                    }
+                } else {
+                    console.warn(`[HEATMAP] WARNING: No pixels drawn! Canvas size: ${size.x}x${size.y}`);
                 }
             }
 
@@ -2798,8 +2805,11 @@
                     [181, 172, 39],   // 1.00: yellow
                 ];
 
+                // Clamp value to 0-1 range
+                const clampedValue = Math.max(0, Math.min(1, value));
+
                 // Normalize value to viridis array index (0-6)
-                const idx = value * (viridis.length - 1);
+                const idx = clampedValue * (viridis.length - 1);
                 const lowerIdx = Math.floor(idx);
                 const upperIdx = Math.ceil(idx);
                 const fraction = idx - lowerIdx;
