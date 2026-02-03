@@ -2692,15 +2692,12 @@
                 this._canvas.style.position = 'absolute';
                 this._canvas.style.top = '0';
                 this._canvas.style.left = '0';
-                this._canvas.style.width = '100%';
-                this._canvas.style.height = '100%';
                 this._canvas.style.zIndex = '600';
                 this._canvas.style.opacity = '0.85';  // Increased from 0.7 for better color visibility
                 this._canvas.style.pointerEvents = 'none';  // Allow clicks to pass through
                 map.getContainer().appendChild(this._canvas);
 
                 this._ctx = this._canvas.getContext('2d');
-                this._ctx.imageSmoothingEnabled = true;  // Enable smoothing to blend pixel boundaries
 
                 console.log(`[HEATMAP] Canvas created: ${this.distances.length} distance points, maxDistance=${this.maxDistance.toFixed(3)}`);
 
@@ -2720,8 +2717,15 @@
                 if (!this._map || !this._canvas || !this._ctx) return;
 
                 const size = this._map.getSize();
+
+                // Set canvas pixel dimensions AND CSS display dimensions to match
                 this._canvas.width = size.x;
                 this._canvas.height = size.y;
+                this._canvas.style.width = size.x + 'px';
+                this._canvas.style.height = size.y + 'px';
+
+                // Re-enable image smoothing after setting canvas dimensions (which resets context state)
+                this._ctx.imageSmoothingEnabled = true;
 
                 // Clear with transparent background
                 this._ctx.clearRect(0, 0, size.x, size.y);
