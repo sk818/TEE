@@ -2725,21 +2725,40 @@
                 let pixelsDrawn = 0;
                 const colors = new Set();
 
+                // Sort by latitude to ensure adjacent pixels are processed sequentially
+                const sortedDistances = [...this.distances].sort((a, b) => b.lat - a.lat);
+
+                let prevYBottom = null;  // Track previous pixel's bottom to ensure perfect tessellation
+
                 // Draw each pixel with color based on distance
-                for (const d of this.distances) {
+                for (const d of sortedDistances) {
                     const bounds = calculatePixelBounds(d.lat, d.lon);
                     const sw = this._map.latLngToContainerPoint(bounds[0]);
                     const ne = this._map.latLngToContainerPoint(bounds[1]);
 
-                    // Use floor for position, ceil for size to ensure full coverage
-                    // The +1 ensures adjacent pixels tessellate without gaps
+                    // For x: use floor and ceil + 1 as before
                     const x = Math.floor(sw.x);
-                    const y = Math.floor(ne.y);
                     const width = Math.ceil(ne.x - sw.x) + 1;
-                    const height = Math.ceil(sw.y - ne.y) + 1;
+
+                    // For y: ensure perfect vertical tessellation
+                    let y, height;
+                    if (prevYBottom !== null) {
+                        // Use previous pixel's bottom as this pixel's top
+                        y = Math.round(prevYBottom);
+                        height = Math.round(sw.y) - y;  // Height from this pixel's top to bottom
+                    } else {
+                        // First pixel: calculate normally
+                        y = Math.floor(ne.y);
+                        height = Math.ceil(sw.y - ne.y) + 1;
+                    }
+
+                    // Track this pixel's bottom for next iteration
+                    prevYBottom = y + height;
 
                     // Skip off-screen pixels
-                    if (x + width < 0 || x > size.x || y + height < 0 || y > size.y) continue;
+                    if (x + width < 0 || x > size.x || y + height < 0 || y > size.y) {
+                        continue;
+                    }
 
                     // Viridis color gradient: purple/blue (0) -> green -> yellow (max)
                     const normalized = d.distance / this.maxDistance;
