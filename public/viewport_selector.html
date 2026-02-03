@@ -622,8 +622,9 @@
                                     <label style="display: flex; align-items: center; font-weight: normal; font-size: 13px; white-space: nowrap;">
                                         <input type="checkbox" id="year2024" class="year-checkbox" value="2024" checked style="width: 16px; height: 16px; margin-right: 8px; cursor: pointer;"> 2024
                                     </label>
-                                    <label style="display: flex; align-items: center; font-weight: normal; font-size: 13px; white-space: nowrap;">
-                                        <input type="checkbox" id="year2025" class="year-checkbox" value="2025" style="width: 16px; height: 16px; margin-right: 8px; cursor: pointer;"> 2025
+                                    <!-- 2025: Data not available from GeoTessera yet -->
+                                    <label style="display: flex; align-items: center; font-weight: normal; font-size: 13px; white-space: nowrap; opacity: 0.5;">
+                                        <input type="checkbox" id="year2025" class="year-checkbox" value="2025" disabled style="width: 16px; height: 16px; margin-right: 8px; cursor: not-allowed;"> 2025 (coming soon)
                                     </label>
                                 </div>
                                 <div style="font-size: 12px; color: #666;">
@@ -895,7 +896,10 @@
 
                     if (isReady) {
                         console.log('[VIEWPORT CREATE] ✓ Data is ready, navigating to viewer...');
-                        window.location.href = 'viewer.html';
+                        // Use the user's selected viewer (respects Advanced/Standard choice)
+                        const viewerType = document.getElementById('viewer-type-selector').value;
+                        console.log(`[VIEWPORT CREATE] Navigating to ${viewerType}`);
+                        window.location.href = viewerType;
                     } else {
                         console.log('[VIEWPORT CREATE] ✗ Timeout waiting for data');
                         document.getElementById('processingMessage').textContent = '✗ Processing timeout - please check back in a few minutes';
