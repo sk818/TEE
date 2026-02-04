@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Compute UMAP 2D projection of embeddings.
+Compute UMAP 3D projection of embeddings.
 
 Usage:
     python3 compute_umap.py Eddington 2024
@@ -11,6 +11,11 @@ import numpy as np
 from pathlib import Path
 import logging
 
+# Add parent directory to path for lib imports
+sys.path.insert(0, str(Path(__file__).parent))
+
+from lib.progress_tracker import ProgressTracker
+
 logging.basicConfig(level=logging.INFO, format='%(message)s')
 logger = logging.getLogger(__name__)
 
@@ -20,36 +25,46 @@ FAISS_INDICES_DIR = DATA_DIR / "faiss_indices"
 
 def compute_umap(viewport_name, year):
     """Compute UMAP for embeddings."""
+    # Initialize progress tracker
+    progress = ProgressTracker(f"{viewport_name}_umap_{year}")
+    progress.update("starting", f"Initializing UMAP for {viewport_name}/{year}...")
+
     try:
         import umap
     except ImportError:
         logger.error("❌ UMAP not installed. Install with: pip install umap-learn")
+        progress.error("UMAP not installed")
         return False
 
     faiss_dir = FAISS_INDICES_DIR / viewport_name / str(year)
 
     if not faiss_dir.exists():
         logger.error(f"❌ FAISS index not found: {faiss_dir}")
+        progress.error(f"FAISS index not found: {faiss_dir}")
         return False
 
     embeddings_file = faiss_dir / "all_embeddings.npy"
     if not embeddings_file.exists():
         logger.error(f"❌ Embeddings not found: {embeddings_file}")
+        progress.error(f"Embeddings not found: {embeddings_file}")
         return False
 
     umap_file = faiss_dir / "umap_coords.npy"
     if umap_file.exists():
         logger.info(f"✓ Already computed: {umap_file}")
+        progress.complete(f"UMAP already exists for {viewport_name}/{year}")
         return True
 
     logger.info(f"📊 Computing UMAP for {viewport_name}/{year}...")
-    logger.info(f"   Loading embeddings...")
+    progress.update("processing", f"Loading embeddings for {viewport_name}/{year}...", 10, 100)
 
     try:
         embeddings = np.load(str(embeddings_file))
+        num_points = embeddings.shape[0]
         logger.info(f"   Embeddings: {embeddings.shape}")
+        progress.update("processing", f"Loaded {num_points:,} embeddings, fitting UMAP...", 20, 100)
 
-        logger.info(f"   Fitting UMAP...")
+        logger.info(f"   Fitting UMAP (this may take a few minutes)...")
         reducer = umap.UMAP(
             n_neighbors=15,
             min_dist=0.1,
@@ -58,6 +73,7 @@ def compute_umap(viewport_name, year):
             verbose=False
         )
         umap_coords = reducer.fit_transform(embeddings)
+        progress.update("processing", f"UMAP fitted, saving coordinates...", 90, 100)
 
         logger.info(f"   Saving UMAP...")
         np.save(str(umap_file), umap_coords)
@@ -65,10 +81,12 @@ def compute_umap(viewport_name, year):
         logger.info(f"✓ UMAP saved: {umap_file}")
         logger.info(f"   Size: {size_mb:.1f} MB")
 
+        progress.complete(f"UMAP complete: {num_points:,} points ({size_mb:.1f} MB)")
         return True
 
     except Exception as e:
         logger.error(f"❌ Failed: {e}")
+        progress.error(f"UMAP failed: {e}")
         import traceback
         traceback.print_exc()
         return False
