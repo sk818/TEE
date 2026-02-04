@@ -119,7 +119,10 @@ def download_embeddings():
     print("=" * 60)
 
     # Initialize GeoTessera with embeddings directory
+    print(f"\nConnecting to GeoTessera registry...")
+    progress.update("initializing", "Connecting to GeoTessera registry...")
     tessera = gt.GeoTessera(embeddings_dir=str(EMBEDDINGS_DIR))
+    print(f"✓ Connected to registry")
 
     # Track successful downloads for metadata
     successful_years = []
@@ -152,7 +155,11 @@ def download_embeddings():
 
         # Calculate exact download requirements using geotessera registry (dry-run equivalent)
         try:
+            print(f"   Querying tile registry...")
+            progress.update("initializing", f"Querying tiles for {year}...", current_file=output_file.name)
             tiles = list(tessera.registry.iter_tiles_in_region(BBOX, year))
+            print(f"   Calculating download size ({len(tiles)} tiles)...")
+            progress.update("initializing", f"Calculating download size for {year}...", current_file=output_file.name)
             total_download_bytes, total_files, _ = tessera.registry.calculate_download_requirements(
                 tiles, EMBEDDINGS_DIR, format_type='npy', check_existing=True
             )
