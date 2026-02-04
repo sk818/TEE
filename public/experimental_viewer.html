@@ -773,7 +773,7 @@
             // Update all saved labels for the new year
             if (savedLabels.length > 0) {
                 console.log(`🔄 Updating ${savedLabels.length} saved labels for year ${year}`);
-                refreshLabelsForYear(year);
+                await refreshLabelsForYear(year);
             }
         }
 
