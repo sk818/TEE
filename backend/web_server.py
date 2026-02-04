@@ -875,7 +875,7 @@ def api_get_available_years(viewport_name):
         pyramid_years = []
         viewport_pyramids_dir = PYRAMIDS_DIR / viewport_name
         if viewport_pyramids_dir.exists():
-            for year in range(2017, 2025):
+            for year in range(2017, 2026):
                 pyramid_file = viewport_pyramids_dir / str(year) / "level_0.tif"
                 if pyramid_file.exists():
                     pyramid_years.append(year)
