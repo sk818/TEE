@@ -850,6 +850,15 @@
             // Show the 5km preview box and trigger the same flow as a map click
             showViewportPreview({ lat, lng: lon });
             createViewportFromClick({ lat, lng: lon });
+
+            // Pre-fill viewport name from the geocode result (createViewportFromClick clears it, so do this after)
+            const placeName = (result.name || result.display_name.split(',')[0])
+                .replace(/[^a-zA-Z0-9 _-]/g, '')   // strip special chars
+                .trim()
+                .replace(/\s+/g, '_');              // spaces to underscores
+            if (placeName) {
+                document.getElementById('viewportName').value = placeName;
+            }
         }
 
         // Show preview of 5km × 5km viewport
