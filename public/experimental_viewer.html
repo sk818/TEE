@@ -265,60 +265,61 @@
     <div id="controls">
         <h1 id="viewer-title">3-Panel Viewer</h1>
 
+        <!-- Back to Viewports -->
+        <button style="background: #6c757d; color: white; padding: 8px 12px; border: none; border-radius: 4px; cursor: pointer; font-weight: 600;" onclick="window.location.href = '/'">← Back</button>
+
+        <!-- Similarity Search Controls -->
+        <div style="display: flex; gap: 10px; align-items: center; margin-left: 20px; border-left: 1px solid #444; padding-left: 20px;">
+            <label style="margin: 0;">Similarity:</label>
+            <input
+                type="range"
+                id="similarity-threshold"
+                min="0"
+                max="35"
+                value="12"
+                style="width: 120px; cursor: pointer;"
+                oninput="updateThresholdDisplay()"
+            />
+            <span id="threshold-display" style="background: #333; padding: 4px 8px; border-radius: 3px; font-size: 13px; min-width: 40px; text-align: center;">12.00</span>
+
+            <button
+                id="find-similar-btn"
+                style="background: #17a2b8; color: white; padding: 8px 12px; border: none; border-radius: 4px; cursor: pointer; font-weight: 600;"
+                onclick="findSimilarPixels()"
+            >
+                Find Similar
+            </button>
+
+            <button
+                id="commit-similar-btn"
+                style="background: #28a745; color: white; padding: 8px 12px; border: none; border-radius: 4px; cursor: pointer; font-weight: 600; display: none;"
+                onclick="commitSimilarPixels()"
+            >
+                Commit & Relabel (<span id="similar-count">0</span>)
+            </button>
+
+            <button
+                id="clear-similar-btn"
+                style="background: #dc3545; color: white; padding: 8px 12px; border: none; border-radius: 4px; cursor: pointer; font-weight: 600; display: none;"
+                onclick="clearSimilarPixels()"
+            >
+                Clear Preview
+            </button>
+        </div>
+
         <!-- Label Controls (shown when FAISS index is ready) -->
         <div id="label-controls-bar" style="display: none; gap: 10px; align-items: center; margin-left: 20px; border-left: 1px solid #444; padding-left: 20px;">
             <button id="save-label-btn" style="padding: 8px 12px; background: #667eea; color: white; border: none; border-radius: 4px; font-weight: 600; cursor: pointer; font-size: 13px; white-space: nowrap;" disabled>
                 💾 Save as Label
             </button>
-            <button id="toggle-all-overlays" style="padding: 8px 12px; background: #333; color: white; border: 1px solid #555; border-radius: 4px; cursor: pointer; font-size: 13px; font-weight: 600; white-space: nowrap;">
-                👁 Toggle Overlays
-            </button>
             <div style="color: white; background: #333; padding: 4px 8px; border-radius: 3px; font-weight: 600; font-size: 13px;">Labels: <span id="label-count">0</span></div>
             <button id="labels-toggle-btn" style="padding: 8px 12px; background: #333; color: white; border: 1px solid #555; border-radius: 4px; cursor: pointer; font-size: 13px; white-space: nowrap;">
                 📋 View Labels
             </button>
+            <button id="toggle-all-overlays" style="padding: 8px 12px; background: #333; color: white; border: 1px solid #555; border-radius: 4px; cursor: pointer; font-size: 13px; font-weight: 600; white-space: nowrap;">
+                👁 Toggle Overlays
+            </button>
         </div>
-
-            <!-- Similarity Search Controls -->
-            <div style="display: flex; gap: 10px; align-items: center; margin-left: 20px; border-left: 1px solid #444; padding-left: 20px;">
-                <label style="margin: 0;">Similarity:</label>
-                <input
-                    type="range"
-                    id="similarity-threshold"
-                    min="0"
-                    max="35"
-                    value="12"
-                    style="width: 120px; cursor: pointer;"
-                    oninput="updateThresholdDisplay()"
-                />
-                <span id="threshold-display" style="background: #333; padding: 4px 8px; border-radius: 3px; font-size: 13px; min-width: 40px; text-align: center;">12.00</span>
-
-                <button
-                    id="find-similar-btn"
-                    style="background: #17a2b8; color: white; padding: 8px 12px; border: none; border-radius: 4px; cursor: pointer; font-weight: 600;"
-                    onclick="findSimilarPixels()"
-                >
-                    Find Similar
-                </button>
-
-                <button
-                    id="commit-similar-btn"
-                    style="background: #28a745; color: white; padding: 8px 12px; border: none; border-radius: 4px; cursor: pointer; font-weight: 600; display: none;"
-                    onclick="commitSimilarPixels()"
-                >
-                    Commit & Relabel (<span id="similar-count">0</span>)
-                </button>
-
-                <button
-                    id="clear-similar-btn"
-                    style="background: #dc3545; color: white; padding: 8px 12px; border: none; border-radius: 4px; cursor: pointer; font-weight: 600; display: none;"
-                    onclick="clearSimilarPixels()"
-                >
-                    Clear Preview
-                </button>
-            </div>
-
-            <button style="background: #6c757d; color: white; padding: 8px 12px; border: none; border-radius: 4px; cursor: pointer; font-weight: 600; margin-left: auto;" onclick="window.location.href = '/'">← Back to Viewports</button>
 
         <!-- Labels Details Panel - drops down below header -->
         <div id="labels-details-panel" style="position: absolute; top: 100%; right: 10px; width: 300px; background: rgba(255,255,255,0.95); backdrop-filter: blur(10px); border-radius: 8px; padding: 15px; box-shadow: 0 2px 10px rgba(0,0,0,0.3); z-index: 999; max-height: 450px; overflow-y: auto; font-size: 12px; display: none;">
