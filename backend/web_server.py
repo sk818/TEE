@@ -368,6 +368,13 @@ def api_create_viewport():
         viewport = read_viewport_file(name)
         viewport['name'] = name
 
+        # Save selected years to config file (for auto-resume)
+        if years:
+            config_file = VIEWPORTS_DIR / f"{name}_config.json"
+            with open(config_file, 'w') as f:
+                json.dump({'years': years}, f)
+            logger.info(f"[NEW VIEWPORT] Saved years config: {config_file}")
+
         # Automatically trigger data download and processing for new viewport
         logger.info(f"[NEW VIEWPORT] Triggering data download for new viewport '{name}' with years={years}...")
         trigger_data_download_and_processing(name, years=years)
@@ -992,7 +999,18 @@ def api_is_viewport_ready(viewport_name):
 
             if not pipeline_running:
                 logger.info(f"[is-ready] Pipeline not running for '{viewport_name}' but data incomplete — re-triggering pipeline")
-                trigger_data_download_and_processing(viewport_name)
+                # Read saved years from config file (if exists)
+                config_file = VIEWPORTS_DIR / f"{viewport_name}_config.json"
+                saved_years = None
+                if config_file.exists():
+                    try:
+                        with open(config_file) as f:
+                            config = json.load(f)
+                            saved_years = config.get('years')
+                            logger.info(f"[is-ready] Loaded saved years from config: {saved_years}")
+                    except Exception as e:
+                        logger.warning(f"[is-ready] Could not read config file: {e}")
+                trigger_data_download_and_processing(viewport_name, years=saved_years)
                 message = "⏳ Restarting pipeline..."
             else:
                 message = "⏳ Creating pyramids..."
