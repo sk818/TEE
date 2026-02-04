@@ -341,10 +341,14 @@
             </div>
         </div>
 
-        <!-- Panel 4: UMAP Visualization -->
+        <!-- Panel 4: PCA/UMAP Visualization -->
         <div class="panel">
-            <div class="panel-header" style="background: #4A5568; color: white; padding: 8px; font-weight: 600; font-size: 14px;">
-                <span>UMAP (Embedding Space)</span>
+            <div class="panel-header" style="background: #4A5568; color: white; padding: 8px; font-weight: 600; font-size: 14px; display: flex; justify-content: space-between; align-items: center;">
+                <span id="panel4-title">PCA (Embedding Space)</span>
+                <select id="dim-reduction-selector" style="padding: 2px 6px; border: 1px solid #666; border-radius: 3px; background: #333; color: #fff; font-size: 12px; cursor: pointer;">
+                    <option value="pca" selected>PCA (fast)</option>
+                    <option value="umap">UMAP (slow)</option>
+                </select>
             </div>
             <div id="map-umap" class="map" style="cursor: crosshair;"></div>
         </div>
@@ -446,8 +450,9 @@
 
         // New state variables for 6-panel viewer
         let currentEmbeddingYear2 = '2024';  // Second year selector
-        let umapData = null;                  // UMAP coordinates cache
-        let umapCanvasLayer = null;           // UMAP scatter plot layer
+        let umapData = null;                  // UMAP/PCA coordinates cache
+        let umapCanvasLayer = null;           // 3D scatter plot layer (Three.js scene)
+        let currentDimReduction = 'pca';      // 'pca' or 'umap' - default to PCA (fast)
         let heatmapCanvasLayer = null;        // Distance heatmap layer
         let explorerCanvasLayer2 = null;      // Explorer viz for Panel 6
 
@@ -2576,29 +2581,41 @@
 
         // ===== UMAP AND HEATMAP LOADING FUNCTIONS =====
 
-        // Load UMAP with background computation if needed
-        async function loadUMAP() {
+        // Load dimensionality reduction (PCA or UMAP) with background computation if needed
+        async function loadDimReduction(method = null) {
+            // Use specified method or current selection
+            const dimMethod = method || currentDimReduction;
+            const methodUpper = dimMethod.toUpperCase();
+
             try {
-                console.log(`[UMAP] Checking status for ${currentViewportName}/${currentEmbeddingYear}...`);
+                console.log(`[${methodUpper}] Checking status for ${currentViewportName}/${currentEmbeddingYear}...`);
 
-                // Check if UMAP needs to be computed
-                const statusResp = await fetch(`/api/viewports/${currentViewportName}/umap-status?year=${currentEmbeddingYear}`);
-                const status = await statusResp.json();
-
-                if (status.computing) {
-                    console.log(`[UMAP] Computing... (operation: ${status.operation_id})`);
-                    // Show loading message in Panel 4 (will be updated with progress)
-                    const umapContainer = document.getElementById('map-umap');
-                    umapContainer.innerHTML = '<div id="umap-progress" style="display:flex;align-items:center;justify-content:center;height:100%;font-size:18px;color:#666;">⏳ Computing UMAP (0%)...</div>';
-
-                    // Poll until complete, updating progress
-                    await waitForUMAP(status.operation_id);
-                    console.log(`[UMAP] Computation complete`);
+                // Update panel title
+                const titleEl = document.getElementById('panel4-title');
+                if (titleEl) {
+                    titleEl.textContent = `${methodUpper} (Embedding Space)`;
                 }
 
-                // Load the UMAP (either already existed or just finished computing)
-                console.log(`[UMAP] Loading coordinates...`);
-                const response = await fetch(`/api/viewports/${currentViewportName}/compute-umap`, {
+                // Check if method needs to be computed
+                const statusResp = await fetch(`/api/viewports/${currentViewportName}/${dimMethod}-status?year=${currentEmbeddingYear}`);
+                const status = await statusResp.json();
+
+                if (status.computing || !status.exists) {
+                    const waitMsg = dimMethod === 'pca' ? 'Computing PCA...' : 'Computing UMAP (this may take a few minutes)...';
+                    console.log(`[${methodUpper}] ${status.computing ? 'Already computing' : 'Starting computation'}... (operation: ${status.operation_id})`);
+
+                    // Show loading message in Panel 4
+                    const umapContainer = document.getElementById('map-umap');
+                    umapContainer.innerHTML = `<div id="umap-progress" style="display:flex;align-items:center;justify-content:center;height:100%;font-size:18px;color:#666;">⏳ ${waitMsg}</div>`;
+
+                    // Poll until complete
+                    await waitForDimReduction(status.operation_id, dimMethod);
+                    console.log(`[${methodUpper}] Computation complete`);
+                }
+
+                // Load the coordinates (either already existed or just finished computing)
+                console.log(`[${methodUpper}] Loading coordinates...`);
+                const response = await fetch(`/api/viewports/${currentViewportName}/compute-${dimMethod}`, {
                     method: 'POST',
                     headers: {'Content-Type': 'application/json'},
                     body: JSON.stringify({year: parseInt(currentEmbeddingYear)})
@@ -2606,10 +2623,10 @@
 
                 const data = await response.json();
                 if (data.success) {
-                    console.log(`[UMAP] Got ${data.num_points} points, initializing Three.js scene...`);
+                    console.log(`[${methodUpper}] Got ${data.num_points} points, initializing Three.js scene...`);
                     umapData = data.points;
 
-                    // Destroy previous scene if reloading (e.g. year switch)
+                    // Destroy previous scene if reloading
                     if (umapCanvasLayer) {
                         umapCanvasLayer.dispose();
                         umapCanvasLayer = null;
@@ -2617,24 +2634,32 @@
 
                     umapCanvasLayer = new window.UMAPScene('map-umap', umapData);
 
-                    // Apply labels to UMAP if they were loaded before UMAP
+                    // Apply labels if they were loaded before
                     if (savedLabels && savedLabels.length > 0) {
-                        console.log(`[UMAP] Applying ${savedLabels.length} labels to UMAP colors...`);
+                        console.log(`[${methodUpper}] Applying ${savedLabels.length} labels to colors...`);
                         updateUMAPColorsFromLabels();
-                        console.log(`✓ UMAP rendered: ${data.num_points} points (colored by labels)`);
+                        console.log(`✓ ${methodUpper} rendered: ${data.num_points} points (colored by labels)`);
                     } else {
-                        console.log(`✓ UMAP rendered: ${data.num_points} points (all grey)`);
+                        console.log(`✓ ${methodUpper} rendered: ${data.num_points} points (all grey)`);
                     }
                 } else {
-                    console.error(`[UMAP] Error: ${data.error}`);
+                    console.error(`[${methodUpper}] Error: ${data.error}`);
+                    const umapContainer = document.getElementById('map-umap');
+                    umapContainer.innerHTML = `<div style="display:flex;align-items:center;justify-content:center;height:100%;font-size:16px;color:#e74c3c;">Error: ${data.error}</div>`;
                 }
             } catch (error) {
-                console.error('[UMAP] Fatal error:', error);
+                console.error(`[${methodUpper}] Fatal error:`, error);
             }
         }
 
-        // Poll for UMAP completion with progress updates
-        async function waitForUMAP(operationId) {
+        // Backward-compatible alias
+        async function loadUMAP() {
+            await loadDimReduction(currentDimReduction);
+        }
+
+        // Poll for dimensionality reduction completion with progress updates
+        async function waitForDimReduction(operationId, method = 'umap') {
+            const methodUpper = method.toUpperCase();
             return new Promise(resolve => {
                 const poll = async () => {
                     try {
@@ -2644,14 +2669,14 @@
                         // Update progress display
                         const progressDiv = document.getElementById('umap-progress');
                         if (progressDiv && prog.percent !== undefined) {
-                            const message = prog.message || 'Computing UMAP';
+                            const message = prog.message || `Computing ${methodUpper}`;
                             progressDiv.textContent = `⏳ ${message} (${prog.percent}%)`;
                         }
 
                         if (prog.status === 'complete' || prog.status === 'error') {
                             resolve();
                         } else {
-                            setTimeout(poll, 1000);
+                            setTimeout(poll, 500);  // Poll faster for PCA (it's quick)
                         }
                     } catch (e) {
                         setTimeout(poll, 1000);
@@ -2659,6 +2684,11 @@
                 };
                 poll();
             });
+        }
+
+        // Backward-compatible alias
+        async function waitForUMAP(operationId) {
+            return waitForDimReduction(operationId, 'umap');
         }
 
         // Update heatmap message visibility based on year comparison
@@ -2821,9 +2851,19 @@
             // Poll for FAISS index and show labeling controls when ready
             startFAISSPolling();
 
-            // Initialize new panels
-            await loadUMAP();             // Panel 4: UMAP visualization
-            await loadHeatmap();          // Panel 5: Distance heatmap
+            // Set up dimensionality reduction selector (PCA/UMAP)
+            const dimSelector = document.getElementById('dim-reduction-selector');
+            if (dimSelector) {
+                dimSelector.addEventListener('change', async (e) => {
+                    currentDimReduction = e.target.value;
+                    console.log(`[DimReduction] Switching to ${currentDimReduction.toUpperCase()}`);
+                    await loadDimReduction(currentDimReduction);
+                });
+            }
+
+            // Initialize new panels (default to PCA for speed)
+            await loadDimReduction('pca');  // Panel 4: PCA visualization (fast)
+            await loadHeatmap();            // Panel 5: Distance heatmap
 
             // Check tile server health
             fetch(`${TILE_SERVER}/health`)

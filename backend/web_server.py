@@ -1574,6 +1574,81 @@ def api_compute_umap(viewport_name):
         return jsonify({'success': False, 'error': str(e)}), 500
 
 
+@app.route('/api/viewports/<viewport_name>/compute-pca', methods=['POST'])
+def api_compute_pca(viewport_name):
+    """Load pre-computed PCA coordinates for visualization."""
+    try:
+        data = request.get_json()
+        year = data.get('year', 2024)
+
+        faiss_dir = FAISS_INDICES_DIR / viewport_name / str(year)
+        if not faiss_dir.exists():
+            return jsonify({
+                'success': False,
+                'error': f'FAISS index not found for {viewport_name} ({year})'
+            }), 404
+
+        # Load pre-computed PCA coordinates
+        pca_file = faiss_dir / 'pca_coords.npy'
+        pixel_coords_file = faiss_dir / 'pixel_coords.npy'
+        metadata_file = faiss_dir / 'metadata.json'
+
+        if not pca_file.exists():
+            return jsonify({
+                'success': False,
+                'error': f'PCA not computed. Run: python3 compute_pca.py {viewport_name} {year}'
+            }), 404
+
+        try:
+            # Load pre-computed data
+            pca_coords = np.load(str(pca_file))          # (N, 3)
+            pixel_coords = np.load(str(pixel_coords_file))  # (N, 2)
+
+            with open(metadata_file) as f:
+                metadata = json.load(f)
+
+            # Convert pixel coordinates to lat/lon using geotransform
+            geotransform = metadata['geotransform']
+            a = geotransform['a']
+            b = geotransform['b']
+            c = geotransform['c']
+            d = geotransform['d']
+            e = geotransform['e']
+            f = geotransform['f']
+
+            lons = c + a * pixel_coords[:, 0] + b * pixel_coords[:, 1]
+            lats = f + d * pixel_coords[:, 0] + e * pixel_coords[:, 1]
+
+        except Exception as e:
+            logger.error(f"[PCA] Error loading pre-computed PCA: {e}")
+            return jsonify({
+                'success': False,
+                'error': f'Error loading PCA data: {str(e)}'
+            }), 500
+
+        # Package result (PCA always has 3 components)
+        points = []
+        for i in range(len(lats)):
+            points.append({
+                'lat': float(lats[i]),
+                'lon': float(lons[i]),
+                'x': float(pca_coords[i, 0]),
+                'y': float(pca_coords[i, 1]),
+                'z': float(pca_coords[i, 2])
+            })
+
+        logger.info(f"[PCA] ✓ Loaded pre-computed PCA for {len(points):,} points")
+        return jsonify({
+            'success': True,
+            'points': points,
+            'num_points': len(points)
+        })
+
+    except Exception as e:
+        logger.error(f"[PCA] Unexpected error: {e}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
 @app.route('/api/viewports/<viewport_name>/umap-status', methods=['GET'])
 def api_umap_status(viewport_name):
     """Check if UMAP exists and trigger computation if not."""
@@ -1638,6 +1713,73 @@ def api_umap_status(viewport_name):
 
     except Exception as e:
         logger.error(f"[UMAP] Status error: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/viewports/<viewport_name>/pca-status', methods=['GET'])
+def api_pca_status(viewport_name):
+    """Check if PCA exists and trigger computation if not."""
+    try:
+        year = request.args.get('year', '2024')
+        faiss_dir = FAISS_INDICES_DIR / viewport_name / str(year)
+        pca_file = faiss_dir / 'pca_coords.npy'
+        operation_id = f"{viewport_name}_pca_{year}"
+        progress_file = Path(f"/tmp/{operation_id}_progress.json")
+
+        # Already computed
+        if pca_file.exists():
+            return jsonify({'exists': True, 'computing': False})
+
+        # Check if already computing
+        if progress_file.exists():
+            with open(progress_file) as f:
+                progress = json.load(f)
+            if progress.get('status') in ('in_progress', 'processing', 'starting'):
+                return jsonify({'exists': False, 'computing': True, 'operation_id': operation_id})
+            elif progress.get('status') == 'complete':
+                if pca_file.exists():
+                    return jsonify({'exists': True, 'computing': False})
+                # Progress says complete but file is missing — stale/failed run; fall through to retry
+                progress_file.unlink()
+
+        # Start computation in background (PCA is fast, but still run async for consistency)
+        logger.info(f"[PCA] Starting computation for {viewport_name}/{year}")
+
+        def compute_background():
+            try:
+                with open(progress_file, 'w') as f:
+                    json.dump({'status': 'in_progress', 'message': f'Computing PCA...'}, f)
+
+                repo_dir = Path(__file__).parent.parent
+                result = subprocess.run(
+                    [str(repo_dir / 'venv' / 'bin' / 'python3'), str(repo_dir / 'compute_pca.py'),
+                     viewport_name, str(year)],
+                    cwd=repo_dir,
+                    capture_output=True,
+                    timeout=60  # PCA is fast, 60s timeout is plenty
+                )
+
+                if result.returncode != 0:
+                    logger.error(f"[PCA] compute_pca.py failed: {result.stderr.decode()[:500]}")
+                    with open(progress_file, 'w') as f:
+                        json.dump({'status': 'error', 'error': result.stderr.decode()[:500]}, f)
+                    return
+
+                with open(progress_file, 'w') as f:
+                    json.dump({'status': 'complete'}, f)
+
+            except Exception as e:
+                logger.error(f"[PCA] Error: {e}")
+                with open(progress_file, 'w') as f:
+                    json.dump({'status': 'error', 'error': str(e)}, f)
+
+        thread = threading.Thread(target=compute_background, daemon=True)
+        thread.start()
+
+        return jsonify({'exists': False, 'computing': True, 'operation_id': operation_id})
+
+    except Exception as e:
+        logger.error(f"[PCA] Status error: {e}")
         return jsonify({'error': str(e)}), 500
 
 
