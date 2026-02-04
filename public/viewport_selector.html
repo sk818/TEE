@@ -747,17 +747,24 @@
                 }
             });
 
-            // Add mousemove handler to show preview
+            // Add mousemove handler to show preview (always follows mouse while form is open)
             map.on('mousemove', function(e) {
-                // Only show preview if form is open AND no location has been selected yet
-                if (document.getElementById('createForm').classList.contains('open') && !pendingViewportBounds) {
+                if (document.getElementById('createForm').classList.contains('open')) {
                     showViewportPreview(e.latlng);
+                    // Keep pendingViewportBounds in sync so the box position matches what will be created
+                    if (pendingViewportBounds) {
+                        const offsets = kmToDegrees(VIEWPORT_SIZE_KM / 2, e.latlng.lat);
+                        pendingViewportBounds = {
+                            bounds: `${(e.latlng.lng - offsets.lngOffset).toFixed(6)},${(e.latlng.lat - offsets.latOffset).toFixed(6)},${(e.latlng.lng + offsets.lngOffset).toFixed(6)},${(e.latlng.lat + offsets.latOffset).toFixed(6)}`,
+                            autoName: pendingViewportBounds.autoName
+                        };
+                    }
                 }
             });
 
-            // Hide preview when mouse leaves map (but keep it visible if location has been selected for naming)
+            // Hide preview when mouse leaves map
             map.getContainer().addEventListener('mouseout', function() {
-                if (previewBox && !pendingViewportBounds) {
+                if (previewBox) {
                     map.removeLayer(previewBox);
                     previewBox = null;
                 }
@@ -891,25 +898,26 @@
             const minLon = latlng.lng - offsets.lngOffset;
             const maxLon = latlng.lng + offsets.lngOffset;
 
-            // Store bounds for later creation
+            const isFirstPlacement = !pendingViewportBounds;
+
+            // Store / update bounds for later creation
             pendingViewportBounds = {
                 bounds: `${minLon.toFixed(6)},${minLat.toFixed(6)},${maxLon.toFixed(6)},${maxLat.toFixed(6)}`,
                 autoName: `viewport_${latlng.lat.toFixed(4)}_${latlng.lng.toFixed(4)}`
             };
             console.log('[CREATE VIEWPORT] Bounds:', pendingViewportBounds.bounds);
 
-            // Keep preview visible so user can see where the viewport will be
-            // (Don't remove it - let them see the selected area while typing the name)
+            // Show the naming form only on first placement; subsequent clicks just reposition the box
+            if (isFirstPlacement) {
+                document.getElementById('formFields').style.display = 'block';
+                document.getElementById('closeButton').style.display = 'none';
+                document.getElementById('viewportName').value = '';
+                document.getElementById('viewportName').focus();
 
-            // Show the naming form
-            document.getElementById('formFields').style.display = 'block';
-            document.getElementById('closeButton').style.display = 'none';
-            document.getElementById('viewportName').value = '';
-            document.getElementById('viewportName').focus();
-
-            document.getElementById('mapInfoLabel').textContent = 'Name your viewport';
-            document.getElementById('mapInfoValue').textContent = '(optional)';
-            console.log('[CREATE VIEWPORT] Form fields shown, ready for user input');
+                document.getElementById('mapInfoLabel').textContent = 'Name your viewport';
+                document.getElementById('mapInfoValue').textContent = '(optional)';
+                console.log('[CREATE VIEWPORT] Form fields shown, ready for user input');
+            }
         }
 
         // Confirm and create the viewport with optional custom name
