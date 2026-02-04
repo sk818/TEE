@@ -28,7 +28,7 @@ TEE (Tessera Embeddings Explorer) integrates geospatial data processing with dee
 
 ### Viewport Management
 - Create custom geographic viewports interactively
-- **Landmark/geocode search** — type a place name (e.g. "London") to jump the map and place the viewport box
+- **Landmark/geocode search** — type a place name (e.g. "London") to jump the map, place the viewport box, and auto-fill the viewport name
 - **Click-to-lock preview box** — 5km box follows the mouse, locks on click, and can be repositioned by clicking again
 - Preset viewports for common regions (tile-aligned, Bangalore, Malleswaram)
 - Multi-year processing with progress tracking
@@ -133,10 +133,10 @@ The **Advanced Viewer** extends the standard viewer with a comprehensive 6-panel
 
 3. **Create a new viewport:**
    - Click "+ Create New Viewport"
-   - **Option A:** Type a place name in the search box (e.g. "London") and select a result — the map pans and places the 5km preview box
+   - **Option A:** Type a place name in the search box (e.g. "London") and select a result — the map pans, places the 5km preview box, and pre-fills the viewport name
    - **Option B:** Click directly on the map to place the 5km preview box
    - The box locks on click; click again elsewhere to reposition it
-   - Name the viewport, select which years to download (default: 2024), and click "Create"
+   - Edit the viewport name if desired, select which years to download (default: 2024), and click "Create"
    - Wait for automatic processing (downloading, RGB creation, pyramid building, FAISS indexing)
    - Viewer automatically opens when complete
 
@@ -223,7 +223,7 @@ python3 create_rgb_embeddings.py
 python3 create_pyramids.py
 ```
 - Creates multi-level zoom pyramids (0-5) for all years
-- Stores tiles at different resolutions
+- Each level is 3× upscaled with nearest-neighbor resampling to preserve crisp 10m embedding boundaries
 - Enables efficient web-based viewing
 - **✓ Viewer becomes available** once ANY year has pyramids
 - Output: `blore_data/pyramids/{viewport}/{year}/`
