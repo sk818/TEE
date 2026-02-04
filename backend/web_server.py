@@ -1671,79 +1671,50 @@ def api_distance_heatmap():
             lon_key = round(lons1[i], 6)
             pixel_lookup[(lat_key, lon_key)] = i
 
-        # Build pixel lookup for year2 using rounded keys
+        # Build pixel lookup for year2
         pixel_lookup2 = {}
         for i in range(len(lats2)):
             lat_key = round(lats2[i], 6)
             lon_key = round(lons2[i], 6)
             pixel_lookup2[(lat_key, lon_key)] = i
 
-        # Find matching pixel indices between year1 and year2
-        # This is the slow part - do it once, then vectorize distance computation
-        logger.info(f"[HEATMAP] Finding matching pixels between {len(lats1):,} and {len(lats2):,} pixels...")
-        idx1_matched = []
-        idx2_matched = []
+        # Compute distances for ALL matching pixels (no subsampling to avoid banding artifacts)
+        # We compute all distances to get accurate min/max for proper normalization
+        distances = []
+        matched = 0
+        mismatched = 0
 
-        for i in range(len(lats1)):
+        for i in range(len(lats1)):  # Process all pixels for accurate statistics
             lat_key = round(lats1[i], 6)
             lon_key = round(lons1[i], 6)
+
             if (lat_key, lon_key) in pixel_lookup2:
-                idx1_matched.append(i)
-                idx2_matched.append(pixel_lookup2[(lat_key, lon_key)])
+                idx2 = pixel_lookup2[(lat_key, lon_key)]
+                emb1 = all_emb1[i].astype(np.float32)
+                emb2 = all_emb2[idx2].astype(np.float32)
 
-        matched = len(idx1_matched)
-        mismatched = len(lats1) - matched
-        logger.info(f"[HEATMAP] Found {matched:,} matching pixels")
+                # Compute L2 distance
+                distance = float(np.sqrt(np.sum((emb1 - emb2) ** 2)))
+                distances.append({
+                    'lat': float(lats1[i]),
+                    'lon': float(lons1[i]),
+                    'distance': distance
+                })
+                matched += 1
+            else:
+                mismatched += 1
 
-        if matched == 0:
-            return jsonify({
-                'success': True,
-                'distances': [],
-                'stats': None
-            })
+        logger.info(f"[HEATMAP] ✓ Computed {matched:,} distances for {len(lats1):,} pixels")
 
-        # Vectorized distance computation - MUCH faster than Python loop
-        idx1_matched = np.array(idx1_matched)
-        idx2_matched = np.array(idx2_matched)
-
-        emb1_matched = all_emb1[idx1_matched].astype(np.float32)
-        emb2_matched = all_emb2[idx2_matched].astype(np.float32)
-
-        # Compute all L2 distances in one vectorized operation
-        distance_values = np.sqrt(np.sum((emb1_matched - emb2_matched) ** 2, axis=1))
-        lats_matched = lats1[idx1_matched]
-        lons_matched = lons1[idx1_matched]
-
-        logger.info(f"[HEATMAP] ✓ Computed {matched:,} distances (vectorized)")
-
-        # Subsample for display if there are many pixels
-        # At typical zoom levels, >50K pixels is overkill
-        max_display_pixels = 50000
-        if matched > max_display_pixels:
-            # Random subsample to avoid systematic bias
-            np.random.seed(42)  # Reproducible
-            sample_idx = np.random.choice(matched, max_display_pixels, replace=False)
-            sample_idx = np.sort(sample_idx)  # Keep spatial coherence
-            display_lats = lats_matched[sample_idx]
-            display_lons = lons_matched[sample_idx]
-            display_distances = distance_values[sample_idx]
-            logger.info(f"[HEATMAP] Subsampled to {max_display_pixels:,} pixels for display")
+        # Compute distance statistics for proper frontend normalization
+        if distances:
+            distance_values = np.array([d['distance'] for d in distances])
+            min_dist = float(np.min(distance_values))
+            max_dist = float(np.max(distance_values))
+            mean_dist = float(np.mean(distance_values))
+            median_dist = float(np.median(distance_values))
         else:
-            display_lats = lats_matched
-            display_lons = lons_matched
-            display_distances = distance_values
-
-        # Compute distance statistics from ALL matched pixels (not subsampled) for accurate normalization
-        min_dist = float(np.min(distance_values))
-        max_dist = float(np.max(distance_values))
-        mean_dist = float(np.mean(distance_values))
-        median_dist = float(np.median(distance_values))
-
-        # Build response list from subsampled data
-        distances = [
-            {'lat': float(display_lats[i]), 'lon': float(display_lons[i]), 'distance': float(display_distances[i])}
-            for i in range(len(display_lats))
-        ]
+            min_dist = max_dist = mean_dist = median_dist = 0.0
 
         logger.info(f"[HEATMAP] Distance stats - min: {min_dist:.3f}, max: {max_dist:.3f}, mean: {mean_dist:.3f}, median: {median_dist:.3f}")
 
