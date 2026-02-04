@@ -150,6 +150,22 @@ def download_embeddings():
             successful_years.append(year)
             continue
 
+        # Calculate exact download requirements using geotessera registry (dry-run equivalent)
+        try:
+            tiles = list(tessera.registry.iter_tiles_in_region(BBOX, year))
+            total_download_bytes, total_files, _ = tessera.registry.calculate_download_requirements(
+                tiles, EMBEDDINGS_DIR, format_type='npy', check_existing=True
+            )
+            total_download_mb = total_download_bytes / (1024 * 1024)
+            print(f"   Download required: {total_files} files, {total_download_mb:.1f} MB")
+        except Exception as e:
+            print(f"   ⚠️  Could not calculate download size: {e}")
+            total_download_bytes = est_bytes  # Fall back to estimate
+            total_files = 0
+
+        # Track bytes downloaded for accurate progress
+        bytes_downloaded = [0]  # Use list for closure
+
         # Retry logic for download and validation
         max_retries = 3
         year_success = False
@@ -157,12 +173,20 @@ def download_embeddings():
         for attempt in range(1, max_retries + 1):
             try:
                 print(f"   Downloading and merging tiles (attempt {attempt}/{max_retries})...")
-                progress.update("downloading", f"Downloading {output_file.name} - {est_width} × {est_height} pixels (~{est_mb:.1f} MB) - Attempt {attempt}/{max_retries}", current_file=output_file.name)
+                progress.update("downloading", f"Downloading {output_file.name} - {total_files} tiles ({total_download_mb:.1f} MB)",
+                               current_file=output_file.name, current_value=0, total_value=total_download_bytes)
 
-                # Define progress callback to capture geotessera tile downloads
+                # Define progress callback with byte-based tracking
                 def on_geotessera_progress(current, total, status):
-                    # status contains information about tiles being downloaded (e.g., "Fetching tile X")
-                    progress.update("downloading", f"Downloading {output_file.name} ({est_mb:.1f} MB): {status}", current_value=current, total_value=total, current_file=f"{output_file.name} - {status}")
+                    # Estimate bytes based on tile progress (current/total * total_bytes)
+                    if total > 0:
+                        estimated_bytes = int((current / total) * total_download_bytes)
+                        bytes_downloaded[0] = estimated_bytes
+                        progress.update("downloading",
+                                       f"Downloading {year}: {status} ({estimated_bytes / (1024*1024):.1f} / {total_download_mb:.1f} MB)",
+                                       current_value=estimated_bytes,
+                                       total_value=total_download_bytes,
+                                       current_file=f"{output_file.name}")
 
                 # Fetch mosaic for the region (auto-downloads missing tiles)
                 mosaic_array, mosaic_transform, crs = tessera.fetch_mosaic_for_region(
