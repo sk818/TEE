@@ -28,6 +28,8 @@ TEE (Tessera Embeddings Explorer) integrates geospatial data processing with dee
 
 ### Viewport Management
 - Create custom geographic viewports interactively
+- **Landmark/geocode search** — type a place name (e.g. "London") to jump the map and place the viewport box
+- **Click-to-lock preview box** — 5km box follows the mouse, locks on click, and can be repositioned by clicking again
 - Preset viewports for common regions (tile-aligned, Bangalore, Malleswaram)
 - Multi-year processing with progress tracking
 - Automatic navigation to viewer after processing
@@ -50,9 +52,11 @@ The **Advanced Viewer** extends the standard viewer with a comprehensive 6-panel
 6. **Panel 6 (Embeddings Y2)** - Second year embeddings for temporal comparison
 
 #### Features
-- **One-Click Similarity Search** - Click any pixel to instantly search for similar pixels across the viewport
-- **Real-Time Threshold Control** - Adjust the similarity slider to dynamically filter results
+- **One-Click Similarity Search** - Click any pixel on Panel 3 to instantly search for similar pixels across the viewport
+- **Real-Time Threshold Control** - Adjust the similarity slider in the header to dynamically filter results
 - **Persistent Colored Overlays** - Save similarity search results as named labels with custom colors
+- **Cross-Panel Gold Triangle Markers** - Clicking Panel 3 places a marker on Panels 1, 2, and 4; clicking Panel 1 places markers on Panels 2, 3, 4, 5, and 6. Markers from a previous panel click are cleared when clicking a different panel.
+- **Header-Based Label Controls** - Save as Label, label count, view labels, and toggle overlays are all in the main header bar (no floating overlays obscure the panels)
 - **UMAP Visualization** - Automatic 2D projection of 128D embeddings with satellite RGB coloring
 - **Temporal Distance Heatmap** - Tile-based L2 distance computation between years with adaptive subsampling
 - **Temporal Analysis** - Switch Panel 6 year independently to compare embedding changes over time
@@ -129,9 +133,10 @@ The **Advanced Viewer** extends the standard viewer with a comprehensive 6-panel
 
 3. **Create a new viewport:**
    - Click "+ Create New Viewport"
-   - Click on the map to set location or enter bounds manually
-   - Select which years to download (default: 2024)
-   - Click "Create"
+   - **Option A:** Type a place name in the search box (e.g. "London") and select a result — the map pans and places the 5km preview box
+   - **Option B:** Click directly on the map to place the 5km preview box
+   - The box locks on click; click again elsewhere to reposition it
+   - Name the viewport, select which years to download (default: 2024), and click "Create"
    - Wait for automatic processing (downloading, RGB creation, pyramid building, FAISS indexing)
    - Viewer automatically opens when complete
 
