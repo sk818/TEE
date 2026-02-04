@@ -981,7 +981,21 @@ def api_is_viewport_ready(viewport_name):
         elif not has_embeddings:
             message = "⏳ Downloading embeddings..."
         else:
-            message = "⏳ Creating pyramids..."
+            # Embeddings exist but pyramids don't — check if pipeline is actually running.
+            # If not (e.g. daemon thread died on restart), re-trigger it so processing
+            # resumes automatically instead of staying stuck forever.
+            operation_id = f"{viewport_name}_full_pipeline"
+            pipeline_running = False
+            with tasks_lock:
+                if operation_id in tasks:
+                    pipeline_running = tasks[operation_id].get('status') in ('starting', 'in_progress')
+
+            if not pipeline_running:
+                logger.info(f"[is-ready] Pipeline not running for '{viewport_name}' but data incomplete — re-triggering pipeline")
+                trigger_data_download_and_processing(viewport_name)
+                message = "⏳ Restarting pipeline..."
+            else:
+                message = "⏳ Creating pyramids..."
 
         return jsonify({
             'ready': is_ready,
