@@ -811,53 +811,87 @@ def api_delete_viewport():
 
         # Delete associated mosaic files (match by viewport name in filename)
         if MOSAICS_DIR.exists():
+            # Delete embedding mosaics
             for mosaic_file in MOSAICS_DIR.glob('*.tif'):
-                # Check if mosaic filename starts with viewport name
                 if mosaic_file.stem.startswith(viewport_name + '_'):
                     mosaic_file.unlink()
                     deleted_items.append(f"mosaic: {mosaic_file.name}")
                     logger.info(f"✓ Deleted mosaic: {mosaic_file.name}")
+
+            # Delete years metadata JSON
+            years_file = MOSAICS_DIR / f'{viewport_name}_years.json'
+            if years_file.exists():
+                years_file.unlink()
+                deleted_items.append(f"years metadata: {years_file.name}")
+                logger.info(f"✓ Deleted years metadata: {years_file.name}")
+
+            # Delete RGB mosaics (in mosaics/rgb/ subdirectory)
+            rgb_dir = MOSAICS_DIR / 'rgb'
+            if rgb_dir.exists():
+                for rgb_file in rgb_dir.glob(f'{viewport_name}_*.tif'):
+                    rgb_file.unlink()
+                    deleted_items.append(f"RGB mosaic: {rgb_file.name}")
+                    logger.info(f"✓ Deleted RGB mosaic: {rgb_file.name}")
 
         # Delete viewport-specific pyramid directory
         if PYRAMIDS_DIR.exists():
             try:
                 viewport_pyramids_dir = PYRAMIDS_DIR / viewport_name
                 if viewport_pyramids_dir.exists():
-                    import shutil
                     shutil.rmtree(viewport_pyramids_dir)
                     deleted_items.append(f"pyramids directory: {viewport_name}/")
                     logger.info(f"✓ Deleted pyramids directory: {viewport_name}/")
             except Exception as e:
                 logger.warning(f"Error deleting pyramids directory for {viewport_name}: {e}")
 
-        # Delete FAISS indices directory for this viewport
+        # Delete FAISS indices directory for this viewport (includes UMAP coords)
         if FAISS_INDICES_DIR.exists():
             try:
                 faiss_viewport_dir = FAISS_INDICES_DIR / viewport_name
                 if faiss_viewport_dir.exists():
-                    import shutil
                     shutil.rmtree(faiss_viewport_dir)
-                    deleted_items.append(f"FAISS index directory: {viewport_name}/")
-                    logger.info(f"✓ Deleted FAISS index directory: {viewport_name}/")
+                    deleted_items.append(f"FAISS/UMAP directory: {viewport_name}/")
+                    logger.info(f"✓ Deleted FAISS/UMAP directory: {viewport_name}/")
             except Exception as e:
                 logger.warning(f"Error deleting FAISS index directory for {viewport_name}: {e}")
+
+        # Delete labels JSON file
+        labels_file = viewports_dir / f'{viewport_name}_labels.json'
+        if labels_file.exists():
+            try:
+                labels_file.unlink()
+                deleted_items.append(f"labels: {labels_file.name}")
+                logger.info(f"✓ Deleted labels: {labels_file.name}")
+            except Exception as e:
+                logger.warning(f"Error deleting labels file for {viewport_name}: {e}")
+
+        # Delete viewport config JSON file (stores years selection)
+        config_file = viewports_dir / f'{viewport_name}_config.json'
+        if config_file.exists():
+            try:
+                config_file.unlink()
+                deleted_items.append(f"config: {config_file.name}")
+                logger.info(f"✓ Deleted config: {config_file.name}")
+            except Exception as e:
+                logger.warning(f"Error deleting config file for {viewport_name}: {e}")
 
         # Delete progress tracking files for this viewport
         tmp_dir = Path('/tmp')
         progress_patterns = [
             f'{viewport_name}_embeddings_progress.json',
             f'{viewport_name}_pyramids_progress.json',
-            f'{viewport_name}_faiss_progress.json'
+            f'{viewport_name}_faiss_*_progress.json',
+            f'{viewport_name}_umap_*_progress.json',
+            f'{viewport_name}_pipeline_progress.json',
         ]
         for pattern in progress_patterns:
-            progress_file = tmp_dir / pattern
-            if progress_file.exists():
+            for progress_file in tmp_dir.glob(pattern):
                 try:
                     progress_file.unlink()
-                    deleted_items.append(f"progress file: {pattern}")
-                    logger.info(f"✓ Deleted progress file: {pattern}")
+                    deleted_items.append(f"progress file: {progress_file.name}")
+                    logger.info(f"✓ Deleted progress file: {progress_file.name}")
                 except Exception as e:
-                    logger.warning(f"Error deleting progress file {pattern}: {e}")
+                    logger.warning(f"Error deleting progress file {progress_file.name}: {e}")
 
         # Delete the viewport file
         viewport_file.unlink()
