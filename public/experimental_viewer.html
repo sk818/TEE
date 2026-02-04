@@ -751,17 +751,13 @@
             if (umapCanvasLayer) {
                 console.log(`🔄 Reloading UMAP for year ${year}`);
                 // Clear old UMAP highlight before reloading
-                if (umapCanvasLayer) {
-                    umapCanvasLayer.highlightedPoint = null;
-                    umapCanvasLayer.redraw();
-                }
+                umapCanvasLayer.setHighlight(null);
                 await loadUMAP();
             }
 
             // Update heatmap (compares Panel 3 and Panel 6)
-            if (heatmapCanvasLayer) {
-                loadHeatmap();
-            }
+            // Always call loadHeatmap - it handles same-year case by showing message
+            loadHeatmap();
 
             // Re-run explorer search if one is active
             if (currentSearchCache && currentSearchCache.sourcePixel) {
@@ -779,8 +775,10 @@
 
         // Refresh all saved labels for a new year
         async function refreshLabelsForYear(year) {
+            console.log(`[LABEL REFRESH] Starting refresh for ${savedLabels.length} labels, year=${year}`);
             for (const label of savedLabels) {
                 try {
+                    console.log(`[LABEL REFRESH] Processing '${label.name}': source=(${label.source_pixel.lat.toFixed(4)}, ${label.source_pixel.lon.toFixed(4)}), threshold=${label.threshold}`);
                     // Extract embedding at source pixel for new year
                     const extractResp = await fetch('/api/embeddings/extract', {
                         method: 'POST',
@@ -817,6 +815,7 @@
                     }
 
                     // Update label's pixels with new year's results
+                    const oldPixelCount = label.pixels ? label.pixels.length : 0;
                     label.pixels = searchData.matches.map(m => ({
                         lat: m.lat,
                         lon: m.lon,
@@ -824,7 +823,7 @@
                     }));
                     label.pixel_count = label.pixels.length;
 
-                    console.log(`✓ Updated label '${label.name}': ${label.pixel_count} pixels in year ${year}`);
+                    console.log(`✓ Updated label '${label.name}': ${oldPixelCount} → ${label.pixel_count} pixels in year ${year}`);
                 } catch (error) {
                     console.error(`[LABEL] Error refreshing ${label.name}:`, error);
                 }
@@ -3118,6 +3117,9 @@
             _redraw: function() {
                 if (!this._map) return;
 
+                const totalPixels = this.labels.reduce((sum, l) => sum + (l.pixels ? l.pixels.length : 0), 0);
+                console.log(`[OVERLAY REDRAW] ${this.labels.length} labels, ${totalPixels} total pixels`);
+
                 const size = this._map.getSize();
                 const bounds = this._map.getBounds();
 
@@ -3164,6 +3166,8 @@
             if (!maps.rgb) return;
 
             const visibleLabels = savedLabels.filter(l => l.visible);
+            const totalPixels = savedLabels.reduce((sum, l) => sum + (l.pixels ? l.pixels.length : 0), 0);
+            console.log(`[UPDATE OVERLAY] ${savedLabels.length} labels, ${visibleLabels.length} visible, ${totalPixels} total pixels`);
 
             if (visibleLabels.length > 0) {
                 // If overlay exists, update it in place (avoids remove/re-add timing issues)
