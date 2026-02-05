@@ -4,6 +4,7 @@ Tile server for Tessera embeddings
 Serves map tiles dynamically from pyramid GeoTIFFs for current viewport
 """
 
+import sys
 from flask import Flask, send_file, jsonify
 from flask_cors import CORS
 from rio_tiler.io import Reader
@@ -13,11 +14,14 @@ import io
 from PIL import Image
 import numpy as np
 
+# Add parent directory to path for lib imports
+sys.path.insert(0, str(Path(__file__).parent))
+from lib.config import DATA_DIR, PYRAMIDS_DIR
+
 app = Flask(__name__)
 CORS(app)
 
-DATA_DIR = Path.home() / "blore_data"
-PYRAMIDS_BASE_DIR = DATA_DIR / "pyramids"
+PYRAMIDS_BASE_DIR = PYRAMIDS_DIR
 YEARS = [str(y) for y in range(2017, 2026)] + ['satellite']
 
 # Cache for tile readers

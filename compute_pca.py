@@ -18,12 +18,12 @@ import logging
 sys.path.insert(0, str(Path(__file__).parent))
 
 from lib.progress_tracker import ProgressTracker
+from lib.config import DATA_DIR, FAISS_DIR
 
 logging.basicConfig(level=logging.INFO, format='%(message)s')
 logger = logging.getLogger(__name__)
 
-DATA_DIR = Path.home() / "blore_data"
-FAISS_INDICES_DIR = DATA_DIR / "faiss_indices"
+FAISS_INDICES_DIR = FAISS_DIR
 
 
 def compute_pca(viewport_name, year):

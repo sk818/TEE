@@ -19,13 +19,11 @@ sys.path.insert(0, str(Path(__file__).parent))
 
 from lib.viewport_utils import get_active_viewport, check_cache
 from lib.progress_tracker import ProgressTracker
+from lib.config import DATA_DIR, EMBEDDINGS_DIR, MOSAICS_DIR
 import math
 
 # Configuration
 DEFAULT_YEARS = range(2017, 2026)  # Support 2017-2025 (Sentinel-2 availability)
-DATA_DIR = Path.home() / "blore_data"
-EMBEDDINGS_DIR = DATA_DIR / "embeddings"
-MOSAICS_DIR = DATA_DIR / "mosaics"
 
 # Parse command line arguments for year selection
 import argparse

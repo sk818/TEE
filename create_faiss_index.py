@@ -28,11 +28,10 @@ sys.path.insert(0, str(Path(__file__).parent))
 
 from lib.viewport_utils import get_active_viewport
 from lib.progress_tracker import ProgressTracker
+from lib.config import DATA_DIR, MOSAICS_DIR, FAISS_DIR
 
 # Configuration
-DATA_DIR = Path.home() / "blore_data"
-MOSAICS_DIR = DATA_DIR / "mosaics"
-FAISS_INDICES_DIR = DATA_DIR / "faiss_indices"
+FAISS_INDICES_DIR = FAISS_DIR
 SAMPLING_FACTOR = 4  # Every 4×4 pixels (reduces 19M → 1.2M vectors)
 EMBEDDING_DIM = 128
 YEARS = range(2017, 2026)  # Support 2017-2025

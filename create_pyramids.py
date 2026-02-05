@@ -30,12 +30,11 @@ from PIL import Image
 # Add parent directory to path for lib imports
 sys.path.insert(0, str(Path(__file__).parent))
 from lib.progress_tracker import ProgressTracker
+from lib.config import DATA_DIR, MOSAICS_DIR, PYRAMIDS_DIR
 
 # Configuration
-DATA_DIR = Path.home() / "blore_data"
-MOSAICS_DIR = DATA_DIR / "mosaics"
-RGB_MOSAICS_DIR = DATA_DIR / "mosaics" / "rgb"
-PYRAMIDS_BASE_DIR = DATA_DIR / "pyramids"
+RGB_MOSAICS_DIR = MOSAICS_DIR / "rgb"
+PYRAMIDS_BASE_DIR = PYRAMIDS_DIR
 YEARS = range(2017, 2026)  # Support 2017-2025
 NUM_ZOOM_LEVELS = 6  # 6 useful zoom levels (skip the very zoomed-out tiny levels)
 

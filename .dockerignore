@@ -1,0 +1,44 @@
+# Git
+.git
+.gitignore
+
+# Python
+__pycache__
+*.py[cod]
+*$py.class
+*.so
+venv/
+env/
+ENV/
+*.egg-info/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Large data (mounted as volume, not copied)
+blore_data/
+mosaics/
+embeddings/
+pyramids/
+faiss_indices/
+*.tif
+*.tiff
+*.npy
+*.index
+
+# Deprecated/test files
+deprecated/
+*.log
+*.png
+
+# Documentation (not needed in container)
+*.md
+!README.md

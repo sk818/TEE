@@ -2,18 +2,24 @@
 SQLite database for label storage.
 
 Replaces JSON file storage with efficient indexed database.
-Database location: ~/blore_data/labels.db
+Database location: Configurable via BLORE_DATA_DIR env var (default: ~/blore_data/labels.db)
 """
 
+import sys
 import sqlite3
 from pathlib import Path
 from datetime import datetime
 from contextlib import contextmanager
 import logging
 
+# Add parent directory to path for lib imports
+sys.path.insert(0, str(Path(__file__).parent.parent))
+
+from lib.config import LABELS_DB_PATH
+
 logger = logging.getLogger(__name__)
 
-DB_PATH = Path.home() / 'blore_data' / 'labels.db'
+DB_PATH = LABELS_DB_PATH
 
 
 def init_db():

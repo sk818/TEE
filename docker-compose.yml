@@ -1,0 +1,29 @@
+# TEE (Tessera Embeddings Explorer) Docker Compose
+#
+# Usage:
+#   docker-compose up -d        # Start in background
+#   docker-compose logs -f      # View logs
+#   docker-compose down         # Stop
+#
+# Data is persisted in ~/blore_data on the host
+
+services:
+  tee:
+    build: .
+    ports:
+      - "8001:8001"
+    volumes:
+      # Mount data directory (embeddings, pyramids, FAISS indices, labels)
+      - ~/blore_data:/data
+      # Mount viewports config directory
+      - ./viewports:/app/viewports
+    environment:
+      - BLORE_DATA_DIR=/data
+      - BLORE_APP_DIR=/app
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8001/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s

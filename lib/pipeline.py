@@ -11,6 +11,7 @@ from pathlib import Path
 import time
 
 from lib.progress_tracker import ProgressTracker
+from lib.config import MOSAICS_DIR, PYRAMIDS_DIR, FAISS_DIR
 
 logger = logging.getLogger(__name__)
 
@@ -100,7 +101,7 @@ class PipelineRunner:
             return False, error_msg
 
         # Verify embeddings exist
-        mosaics_dir = Path.home() / "blore_data" / "mosaics"
+        mosaics_dir = MOSAICS_DIR
         embedding_files = list(mosaics_dir.glob(f"{viewport_name}_embeddings_*.tif"))
         if not embedding_files:
             error_msg = "Stage 1 verification failed - No embeddings files found"
@@ -129,7 +130,7 @@ class PipelineRunner:
             return False, error_msg
 
         # Verify RGB files exist
-        mosaics_dir = Path.home() / "blore_data" / "mosaics"
+        mosaics_dir = MOSAICS_DIR
         rgb_dir = mosaics_dir / "rgb"
         rgb_files = list(rgb_dir.glob(f"{viewport_name}_*_rgb.tif")) if rgb_dir.exists() else []
 
@@ -160,7 +161,7 @@ class PipelineRunner:
             return False, error_msg
 
         # Verify pyramids exist
-        pyramids_dir = Path.home() / "blore_data" / "pyramids"
+        pyramids_dir = PYRAMIDS_DIR
         viewport_pyramids_dir = pyramids_dir / viewport_name
 
         if not viewport_pyramids_dir.exists():
@@ -210,7 +211,7 @@ class PipelineRunner:
             return False, error_msg
 
         # Verify FAISS index exists (year-specific)
-        faiss_dir = Path.home() / "blore_data" / "faiss_indices"
+        faiss_dir = FAISS_DIR
         faiss_viewport_dir = faiss_dir / viewport_name
 
         if not faiss_viewport_dir.exists():
@@ -256,7 +257,7 @@ class PipelineRunner:
             return True, None  # Don't fail pipeline
 
         # Verify UMAP coordinates file exists
-        faiss_dir = Path.home() / "blore_data" / "faiss_indices"
+        faiss_dir = FAISS_DIR
         umap_file = faiss_dir / viewport_name / str(umap_year) / "umap_coords.npy"
 
         if not self.wait_for_file(umap_file, min_size_bytes=100):

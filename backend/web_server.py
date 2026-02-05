@@ -30,6 +30,7 @@ from lib.viewport_utils import (
 )
 from lib.viewport_writer import set_active_viewport, create_viewport_from_bounds
 from lib.pipeline import PipelineRunner
+from lib.config import DATA_DIR, MOSAICS_DIR, PYRAMIDS_DIR, FAISS_DIR, VIEWPORTS_DIR, ensure_dirs
 from backend.labels_db import (
     init_db as init_labels_db,
     get_labels,
@@ -49,11 +50,8 @@ logger = logging.getLogger(__name__)
 app = Flask(__name__, static_folder=str(Path(__file__).parent.parent / 'public'))
 CORS(app)
 
-# Data directories
-DATA_DIR = Path.home() / "blore_data"
-MOSAICS_DIR = DATA_DIR / "mosaics"
-PYRAMIDS_DIR = DATA_DIR / "pyramids"
-FAISS_INDICES_DIR = DATA_DIR / "faiss_indices"
+# Data directories (from lib.config, configurable via env vars)
+FAISS_INDICES_DIR = FAISS_DIR  # Alias for compatibility
 
 # Task tracking for downloads
 tasks = {}
@@ -1899,8 +1897,6 @@ def api_distance_heatmap():
 # ============================================================================
 # PERSISTENT LABELS API
 # ============================================================================
-
-VIEWPORTS_DIR = Path.home() / 'blore' / 'viewports'
 
 @app.route('/api/viewports/<viewport_name>/labels', methods=['GET'])
 def api_get_viewport_labels(viewport_name):

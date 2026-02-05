@@ -14,11 +14,10 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent))
 
 from lib.viewport_utils import get_active_viewport
+from lib.config import DATA_DIR, MOSAICS_DIR
 
 # Configuration
-DATA_DIR = Path.home() / "blore_data"
-MOSAICS_DIR = DATA_DIR / "mosaics"
-OUTPUT_DIR = DATA_DIR / "mosaics" / "rgb"
+OUTPUT_DIR = MOSAICS_DIR / "rgb"
 YEARS = range(2017, 2026)  # Support 2017-2025
 N_COMPONENTS = 3  # RGB
 CHUNK_SIZE = 1000  # Process in chunks to save memory
