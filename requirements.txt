@@ -22,3 +22,10 @@ scikit-learn
 pyyaml
 tqdm
 Pillow
+
+# Server
+flask
+flask_cors
+faiss-cpu
+scipy
+rio-tiler
