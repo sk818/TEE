@@ -94,11 +94,37 @@ The **Advanced Viewer** extends the standard viewer with a comprehensive 6-panel
 
 ### Prerequisites
 
-- Python 3.8+
-- Virtual environment (venv or conda)
+- Python 3.8+ (or Docker)
 - ~5GB storage per viewport (varies by number of years)
 
-### Installation
+### Option A: Docker Installation (Recommended)
+
+The easiest way to run TEE is with Docker:
+
+1. **Install Docker Desktop:**
+   - Mac: `brew install --cask docker` or download from [docker.com](https://www.docker.com/products/docker-desktop/)
+   - Windows/Linux: Download from [docker.com](https://www.docker.com/products/docker-desktop/)
+
+2. **Clone and build:**
+   ```bash
+   git clone https://github.com/sk818/TEE.git blore
+   cd blore
+   docker build -t tee .
+   ```
+
+3. **Run:**
+   ```bash
+   docker run -p 8001:8001 -v ~/blore_data:/data tee
+   ```
+
+   Or with docker-compose:
+   ```bash
+   docker-compose up -d
+   ```
+
+4. **Open browser:** Navigate to http://localhost:8001
+
+### Option B: Local Installation
 
 1. **Clone the repository:**
    ```bash
