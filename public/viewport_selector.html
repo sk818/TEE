@@ -534,8 +534,8 @@
                         </div>
                         <div id="formFields" style="display: none;">
                             <div class="form-group">
-                                <label>Viewport Name (optional)</label>
-                                <input type="text" id="viewportName" placeholder="e.g., bangalore_south" class="form-group input">
+                                <label>Viewport Name <span style="color: #d32f2f;">*</span></label>
+                                <input type="text" id="viewportName" placeholder="e.g., bangalore_south" class="form-group input" required>
                             </div>
                             <div style="margin-top: 12px; padding: 0;">
                                 <label style="font-weight: 600; margin-bottom: 8px; display: block; font-size: 14px;">Download years (2017-2025):</label>
@@ -856,7 +856,6 @@
             // Store / update bounds for later creation
             pendingViewportBounds = {
                 bounds: `${minLon.toFixed(6)},${minLat.toFixed(6)},${maxLon.toFixed(6)},${maxLat.toFixed(6)}`,
-                autoName: `viewport_${latlng.lat.toFixed(4)}_${latlng.lng.toFixed(4)}`,
                 minLat, maxLat, minLon, maxLon
             };
             console.log('[CREATE VIEWPORT] Bounds:', pendingViewportBounds.bounds);
@@ -880,7 +879,7 @@
             }
         }
 
-        // Confirm and create the viewport with optional custom name
+        // Year selection helpers
         function selectAllYears() {
             document.querySelectorAll('.year-checkbox').forEach(cb => cb.checked = true);
         }
@@ -900,10 +899,16 @@
         async function confirmViewportCreation() {
             if (!pendingViewportBounds) return;
 
-            const customName = document.getElementById('viewportName').value.trim();
-            const name = customName || pendingViewportBounds.autoName;
+            const name = document.getElementById('viewportName').value.trim();
             const bounds = pendingViewportBounds.bounds;
             const years = getSelectedYears();
+
+            // Validate viewport name is provided
+            if (!name) {
+                alert('Please enter a viewport name');
+                document.getElementById('viewportName').focus();
+                return;
+            }
 
             // Validate that at least one year is selected
             if (years.length === 0) {
