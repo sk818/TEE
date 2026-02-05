@@ -304,6 +304,20 @@
             <button id="toggle-all-overlays" style="padding: 8px 12px; background: #333; color: white; border: 1px solid #555; border-radius: 4px; cursor: pointer; font-size: 13px; font-weight: 600; white-space: nowrap;">
                 👁 Toggle Overlays
             </button>
+            <button id="status-btn" style="padding: 8px 12px; background: #333; color: white; border: 1px solid #555; border-radius: 4px; cursor: pointer; font-size: 13px; white-space: nowrap;">
+                ℹ️ Status
+            </button>
+        </div>
+
+        <!-- Status Popup -->
+        <div id="status-popup" style="position: absolute; top: 100%; right: 10px; width: 320px; background: rgba(255,255,255,0.98); backdrop-filter: blur(10px); border-radius: 8px; padding: 15px; box-shadow: 0 2px 10px rgba(0,0,0,0.3); z-index: 999; font-size: 12px; display: none;">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+                <div style="font-weight: 600; font-size: 14px;">📊 Viewport Status</div>
+                <button id="status-close-btn" style="background: none; border: none; cursor: pointer; font-size: 16px; padding: 0; width: 20px; height: 20px;">✕</button>
+            </div>
+            <div id="status-content" style="font-family: monospace; font-size: 11px; line-height: 1.6; color: #333;">
+                Loading...
+            </div>
         </div>
 
         <!-- Labels Details Panel - drops down below header -->
@@ -3263,6 +3277,64 @@
             // Labels close button
             document.getElementById('labels-close-btn').addEventListener('click', function() {
                 document.getElementById('labels-details-panel').style.display = 'none';
+            });
+
+            // Status button - show/hide popup and fetch status
+            document.getElementById('status-btn').addEventListener('click', async function() {
+                const popup = document.getElementById('status-popup');
+                const content = document.getElementById('status-content');
+
+                if (popup.style.display === 'block') {
+                    popup.style.display = 'none';
+                    return;
+                }
+
+                // Show popup with loading state
+                popup.style.display = 'block';
+                content.innerHTML = 'Loading...';
+
+                try {
+                    const response = await fetch(`/api/viewports/${currentViewportName}/is-ready`);
+                    const status = await response.json();
+
+                    // Format the status nicely
+                    const readyIcon = status.ready ? '✅' : '⏳';
+                    const embeddingsIcon = status.has_embeddings ? '✅' : '❌';
+                    const pyramidsIcon = status.has_pyramids ? '✅' : '❌';
+                    const faissIcon = status.has_faiss ? '✅' : '❌';
+                    const years = status.years_available ? status.years_available.join(', ') : 'None';
+
+                    content.innerHTML = `
+                        <div style="margin-bottom: 10px; padding-bottom: 10px; border-bottom: 1px solid #ddd;">
+                            <strong>Viewport:</strong> ${currentViewportName}
+                        </div>
+                        <div style="margin-bottom: 8px;">
+                            <strong>Status:</strong> ${readyIcon} ${status.message}
+                        </div>
+                        <div style="margin-bottom: 8px;">
+                            <strong>Embeddings:</strong> ${embeddingsIcon}
+                        </div>
+                        <div style="margin-bottom: 8px;">
+                            <strong>Pyramids:</strong> ${pyramidsIcon}
+                        </div>
+                        <div style="margin-bottom: 8px;">
+                            <strong>FAISS Index:</strong> ${faissIcon}
+                        </div>
+                        <div style="margin-bottom: 8px;">
+                            <strong>Years Available:</strong> ${years}
+                        </div>
+                        <div style="margin-top: 10px; padding-top: 10px; border-top: 1px solid #ddd; font-size: 10px; color: #666;">
+                            Last checked: ${new Date().toLocaleTimeString()}
+                        </div>
+                    `;
+                } catch (error) {
+                    content.innerHTML = `<div style="color: #d32f2f;">Error fetching status: ${error.message}</div>`;
+                }
+            });
+
+            // Status close button
+            document.getElementById('status-close-btn').addEventListener('click', function() {
+                document.getElementById('status-popup').style.display = 'none';
             });
         });
 
