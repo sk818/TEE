@@ -412,7 +412,7 @@
             border-radius: 6px;
             box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
             font-size: 12px;
-            max-width: 200px;
+            max-width: 280px;
             z-index: 400;
         }
 
@@ -427,6 +427,24 @@
             color: #333;
             font-size: 11px;
             line-height: 1.4;
+        }
+
+        .map-info-coords {
+            margin-top: 8px;
+            padding-top: 8px;
+            border-top: 1px solid #eee;
+            font-family: 'Monaco', 'Courier New', monospace;
+            font-size: 10px;
+            color: #555;
+            line-height: 1.6;
+        }
+
+        .map-info-coords-label {
+            font-weight: 600;
+            color: #667eea;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+            font-size: 11px;
+            margin-bottom: 4px;
         }
 
         /* Loading spinner */
@@ -595,6 +613,10 @@
             <div class="map-info" id="mapInfo">
                 <div class="map-info-label" id="mapInfoLabel">Click on map</div>
                 <div class="map-info-value" id="mapInfoValue">to select viewport center</div>
+                <div class="map-info-coords" id="mapInfoCoords" style="display: none;">
+                    <div class="map-info-coords-label">Bounding Box</div>
+                    <div id="mapInfoCoordsContent"></div>
+                </div>
             </div>
         </div>
     </div>
@@ -650,6 +672,15 @@
             map.on('mousemove', function(e) {
                 if (document.getElementById('createForm').classList.contains('open') && !pendingViewportBounds) {
                     showViewportPreview(e.latlng);
+                    // Show live bounding box coordinates
+                    const offsets = kmToDegrees(VIEWPORT_SIZE_KM / 2, e.latlng.lat);
+                    const minLat = e.latlng.lat - offsets.latOffset;
+                    const maxLat = e.latlng.lat + offsets.latOffset;
+                    const minLon = e.latlng.lng - offsets.lngOffset;
+                    const maxLon = e.latlng.lng + offsets.lngOffset;
+                    showBoundsCoordinates(minLat, maxLat, minLon, maxLon);
+                    document.getElementById('mapInfoLabel').textContent = 'Viewport Preview';
+                    document.getElementById('mapInfoValue').textContent = '5km × 5km (click to place)';
                 }
             });
 
@@ -658,6 +689,9 @@
                 if (previewBox && !pendingViewportBounds) {
                     map.removeLayer(previewBox);
                     previewBox = null;
+                    hideBoundsCoordinates();
+                    document.getElementById('mapInfoLabel').textContent = 'Click on map';
+                    document.getElementById('mapInfoValue').textContent = 'to select viewport center';
                 }
             });
         }
@@ -788,6 +822,25 @@
             previewBox.bringToFront();
         }
 
+        // Show bounding box coordinates in map info panel
+        function showBoundsCoordinates(minLat, maxLat, minLon, maxLon) {
+            const coordsDiv = document.getElementById('mapInfoCoords');
+            const contentDiv = document.getElementById('mapInfoCoordsContent');
+
+            contentDiv.innerHTML = `
+                <div>NW: ${maxLat.toFixed(6)}°, ${minLon.toFixed(6)}°</div>
+                <div>NE: ${maxLat.toFixed(6)}°, ${maxLon.toFixed(6)}°</div>
+                <div>SW: ${minLat.toFixed(6)}°, ${minLon.toFixed(6)}°</div>
+                <div>SE: ${minLat.toFixed(6)}°, ${maxLon.toFixed(6)}°</div>
+            `;
+            coordsDiv.style.display = 'block';
+        }
+
+        // Hide bounding box coordinates
+        function hideBoundsCoordinates() {
+            document.getElementById('mapInfoCoords').style.display = 'none';
+        }
+
         // Prepare viewport for naming (called when map is clicked)
         async function createViewportFromClick(latlng) {
             console.log('[CREATE VIEWPORT] Starting creation at:', latlng);
@@ -803,12 +856,16 @@
             // Store / update bounds for later creation
             pendingViewportBounds = {
                 bounds: `${minLon.toFixed(6)},${minLat.toFixed(6)},${maxLon.toFixed(6)},${maxLat.toFixed(6)}`,
-                autoName: `viewport_${latlng.lat.toFixed(4)}_${latlng.lng.toFixed(4)}`
+                autoName: `viewport_${latlng.lat.toFixed(4)}_${latlng.lng.toFixed(4)}`,
+                minLat, maxLat, minLon, maxLon
             };
             console.log('[CREATE VIEWPORT] Bounds:', pendingViewportBounds.bounds);
 
             // Always update the visual box to the clicked position
             showViewportPreview(latlng);
+
+            // Always show coordinates when box is placed/moved
+            showBoundsCoordinates(minLat, maxLat, minLon, maxLon);
 
             // Show the naming form only on first placement; subsequent clicks just reposition the box
             if (isFirstPlacement) {
@@ -817,8 +874,8 @@
                 document.getElementById('viewportName').value = '';
                 document.getElementById('viewportName').focus();
 
-                document.getElementById('mapInfoLabel').textContent = 'Name your viewport';
-                document.getElementById('mapInfoValue').textContent = '(optional)';
+                document.getElementById('mapInfoLabel').textContent = 'Viewport Bounds';
+                document.getElementById('mapInfoValue').textContent = '5km × 5km';
                 console.log('[CREATE VIEWPORT] Form fields shown, ready for user input');
             }
         }
@@ -861,6 +918,7 @@
             // Show loading state
             document.getElementById('mapInfoLabel').textContent = 'Creating viewport...';
             document.getElementById('mapInfoValue').textContent = `Downloading embeddings for ${years.length} year${years.length > 1 ? 's' : ''}...`;
+            hideBoundsCoordinates();
 
             try {
                 // Create the viewport via API
@@ -922,6 +980,7 @@
                     document.getElementById('mapClickInstruction').style.display = 'inline-block';
                     document.getElementById('mapInfoLabel').textContent = '✗ Error creating viewport';
                     document.getElementById('mapInfoValue').textContent = data.error || 'Unknown error';
+                    hideBoundsCoordinates();
 
                     // Remove preview box
                     if (previewBox) {
@@ -940,6 +999,7 @@
                 document.getElementById('mapClickInstruction').style.display = 'inline-block';
                 document.getElementById('mapInfoLabel').textContent = '✗ Error creating viewport';
                 document.getElementById('mapInfoValue').textContent = error.message;
+                hideBoundsCoordinates();
 
                 // Remove preview box
                 if (previewBox) {
@@ -953,6 +1013,7 @@
                     drawViewportBox();
                     document.getElementById('mapInfoLabel').textContent = 'Click on map';
                     document.getElementById('mapInfoValue').textContent = 'to select viewport center';
+                    hideBoundsCoordinates();
                 }, 2000);
             }
         }
@@ -974,6 +1035,7 @@
 
             document.getElementById('mapInfoLabel').textContent = 'Click on map';
             document.getElementById('mapInfoValue').textContent = 'to select viewport center';
+            hideBoundsCoordinates();
         }
 
         // Load current viewport
@@ -1564,6 +1626,7 @@ Max Lon: ${bounds.maxLon.toFixed(4)}°
                 drawViewportBox();
                 document.getElementById('mapInfoLabel').textContent = 'Click on map';
                 document.getElementById('mapInfoValue').textContent = 'to select viewport center';
+                hideBoundsCoordinates();
 
                 // Reset preview
                 if (previewBox) {
