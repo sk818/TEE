@@ -179,6 +179,21 @@ def get_label_count(viewport_name: str) -> int:
 def delete_viewport_labels(viewport_name: str) -> int:
     """Delete all labels for a viewport. Returns count deleted."""
     with get_db() as conn:
+        # Get label IDs first
+        label_ids = [row[0] for row in conn.execute(
+            "SELECT id FROM labels WHERE viewport_name = ?",
+            (viewport_name,)
+        ).fetchall()]
+
+        if label_ids:
+            # Explicitly delete pixels (in case CASCADE doesn't work)
+            placeholders = ','.join('?' * len(label_ids))
+            conn.execute(
+                f"DELETE FROM label_pixels WHERE label_id IN ({placeholders})",
+                label_ids
+            )
+
+        # Delete labels
         cursor = conn.execute(
             "DELETE FROM labels WHERE viewport_name = ?",
             (viewport_name,)
