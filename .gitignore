@@ -22,6 +22,9 @@ build/
 .DS_Store
 Thumbs.db
 
+# Screenshots/debugging images
+*.png
+
 # Project specific
 *.log
 .env
