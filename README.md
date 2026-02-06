@@ -1,5 +1,7 @@
 # TEE: Tessera Embeddings Explorer
 
+**Version 1.0.8** | [Docker Hub](https://hub.docker.com/r/sk818/tee)
+
 A comprehensive system for downloading, processing, and visualizing Sentinel-2 satellite embeddings across multiple years (2017-2025) with an interactive web interface for geographic viewports.
 
 ## Overview
@@ -29,6 +31,7 @@ TEE (Tessera Embeddings Explorer) integrates geospatial data processing with dee
 ### Viewport Management
 - Create custom geographic viewports interactively
 - **Landmark/geocode search** — type a place name (e.g. "London") to jump the map, place the viewport box, and auto-fill the viewport name
+- **Direct coordinate input** — enter lat/long coordinates like Google Maps (e.g. "51.5074, -0.1278" or "37.7749 -122.4194")
 - **Click-to-lock preview box** — 5km box follows the mouse, locks on click, and can be repositioned by clicking again
 - Multi-year processing with progress tracking
 - Automatic navigation to viewer after processing
@@ -104,24 +107,26 @@ The easiest way to run TEE is with Docker:
    - Mac: `brew install --cask docker` or download from [docker.com](https://www.docker.com/products/docker-desktop/)
    - Windows/Linux: Download from [docker.com](https://www.docker.com/products/docker-desktop/)
 
-2. **Clone and build:**
+2. **Pull and run from Docker Hub (easiest):**
+   ```bash
+   docker pull sk818/tee:1.0.8
+   docker run -p 8001:8001 -v ~/blore_data:/data sk818/tee:1.0.8
+   ```
+
+   **Or build from source:**
    ```bash
    git clone https://github.com/sk818/TEE.git blore
    cd blore
    docker build -t tee .
-   ```
-
-3. **Run:**
-   ```bash
    docker run -p 8001:8001 -v ~/blore_data:/data tee
    ```
 
-   Or with docker-compose:
+   **Or with docker-compose:**
    ```bash
    docker-compose up -d
    ```
 
-4. **Open browser:** Navigate to http://localhost:8001
+3. **Open browser:** Navigate to http://localhost:8001
 
 ### Option B: Local Installation
 
@@ -160,7 +165,8 @@ The easiest way to run TEE is with Docker:
 3. **Create a new viewport:**
    - Click "+ Create New Viewport"
    - **Option A:** Type a place name in the search box (e.g. "London") and select a result — the map pans, places the 5km preview box, and pre-fills the viewport name
-   - **Option B:** Click directly on the map to place the 5km preview box
+   - **Option B:** Enter coordinates directly (e.g. "51.5074, -0.1278") — works like Google Maps
+   - **Option C:** Click directly on the map to place the 5km preview box
    - The box locks on click; click again elsewhere to reposition it
    - Edit the viewport name if desired, select which years to download (default: 2024), and click "Create"
    - Wait for automatic processing (downloading, RGB creation, pyramid building, FAISS indexing)
@@ -573,7 +579,7 @@ MIT License - See LICENSE file for details
 ## Authors
 
 - **S. Keshav** - Primary development and design
-- **Anthropic Haiku** - AI-assisted development and feature implementation
+- **Claude Opus 4.5** - AI-assisted development and feature implementation
 
 ## Related Resources
 
@@ -597,7 +603,7 @@ If you use this project in research, please cite:
 ```bibtex
 @software{tee2025,
   title={TEE: Tessera Embeddings Explorer},
-  author={Keshav, S. and Anthropic Haiku},
+  author={Keshav, S. and Claude Opus 4.5},
   year={2025},
   url={https://github.com/sk818/TEE}
 }
