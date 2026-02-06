@@ -7,6 +7,8 @@ Used by both web_server.py and setup_viewport.py
 
 import subprocess
 import logging
+import signal
+import os
 from pathlib import Path
 import time
 
@@ -24,6 +26,35 @@ STAGE_PROGRESS = {
     'umap': (90, 100),      # 90-100%: Computing UMAP
 }
 
+# Global registry of active pipeline processes (for cancellation)
+_active_pipelines = {}  # viewport_name -> {'process': Popen, 'cancelled': bool}
+
+
+def cancel_pipeline(viewport_name):
+    """Cancel a running pipeline by killing its subprocess."""
+    if viewport_name in _active_pipelines:
+        info = _active_pipelines[viewport_name]
+        info['cancelled'] = True
+        proc = info.get('process')
+        if proc and proc.poll() is None:  # Still running
+            try:
+                # Kill the process group to catch all children
+                os.killpg(os.getpgid(proc.pid), signal.SIGTERM)
+                logger.info(f"[PIPELINE] Killed process group for '{viewport_name}' (PID: {proc.pid})")
+            except (ProcessLookupError, PermissionError) as e:
+                logger.warning(f"[PIPELINE] Could not kill process: {e}")
+                try:
+                    proc.kill()
+                except:
+                    pass
+        return True
+    return False
+
+
+def is_pipeline_cancelled(viewport_name):
+    """Check if a pipeline has been cancelled."""
+    return _active_pipelines.get(viewport_name, {}).get('cancelled', False)
+
 
 class PipelineRunner:
     """Execute complete viewport data processing pipeline."""
@@ -37,6 +68,7 @@ class PipelineRunner:
         self.project_root = Path(project_root)
         self.venv_python = venv_python or Path(__import__('sys').executable)
         self.progress = None  # Unified pipeline progress tracker
+        self.viewport_name = None  # Set when running pipeline
 
     def update_progress(self, stage: str, stage_percent: int, message: str):
         """Update unified pipeline progress.
@@ -55,16 +87,59 @@ class PipelineRunner:
         self.progress.update("processing", message, overall_percent, 100)
 
     def run_script(self, script_name, *args, timeout=1800):
-        """Run a Python script and return result."""
+        """Run a Python script and return result. Supports cancellation."""
         cmd = [str(self.venv_python), str(self.project_root / script_name)] + list(args)
-        result = subprocess.run(
-            cmd,
-            cwd=self.project_root,
-            capture_output=True,
-            text=True,
-            timeout=timeout
-        )
-        return result
+
+        # Use Popen to allow cancellation
+        try:
+            # Start process in new process group for clean killing
+            proc = subprocess.Popen(
+                cmd,
+                cwd=self.project_root,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+                start_new_session=True  # Create new process group
+            )
+
+            # Register the process for potential cancellation
+            if self.viewport_name:
+                if self.viewport_name not in _active_pipelines:
+                    _active_pipelines[self.viewport_name] = {'cancelled': False}
+                _active_pipelines[self.viewport_name]['process'] = proc
+
+            # Wait for completion or timeout, checking cancellation periodically
+            start_time = time.time()
+            while proc.poll() is None:
+                # Check if cancelled
+                if self.viewport_name and is_pipeline_cancelled(self.viewport_name):
+                    try:
+                        os.killpg(os.getpgid(proc.pid), signal.SIGTERM)
+                    except:
+                        proc.kill()
+                    proc.wait()
+                    # Return a fake result indicating cancellation
+                    return subprocess.CompletedProcess(cmd, -1, '', 'Cancelled by user')
+
+                # Check timeout
+                if time.time() - start_time > timeout:
+                    try:
+                        os.killpg(os.getpgid(proc.pid), signal.SIGTERM)
+                    except:
+                        proc.kill()
+                    proc.wait()
+                    raise subprocess.TimeoutExpired(cmd, timeout)
+
+                time.sleep(0.5)  # Check every 500ms
+
+            stdout, stderr = proc.communicate()
+            return subprocess.CompletedProcess(cmd, proc.returncode, stdout, stderr)
+
+        except subprocess.TimeoutExpired:
+            raise
+        except Exception as e:
+            logger.error(f"[PIPELINE] Error running {script_name}: {e}")
+            return subprocess.CompletedProcess(cmd, -1, '', str(e))
 
     def wait_for_file(self, file_path, min_size_bytes=1024, max_retries=30, retry_interval=1.0):
         """Wait for file to exist and reach minimum size."""
@@ -359,14 +434,24 @@ class PipelineRunner:
         logger.info(f"   Compute UMAP: {compute_umap}")
         logger.info(f"{'=' * 70}\n")
 
+        # Register this pipeline for cancellation support
+        self.viewport_name = viewport_name
+        _active_pipelines[viewport_name] = {'cancelled': False, 'process': None}
+
         # Initialize unified pipeline progress tracker
         self.progress = ProgressTracker(f"{viewport_name}_pipeline")
         self.progress.update("processing", "Starting pipeline...", 0, 100)
 
-        # Helper to check cancellation
+        # Helper to check cancellation (uses both callback and global registry)
         def check_cancelled():
+            # Check global cancellation registry
+            if is_pipeline_cancelled(viewport_name):
+                logger.info(f"[PIPELINE] ❌ Cancelled by user (registry): {viewport_name}")
+                self.progress.error("Cancelled by user")
+                return True
+            # Check callback
             if cancel_check and cancel_check():
-                logger.info(f"[PIPELINE] ❌ Cancelled by user: {viewport_name}")
+                logger.info(f"[PIPELINE] ❌ Cancelled by user (callback): {viewport_name}")
                 self.progress.error("Cancelled by user")
                 return True
             return False

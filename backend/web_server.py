@@ -29,7 +29,7 @@ from lib.viewport_utils import (
     read_viewport_file
 )
 from lib.viewport_writer import set_active_viewport, clear_active_viewport, create_viewport_from_bounds
-from lib.pipeline import PipelineRunner
+from lib.pipeline import PipelineRunner, cancel_pipeline
 from lib.config import DATA_DIR, MOSAICS_DIR, PYRAMIDS_DIR, FAISS_DIR, VIEWPORTS_DIR, ensure_dirs
 from backend.labels_db import (
     init_db as init_labels_db,
@@ -860,6 +860,11 @@ def api_cancel_processing(viewport_name):
         operation_id = f"{viewport_name}_full_pipeline"
         deleted_items = []
         task_was_active = False
+
+        # Kill running subprocess (if any)
+        if cancel_pipeline(viewport_name):
+            logger.info(f"[CANCEL] Killed running pipeline subprocess for '{viewport_name}'")
+            deleted_items.append("subprocess killed")
 
         # Try to cancel the active task (if any)
         with tasks_lock:
