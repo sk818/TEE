@@ -21,8 +21,8 @@ RUN apt-get update && apt-get install -y \
 # Copy requirements first for better caching
 COPY requirements.txt .
 
-# Install Python packages
-RUN pip3 install --no-cache-dir --break-system-packages -r requirements.txt
+# Install Python packages (ignore system numpy to avoid conflicts)
+RUN pip3 install --no-cache-dir --break-system-packages --ignore-installed numpy -r requirements.txt
 
 # Copy application code
 COPY . .
