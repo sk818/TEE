@@ -796,7 +796,9 @@ def api_cancel_processing(viewport_name):
 
         operation_id = f"{viewport_name}_full_pipeline"
         deleted_items = []
+        task_was_active = False
 
+        # Try to cancel the active task (if any)
         with tasks_lock:
             if operation_id in tasks:
                 current_status = tasks[operation_id].get('status')
@@ -806,17 +808,11 @@ def api_cancel_processing(viewport_name):
                         'current_stage': 'cancelled',
                         'error': 'Cancelled by user'
                     }
+                    task_was_active = True
                     logger.info(f"[PIPELINE] Cancelled processing for viewport '{viewport_name}'")
-                else:
-                    return jsonify({
-                        'success': False,
-                        'message': f'Cannot cancel - status is: {current_status}'
-                    }), 400
-            else:
-                return jsonify({
-                    'success': False,
-                    'message': 'No active processing found for this viewport'
-                }), 404
+
+        # Always clean up files regardless of task state
+        # (files may exist even if task tracking was lost)
 
         # Clean up progress files
         progress_patterns = [
@@ -892,10 +888,18 @@ def api_cancel_processing(viewport_name):
 
         logger.info(f"[CANCEL] Cleaned up {len(deleted_items)} items for '{viewport_name}'")
 
+        if task_was_active:
+            message = f'Processing cancelled for {viewport_name}'
+        elif deleted_items:
+            message = f'No active task, but cleaned up {len(deleted_items)} leftover files for {viewport_name}'
+        else:
+            message = f'No active processing or files found for {viewport_name}'
+
         return jsonify({
             'success': True,
-            'message': f'Processing cancelled for {viewport_name}',
-            'deleted_items': deleted_items
+            'message': message,
+            'deleted_items': deleted_items,
+            'task_was_active': task_was_active
         }), 200
 
     except Exception as e:
