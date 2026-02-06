@@ -28,7 +28,7 @@ from lib.viewport_utils import (
     list_viewports,
     read_viewport_file
 )
-from lib.viewport_writer import set_active_viewport, create_viewport_from_bounds
+from lib.viewport_writer import set_active_viewport, clear_active_viewport, create_viewport_from_bounds
 from lib.pipeline import PipelineRunner
 from lib.config import DATA_DIR, MOSAICS_DIR, PYRAMIDS_DIR, FAISS_DIR, VIEWPORTS_DIR, ensure_dirs
 from backend.labels_db import (
@@ -186,12 +186,19 @@ def trigger_data_download_and_processing(viewport_name, years=None):
             # Convert years list to comma-separated string
             years_str = ','.join(str(y) for y in years) if years else None
 
+            # Create cancellation check function
+            def is_cancelled():
+                with tasks_lock:
+                    task = tasks.get(operation_id, {})
+                    return task.get('status') == 'cancelled'
+
             # Run the full pipeline (stages 1-4, optional UMAP)
             # Note: UMAP is only computed if explicitly enabled; web UI doesn't compute it
             success, error = runner.run_full_pipeline(
                 viewport_name=viewport_name,
                 years_str=years_str,
-                compute_umap=False  # Web UI doesn't compute UMAP; it's optional for CLI
+                compute_umap=False,  # Web UI doesn't compute UMAP; it's optional for CLI
+                cancel_check=is_cancelled
             )
 
             if success:
@@ -885,6 +892,16 @@ def api_cancel_processing(viewport_name):
                     deleted_items.append(f"config: {pattern}")
                 except:
                     pass
+
+        # If this was the active viewport, clear the active state
+        try:
+            active_name = get_active_viewport_name()
+            if active_name == viewport_name:
+                clear_active_viewport()
+                deleted_items.append("active viewport state")
+                logger.info(f"[CANCEL] Cleared active viewport state for '{viewport_name}'")
+        except:
+            pass
 
         logger.info(f"[CANCEL] Cleaned up {len(deleted_items)} items for '{viewport_name}'")
 

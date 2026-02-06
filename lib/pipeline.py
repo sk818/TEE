@@ -267,7 +267,7 @@ class PipelineRunner:
         logger.info(f"[PIPELINE] ✓ Stage 5 complete: UMAP computed")
         return True, None
 
-    def run_full_pipeline(self, viewport_name, years_str=None, compute_umap=True, umap_year=None):
+    def run_full_pipeline(self, viewport_name, years_str=None, compute_umap=True, umap_year=None, cancel_check=None):
         """
         Run complete pipeline in PARALLEL PER YEAR:
         - Download multiple years in parallel (one script call with all years)
@@ -279,6 +279,7 @@ class PipelineRunner:
             years_str: Comma-separated years (e.g., "2023,2024") or None for all available
             compute_umap: Whether to compute UMAP (default: True)
             umap_year: Which year to compute UMAP for (default: first to complete)
+            cancel_check: Optional callable that returns True if pipeline should be cancelled
 
         Returns:
             (success: bool, error_message: str or None)
@@ -306,6 +307,14 @@ class PipelineRunner:
         self.progress = ProgressTracker(f"{viewport_name}_pipeline")
         self.progress.update("processing", "Starting pipeline...", 0, 100)
 
+        # Helper to check cancellation
+        def check_cancelled():
+            if cancel_check and cancel_check():
+                logger.info(f"[PIPELINE] ❌ Cancelled by user: {viewport_name}")
+                self.progress.error("Cancelled by user")
+                return True
+            return False
+
         # Stage 1: Download embeddings (all years in parallel)
         # This single call downloads all requested years in parallel
         self.update_progress('download', 0, "Downloading embeddings...")
@@ -313,40 +322,59 @@ class PipelineRunner:
         if not success:
             self.progress.error(f"Download failed: {error}")
             return False, error
+        if check_cancelled():
+            return False, "Cancelled by user"
         self.update_progress('download', 100, "Embeddings downloaded")
 
         # Stage 2: Create RGB (all years in parallel)
+        if check_cancelled():
+            return False, "Cancelled by user"
         self.update_progress('rgb', 0, "Creating RGB visualizations...")
         success, error = self.stage_2_create_rgb(viewport_name)
         if not success:
             self.progress.error(f"RGB creation failed: {error}")
             return False, error
+        if check_cancelled():
+            return False, "Cancelled by user"
         self.update_progress('rgb', 100, "RGB created")
 
         # Stage 3: Create pyramids (all years in parallel) - CRITICAL for viewer
         # ✓ After this stage, viewer CAN SWITCH (pyramids available for at least one year)
+        if check_cancelled():
+            return False, "Cancelled by user"
         self.update_progress('pyramids', 0, "Creating tile pyramids...")
         success, error = self.stage_3_create_pyramids(viewport_name)
         if not success:
             self.progress.error(f"Pyramid creation failed: {error}")
             return False, error
+        if check_cancelled():
+            return False, "Cancelled by user"
         self.update_progress('pyramids', 100, "Pyramids created")
 
         # Stage 4: Create FAISS (all years in parallel)
         # ✓ After this stage, labeling controls BECOME AVAILABLE
+        if check_cancelled():
+            return False, "Cancelled by user"
         self.update_progress('faiss', 0, "Building FAISS index...")
         success, error = self.stage_4_create_faiss(viewport_name)
         if not success:
             self.progress.error(f"FAISS creation failed: {error}")
             return False, error
+        if check_cancelled():
+            return False, "Cancelled by user"
         self.update_progress('faiss', 100, "FAISS index ready")
 
         # Stage 5: Compute UMAP (optional, from first completed year)
         # ✓ After this stage, UMAP visualization BECOMES AVAILABLE
         if compute_umap:
+            if check_cancelled():
+                return False, "Cancelled by user"
             self.update_progress('umap', 0, "Computing UMAP projection...")
             success, error = self.stage_5_compute_umap(viewport_name, umap_year or "")
             self.update_progress('umap', 100, "UMAP complete")
+
+        if check_cancelled():
+            return False, "Cancelled by user"
 
         logger.info(f"\n{'=' * 70}")
         logger.info(f"✅ PARALLEL PIPELINE COMPLETE: {viewport_name}")

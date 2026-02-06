@@ -112,3 +112,24 @@ def set_active_viewport(viewport_name: str) -> None:
     # Update .active file
     active_path.write_text(viewport_name)
     logger.info(f"✓ Set active viewport: {viewport_name}")
+
+
+def clear_active_viewport() -> None:
+    """
+    Clear the active viewport state (remove symlink and .active file).
+
+    Call this when the active viewport is deleted or cancelled.
+    """
+    viewports_dir = Path(__file__).parent.parent / "viewports"
+    symlink_path = viewports_dir / "viewport.txt"
+    active_path = viewports_dir / ".active"
+
+    # Remove symlink
+    if symlink_path.exists() or symlink_path.is_symlink():
+        symlink_path.unlink()
+        logger.info("✓ Removed viewport.txt symlink")
+
+    # Remove .active file
+    if active_path.exists():
+        active_path.unlink()
+        logger.info("✓ Removed .active file")

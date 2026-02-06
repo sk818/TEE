@@ -1063,9 +1063,17 @@
 
                     // Check if data exists for this viewport
                     checkViewportData();
+                } else {
+                    // No active viewport
+                    currentViewport = null;
+                    document.getElementById('currentName').textContent = 'No active viewport';
+                    document.getElementById('currentName').style.color = '#888';
+                    document.getElementById('dataStatusText').textContent = 'Create or select a viewport';
                 }
             } catch (error) {
                 console.error('Error loading current viewport:', error);
+                document.getElementById('currentName').textContent = 'Error loading';
+                document.getElementById('dataStatusText').textContent = 'Check console';
             }
         }
 
@@ -1185,50 +1193,6 @@
             }
         }
 
-        // Cancel processing for the active viewport
-        async function cancelProcessing() {
-            if (!activeProgressViewport) {
-                alert('No viewport is currently being processed');
-                return;
-            }
-
-            if (!confirm(`Cancel processing for "${activeProgressViewport}"?`)) {
-                return;
-            }
-
-            try {
-                const response = await fetch(`/api/viewports/${activeProgressViewport}/cancel-processing`, {
-                    method: 'POST'
-                });
-                const result = await response.json();
-
-                if (result.success) {
-                    // Stop polling
-                    if (activeProgressPollInterval) {
-                        clearInterval(activeProgressPollInterval);
-                        activeProgressPollInterval = null;
-                    }
-
-                    // Update UI
-                    document.getElementById('processingStage').textContent = '❌ Cancelled';
-                    document.getElementById('processingMessage').textContent = 'Processing was cancelled by user';
-                    document.getElementById('cancelProcessingBtn').style.display = 'none';
-
-                    // Hide processing section after a delay
-                    setTimeout(() => {
-                        document.getElementById('processingSection').style.display = 'none';
-                        activeProgressViewport = null;
-                        loadViewports(); // Refresh viewport list
-                    }, 2000);
-                } else {
-                    alert(result.message || 'Failed to cancel processing');
-                }
-            } catch (error) {
-                console.error('Error cancelling processing:', error);
-                alert('Error cancelling processing: ' + error.message);
-            }
-        }
-
         // Start polling for detailed progress on a viewport
         function startProgressPolling(viewportName) {
             // Don't start duplicate polling for same viewport
@@ -1308,6 +1272,62 @@
                     console.error('Error polling progress:', error);
                 }
             }, 2000);
+        }
+
+        // Cancel processing for the active viewport
+        async function cancelProcessing() {
+            if (!activeProgressViewport) {
+                alert('No viewport is currently being processed');
+                return;
+            }
+
+            if (!confirm(`Cancel processing for "${activeProgressViewport}"?`)) {
+                return;
+            }
+
+            try {
+                const response = await fetch(`/api/viewports/${activeProgressViewport}/cancel-processing`, {
+                    method: 'POST'
+                });
+                const result = await response.json();
+
+                if (result.success) {
+                    // Stop polling
+                    if (activeProgressPollInterval) {
+                        clearInterval(activeProgressPollInterval);
+                        activeProgressPollInterval = null;
+                    }
+
+                    // Update UI
+                    document.getElementById('processingStage').textContent = '❌ Cancelled';
+                    document.getElementById('processingMessage').textContent = result.message;
+                    document.getElementById('cancelProcessingBtn').style.display = 'none';
+
+                    const cancelledViewport = activeProgressViewport;
+
+                    // Hide processing section after a delay
+                    setTimeout(() => {
+                        document.getElementById('processingSection').style.display = 'none';
+                        activeProgressViewport = null;
+                        loadViewports(); // Refresh viewport list
+                    }, 2000);
+
+                    // Second cleanup after 5 seconds to catch files from still-running downloads
+                    setTimeout(async () => {
+                        try {
+                            await fetch(`/api/viewports/${cancelledViewport}/cancel-processing`, { method: 'POST' });
+                            console.log(`[CANCEL] Secondary cleanup for ${cancelledViewport}`);
+                        } catch (e) {
+                            // Ignore errors on secondary cleanup
+                        }
+                    }, 5000);
+                } else {
+                    alert(result.message || 'Failed to cancel processing');
+                }
+            } catch (error) {
+                console.error('Error cancelling processing:', error);
+                alert('Error cancelling processing: ' + error.message);
+            }
         }
 
         async function goToViewer(viewportName) {
@@ -1676,6 +1696,12 @@ Max Lon: ${bounds.maxLon.toFixed(4)}°
             if (form.classList.contains('open')) {
                 if (viewportBox) {
                     map.removeLayer(viewportBox);
+                }
+                // Reset pending bounds so preview follows mouse
+                pendingViewportBounds = null;
+                if (previewBox) {
+                    map.removeLayer(previewBox);
+                    previewBox = null;
                 }
             } else {
                 // Restore viewport box when closing form
