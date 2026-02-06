@@ -138,6 +138,7 @@
             position: absolute;
             top: 10px;
             right: 15px;
+            left: 15px;
             background: rgba(0, 0, 0, 0.85);
             color: white;
             padding: 8px 12px;
@@ -146,6 +147,48 @@
             font-size: 14px;
             z-index: 500;
             backdrop-filter: blur(5px);
+            display: flex;
+            flex-wrap: wrap;
+            align-items: center;
+            justify-content: space-between;
+            gap: 4px;
+        }
+
+        .panel-header span {
+            white-space: nowrap;
+        }
+
+        .panel-header select {
+            flex-shrink: 0;
+        }
+
+        /* Responsive: smaller text and compact layout on narrow screens */
+        @media (max-width: 1200px) {
+            .panel-header {
+                font-size: 12px;
+                padding: 6px 10px;
+                top: 5px;
+                right: 10px;
+                left: 10px;
+            }
+            .panel-header select {
+                font-size: 11px !important;
+                padding: 2px 4px !important;
+            }
+        }
+
+        @media (max-width: 900px) {
+            .panel-header {
+                font-size: 11px;
+                padding: 4px 8px;
+                flex-direction: column;
+                align-items: flex-start;
+                gap: 4px;
+            }
+            .panel-header span {
+                white-space: normal;
+                word-break: break-word;
+            }
         }
 
         .map {
