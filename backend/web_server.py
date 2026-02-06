@@ -979,13 +979,11 @@ def api_delete_viewport():
         if not viewport_file.exists():
             return jsonify({'success': False, 'error': 'Viewport not found'}), 404
 
-        # Check if this is the active viewport
+        # If this is the active viewport, clear the active state first
         active_viewport = get_active_viewport_name()
         if active_viewport == viewport_name:
-            return jsonify({
-                'success': False,
-                'error': 'Cannot delete the active viewport. Switch to another viewport first.'
-            }), 400
+            clear_active_viewport()
+            logger.info(f"Cleared active viewport state before deleting '{viewport_name}'")
 
         # Read the viewport to get its bounds
         try:
