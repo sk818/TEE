@@ -959,8 +959,12 @@
                     document.getElementById('createForm').classList.remove('open');
                     document.getElementById('mapClickInstruction').style.display = 'none';
                     document.getElementById('processingSection').style.display = 'block';
+                    document.getElementById('cancelProcessingBtn').style.display = 'inline-block';
                     document.getElementById('mapInfoLabel').textContent = '';
                     document.getElementById('mapInfoValue').textContent = '';
+
+                    // Start progress polling for the new viewport
+                    startProgressPolling(name);
 
                     // Wait for viewport to be ready
                     const isReady = await waitForViewportReady(name);
