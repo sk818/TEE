@@ -1896,6 +1896,16 @@ def api_pca_status(viewport_name):
                 # Progress says complete but file is missing — stale/failed run; fall through to retry
                 progress_file.unlink()
 
+        # Check if embeddings exist (required for PCA) - don't trigger computation if not ready
+        embeddings_file = faiss_dir / 'all_embeddings.npy'
+        if not embeddings_file.exists():
+            return jsonify({
+                'exists': False,
+                'computing': False,
+                'waiting': True,
+                'message': 'Waiting for embeddings (FAISS indexing in progress)...'
+            })
+
         # Start computation in background (PCA is fast, but still run async for consistency)
         logger.info(f"[PCA] Starting computation for {viewport_name}/{year}")
 

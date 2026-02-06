@@ -40,16 +40,12 @@ def compute_pca(viewport_name, year):
         return False
 
     faiss_dir = FAISS_INDICES_DIR / viewport_name / str(year)
-
-    if not faiss_dir.exists():
-        logger.error(f"❌ FAISS index not found: {faiss_dir}")
-        progress.error(f"FAISS index not found: {faiss_dir}")
-        return False
-
     embeddings_file = faiss_dir / "all_embeddings.npy"
+
+    # PCA needs embeddings (created by FAISS indexing stage)
     if not embeddings_file.exists():
-        logger.error(f"❌ Embeddings not found: {embeddings_file}")
-        progress.error(f"Embeddings not found: {embeddings_file}")
+        logger.error(f"❌ Embeddings not available yet: {embeddings_file}")
+        progress.error(f"Embeddings not available yet (FAISS indexing may still be in progress)")
         return False
 
     pca_file = faiss_dir / "pca_coords.npy"
