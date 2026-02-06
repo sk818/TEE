@@ -250,7 +250,54 @@ class PipelineRunner:
             logger.info(f"[PIPELINE] ✓ PCA computed successfully")
 
         logger.info(f"[PIPELINE] ✓ Stage 4 complete: FAISS index and PCA created")
+
+        # Cleanup: Delete GeoTIFF mosaics now that FAISS has the embeddings
+        self.cleanup_mosaics(viewport_name)
+
         return True, None
+
+    def cleanup_mosaics(self, viewport_name):
+        """Delete GeoTIFF mosaic files after FAISS creation to save disk space.
+
+        After FAISS index is created, the following are no longer needed:
+        - {viewport}_embeddings_{year}.tif (~100-200MB each)
+        - {viewport}_rgb_{year}.tif (~50MB each)
+
+        The FAISS directory contains all necessary data:
+        - all_embeddings.npy (128D vectors)
+        - pixel_coords.npy (x,y coordinates)
+        - metadata.json (geotransform for lat/lon conversion)
+        """
+        try:
+            deleted_files = []
+            total_saved_mb = 0
+
+            # Delete embedding mosaics
+            for mosaic_file in MOSAICS_DIR.glob(f"{viewport_name}_embeddings_*.tif"):
+                size_mb = mosaic_file.stat().st_size / (1024 * 1024)
+                mosaic_file.unlink()
+                deleted_files.append(mosaic_file.name)
+                total_saved_mb += size_mb
+                logger.info(f"[PIPELINE] Deleted mosaic: {mosaic_file.name} ({size_mb:.1f} MB)")
+
+            # Delete RGB mosaics (pattern: {viewport}_{year}_rgb.tif)
+            rgb_dir = MOSAICS_DIR / "rgb"
+            if rgb_dir.exists():
+                for rgb_file in rgb_dir.glob(f"{viewport_name}_*_rgb.tif"):
+                    size_mb = rgb_file.stat().st_size / (1024 * 1024)
+                    rgb_file.unlink()
+                    deleted_files.append(rgb_file.name)
+                    total_saved_mb += size_mb
+                    logger.info(f"[PIPELINE] Deleted RGB mosaic: {rgb_file.name} ({size_mb:.1f} MB)")
+
+            if deleted_files:
+                logger.info(f"[PIPELINE] ✓ Cleanup complete: Deleted {len(deleted_files)} files, saved {total_saved_mb:.1f} MB")
+            else:
+                logger.info(f"[PIPELINE] No mosaic files to clean up for '{viewport_name}'")
+
+        except Exception as e:
+            # Non-critical - log but don't fail pipeline
+            logger.warning(f"[PIPELINE] Cleanup warning: {e}")
 
     def stage_5_compute_umap(self, viewport_name, umap_year):
         """Stage 5: Compute UMAP 2D projection (optional)."""

@@ -109,12 +109,70 @@ def wait_for_file(file_path, min_size_bytes=1024, max_retries=30, retry_interval
     return False
 
 def check_viewport_mosaics_exist(viewport_name):
-    """Check if embeddings mosaic exists for a viewport (checks for ANY year available)."""
+    """Check if embeddings mosaic exists for a viewport (checks for ANY year available).
+    DEPRECATED: Use check_viewport_faiss_exist() instead - mosaics are deleted after FAISS creation.
+    """
     if not MOSAICS_DIR.exists():
         return False
     # Check if any embeddings file exists for this viewport
     embeddings_files = list(MOSAICS_DIR.glob(f"{viewport_name}_embeddings_*.tif"))
     return len(embeddings_files) > 0
+
+def check_viewport_faiss_exist(viewport_name):
+    """Check if FAISS index exists for a viewport (checks for ANY year available)."""
+    viewport_faiss_dir = FAISS_INDICES_DIR / viewport_name
+    if not viewport_faiss_dir.exists():
+        return False
+    # Check if any year directory has embeddings.index
+    for year_dir in viewport_faiss_dir.iterdir():
+        if year_dir.is_dir():
+            index_file = year_dir / "embeddings.index"
+            if index_file.exists():
+                return True
+    return False
+
+# Cache for FAISS pixel lookup (viewport_name, year) -> {(x,y): index}
+_faiss_pixel_cache = {}
+_faiss_data_cache = {}  # (viewport_name, year) -> {'embeddings': np.array, 'coords': np.array, 'metadata': dict}
+
+def get_faiss_data(viewport_name, year):
+    """Load and cache FAISS data (embeddings, coords, metadata) for a viewport/year."""
+    cache_key = (viewport_name, year)
+
+    if cache_key in _faiss_data_cache:
+        return _faiss_data_cache[cache_key]
+
+    faiss_dir = FAISS_INDICES_DIR / viewport_name / str(year)
+
+    embeddings_file = faiss_dir / "all_embeddings.npy"
+    coords_file = faiss_dir / "pixel_coords.npy"
+    metadata_file = faiss_dir / "metadata.json"
+
+    if not all(f.exists() for f in [embeddings_file, coords_file, metadata_file]):
+        return None
+
+    # Load data
+    embeddings = np.load(embeddings_file)
+    coords = np.load(coords_file)
+    with open(metadata_file, 'r') as f:
+        metadata = json.load(f)
+
+    # Build pixel lookup: (x, y) -> index
+    pixel_lookup = {}
+    for idx, (x, y) in enumerate(coords):
+        pixel_lookup[(int(x), int(y))] = idx
+
+    data = {
+        'embeddings': embeddings,
+        'coords': coords,
+        'metadata': metadata,
+        'pixel_lookup': pixel_lookup
+    }
+
+    _faiss_data_cache[cache_key] = data
+    logger.info(f"[FAISS] Cached data for {viewport_name}/{year}: {len(embeddings)} embeddings")
+
+    return data
 
 def check_viewport_pyramids_exist(viewport_name):
     """Check if pyramid tiles exist for a viewport (checks for ANY year available)."""
@@ -1097,9 +1155,21 @@ def api_get_available_years(viewport_name):
 def api_is_viewport_ready(viewport_name):
     """Simple synchronous check: is this viewport ready to view?"""
     try:
-        # Check embeddings
+        # Check FAISS (primary indicator - mosaics are deleted after FAISS creation)
+        has_faiss = False
+        faiss_dir = FAISS_INDICES_DIR / viewport_name
+        if faiss_dir.exists():
+            for year_dir in faiss_dir.glob("*"):
+                if year_dir.is_dir() and (year_dir / "embeddings.index").exists():
+                    has_faiss = True
+                    break
+
+        # Check for mosaics (only during pipeline, before FAISS is created)
         embedding_files = list(MOSAICS_DIR.glob(f"{viewport_name}_embeddings_*.tif"))
-        has_embeddings = len(embedding_files) > 0
+        has_mosaics = len(embedding_files) > 0
+
+        # has_embeddings is true if FAISS exists OR mosaics exist (mosaics are temporary)
+        has_embeddings = has_faiss or has_mosaics
 
         # Check pyramids
         pyramid_dir = PYRAMIDS_DIR / viewport_name
@@ -1111,15 +1181,6 @@ def api_is_viewport_ready(viewport_name):
                     if (year_dir / "level_0.tif").exists():
                         has_pyramids = True
                         years_available.append(year_dir.name)
-
-        # Check FAISS
-        has_faiss = False
-        faiss_dir = FAISS_INDICES_DIR / viewport_name
-        if faiss_dir.exists():
-            for year_dir in faiss_dir.glob("*"):
-                if year_dir.is_dir() and (year_dir / "embeddings.index").exists():
-                    has_faiss = True
-                    break
 
         # Check UMAP (just need one from any year)
         has_umap = False
@@ -1182,82 +1243,82 @@ def api_is_viewport_ready(viewport_name):
 
 @app.route('/api/embeddings/extract', methods=['POST'])
 def api_extract_embedding():
-    """Extract embedding vector at a given latitude/longitude coordinate."""
-    try:
-        import rasterio
-        from rasterio import windows as rasterio_windows
-        import numpy as np
+    """Extract embedding vector at a given latitude/longitude coordinate.
 
+    Uses pre-computed FAISS data (numpy arrays) instead of GeoTIFF for faster lookups.
+    This allows GeoTIFF files to be deleted after FAISS index creation.
+    """
+    try:
         data = request.get_json()
         lat = float(data.get('lat'))
         lon = float(data.get('lon'))
         year = int(data.get('year', 2024))  # Default to 2024
 
-        # Get active viewport for mosaic file
+        # Get active viewport
         viewport_name = get_active_viewport_name()
 
-        # Open the embedding mosaic file (year-specific)
-        mosaic_file = MOSAICS_DIR / f'{viewport_name}_embeddings_{year}.tif'
+        # Load FAISS data (cached)
+        faiss_data = get_faiss_data(viewport_name, year)
 
-        if not mosaic_file.exists():
+        if faiss_data is None:
             return jsonify({
                 'success': False,
-                'error': 'Embedding mosaic file not found'
+                'error': f'FAISS data not found for {viewport_name}/{year}'
             }), 404
 
-        with rasterio.open(mosaic_file) as src:
-            # Convert lat/lon to pixel coordinates using the geotransform
-            # geotransform: (upper_left_x, pixel_width, 0, upper_left_y, 0, pixel_height)
-            transform = src.transform
+        # Get geotransform from metadata
+        gt = faiss_data['metadata']['geotransform']
 
-            # Calculate pixel coordinates
-            # x = (lon - transform.c) / transform.a
-            # y = (lat - transform.f) / transform.e
-            px = (lon - transform.c) / transform.a
-            py = (lat - transform.f) / transform.e
+        # Convert lat/lon to pixel coordinates
+        # x = (lon - c) / a
+        # y = (lat - f) / e
+        px = (lon - gt['c']) / gt['a']
+        py = (lat - gt['f']) / gt['e']
 
-            # Check if pixel coordinates are within the image
-            if not (0 <= px < src.width and 0 <= py < src.height):
+        x_int = int(px)
+        y_int = int(py)
+
+        # Look up the embedding by pixel coordinates
+        pixel_lookup = faiss_data['pixel_lookup']
+
+        if (x_int, y_int) not in pixel_lookup:
+            # Try nearby pixels (within 1 pixel tolerance)
+            found = False
+            for dx in [-1, 0, 1]:
+                for dy in [-1, 0, 1]:
+                    if (x_int + dx, y_int + dy) in pixel_lookup:
+                        x_int += dx
+                        y_int += dy
+                        found = True
+                        break
+                if found:
+                    break
+
+            if not found:
                 return jsonify({
                     'success': False,
-                    'error': 'Pixel coordinates outside mosaic bounds'
+                    'error': f'Pixel ({x_int}, {y_int}) not found in FAISS index'
                 }), 400
 
-            # Read all 128 bands at this pixel location (optimized)
-            x_int = int(px)
-            y_int = int(py)
+        idx = pixel_lookup[(x_int, y_int)]
+        embedding = faiss_data['embeddings'][idx].tolist()
 
-            # Read a small window around the pixel (3x3) to ensure we get data
-            # Then extract just the center pixel
-            window = rasterio_windows.Window(max(0, x_int - 1), max(0, y_int - 1), 3, 3)
+        logger.info(f"Extracted embedding at ({lat:.6f}, {lon:.6f}) - pixel ({x_int}, {y_int}) - idx {idx}")
 
-            # Read all bands in one operation (much faster than band-by-band)
-            all_bands = src.read(window=window)
-
-            # Extract the center pixel (which is at [1, 1] in our 3x3 window)
-            center_x = min(1, x_int)
-            center_y = min(1, y_int)
-
-            embedding = []
-            for band_idx in range(all_bands.shape[0]):
-                # Keep as float32 to match FAISS index (which uses float32)
-                pixel_value = float(all_bands[band_idx, center_y, center_x])
-                embedding.append(pixel_value)
-
-            logger.info(f"Extracted embedding at ({lat:.6f}, {lon:.6f}) - pixel ({x_int}, {y_int})")
-
-            return jsonify({
-                'success': True,
-                'embedding': embedding,
-                'pixel': {'x': x_int, 'y': y_int},
-                'coordinate': {'lat': lat, 'lon': lon}
-            })
+        return jsonify({
+            'success': True,
+            'embedding': embedding,
+            'pixel': {'x': x_int, 'y': y_int},
+            'coordinate': {'lat': lat, 'lon': lon}
+        })
 
     except ValueError as e:
         logger.error(f"Invalid coordinate: {e}")
         return jsonify({'success': False, 'error': f'Invalid coordinate: {e}'}), 400
     except Exception as e:
         logger.error(f"Error extracting embedding: {e}")
+        import traceback
+        traceback.print_exc()
         return jsonify({'success': False, 'error': str(e)}), 500
 
 
