@@ -1,6 +1,6 @@
 # TEE: Tessera Embeddings Explorer
 
-**Version 1.0.9** | [Docker Hub](https://hub.docker.com/r/sk818/tee)
+**Version 1.0.12** | [Docker Hub](https://hub.docker.com/r/sk818/tee)
 
 A comprehensive system for downloading, processing, and visualizing Sentinel-2 satellite embeddings across multiple years (2017-2025) with an interactive web interface for geographic viewports.
 
@@ -109,8 +109,8 @@ The easiest way to run TEE is with Docker:
 
 2. **Pull and run from Docker Hub (easiest):**
    ```bash
-   docker pull sk818/tee:1.0.9
-   docker run -p 8001:8001 -v ~/blore_data:/data sk818/tee:1.0.9
+   docker pull sk818/tee:1.0.12
+   docker run -p 8001:8001 -v ~/blore_data:/data sk818/tee:1.0.12
    ```
 
    **Or build from source:**
