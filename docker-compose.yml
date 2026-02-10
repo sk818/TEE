@@ -8,21 +8,38 @@
 # Data is persisted in ~/blore_data on the host
 
 services:
-  tee:
+  web:
     build: .
     ports:
       - "8001:8001"
     volumes:
-      # Mount data directory (embeddings, pyramids, FAISS indices, labels)
       - ~/blore_data:/data
-      # Mount viewports config directory
       - ./viewports:/app/viewports
+    environment:
+      - BLORE_DATA_DIR=/data
+      - BLORE_APP_DIR=/app
+      - TILE_SERVER_URL=http://localhost:5125
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8001/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+
+  tiles:
+    build: .
+    command: ["python3", "tile_server.py", "--prod"]
+    ports:
+      - "5125:5125"
+    volumes:
+      - ~/blore_data:/data
     environment:
       - BLORE_DATA_DIR=/data
       - BLORE_APP_DIR=/app
     restart: unless-stopped
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8001/health"]
+      test: ["CMD", "curl", "-f", "http://localhost:5125/health"]
       interval: 30s
       timeout: 10s
       retries: 3
