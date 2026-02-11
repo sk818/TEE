@@ -441,6 +441,9 @@
             </select>
         </div>
 
+        <!-- Lat/Lon Coordinates -->
+        <div id="header-coords" style="margin-left: auto; font-family: monospace; font-size: 13px; color: #aaa; white-space: nowrap;"></div>
+
         <!-- Status Popup -->
         <div id="status-popup" style="position: absolute; top: 100%; right: 10px; width: 320px; background: rgba(255,255,255,0.98); backdrop-filter: blur(10px); border-radius: 8px; padding: 15px; box-shadow: 0 2px 10px rgba(0,0,0,0.3); z-index: 999; font-size: 12px; display: none;">
             <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
@@ -798,6 +801,16 @@
                         clickTimeout = null;
                     }
                     handleSimilaritySearch(e.latlng.lat, e.latlng.lng);
+                });
+
+                // Show lat/lon in header on mousemove
+                maps[panel].on('mousemove', function(e) {
+                    const el = document.getElementById('header-coords');
+                    if (el) el.textContent = `${e.latlng.lat.toFixed(6)}, ${e.latlng.lng.toFixed(6)}`;
+                });
+                maps[panel].on('mouseout', function() {
+                    const el = document.getElementById('header-coords');
+                    if (el) el.textContent = '';
                 });
             });
 
@@ -3769,7 +3782,17 @@
             const h = this.container.clientHeight || 300;
 
             this.camera = new THREE.PerspectiveCamera(50, w / h, 0.01, 100);
-            this.camera.position.set(0, 0, 2.2);
+
+            // Fit camera distance so point cloud fills the panel
+            const xExtent = (xMax - xMin) / range;
+            const yExtent = (yMax - yMin) / range;
+            const aspect  = w / h;
+            const vFovRad = 50 * Math.PI / 180;
+            const hFovRad = 2 * Math.atan(Math.tan(vFovRad / 2) * aspect);
+            const padding = 1.15;  // 15% margin
+            const distForY = (yExtent / 2 * padding) / Math.tan(vFovRad / 2);
+            const distForX = (xExtent / 2 * padding) / Math.tan(hFovRad / 2);
+            this.camera.position.set(0, 0, Math.max(distForY, distForX, 0.5));
 
             this.renderer = new THREE.WebGLRenderer({ antialias: true });
             this.renderer.setPixelRatio(window.devicePixelRatio);
@@ -3791,6 +3814,19 @@
                 MIDDLE: THREE.MOUSE.DOLLY,
                 RIGHT: THREE.MOUSE.ROTATE
             };
+
+            // ── idle auto-rotation (when mouse is outside panel) ─────
+            this._idleActive = true;
+            this._idleAzimuthSpeed = 0.008;   // radians per frame
+            this._idlePolarSpeed  = 0.003;
+            this._pickNewRotation();
+
+            this._onMouseEnterBound = () => { this._idleActive = false; };
+            this._onMouseLeavePanelBound = () => { this._idleActive = true; };
+            this.container.addEventListener('mouseenter', this._onMouseEnterBound);
+            this.container.addEventListener('mouseleave', this._onMouseLeavePanelBound);
+
+            this._rotationTimer = setInterval(() => this._pickNewRotation(), 3000 + Math.random() * 3000);
 
             // ── highlight sphere (gold, placed on click / highlightUMAPPoint) ──
             const sphereGeo = new THREE.SphereGeometry(0.035, 16, 16);
@@ -3934,6 +3970,9 @@
         dispose() {
             this.disposed = true;
             if (this._animId !== null) cancelAnimationFrame(this._animId);
+            if (this._rotationTimer) clearInterval(this._rotationTimer);
+            this.container.removeEventListener('mouseenter', this._onMouseEnterBound);
+            this.container.removeEventListener('mouseleave', this._onMouseLeavePanelBound);
             this.renderer.domElement.removeEventListener('click', this._onClickBound);
             this.renderer.domElement.removeEventListener('dblclick', this._onDblClickBound);
             this.renderer.domElement.removeEventListener('mousedown', this._onMouseDownBound);
@@ -3951,9 +3990,27 @@
 
         // ── internal helpers ─────────────────────────────────────────
 
+        _pickNewRotation() {
+            // Random azimuth speed (horizontal), random direction
+            this._idleAzimuthSpeed = (0.004 + Math.random() * 0.008) * (Math.random() < 0.5 ? 1 : -1);
+            // Random polar speed (vertical), random direction
+            this._idlePolarSpeed  = (0.001 + Math.random() * 0.004) * (Math.random() < 0.5 ? 1 : -1);
+        }
+
         _animate() {
             if (this.disposed) return;
             this._animId = requestAnimationFrame(() => this._animate());
+            if (this._idleActive) {
+                // Spherical coordinates around the target
+                const offset = this.camera.position.clone().sub(this.controls.target);
+                const spherical = new THREE.Spherical().setFromVector3(offset);
+                spherical.theta += this._idleAzimuthSpeed;
+                // Clamp polar angle to avoid flipping (keep between 15° and 165°)
+                spherical.phi = Math.max(0.26, Math.min(2.88, spherical.phi + this._idlePolarSpeed));
+                offset.setFromSpherical(spherical);
+                this.camera.position.copy(this.controls.target).add(offset);
+                this.camera.lookAt(this.controls.target);
+            }
             this.controls.update();
             this.renderer.render(this.scene, this.camera);
         }
