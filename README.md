@@ -36,11 +36,13 @@ TEE (Tessera Embeddings Explorer) integrates geospatial data processing with dee
 - Multi-year processing with progress tracking
 - Automatic navigation to viewer after processing
 
-### Explorer Mode
+### Explorer Mode (Client-Side Search)
 - Click pixels on the embedding map to extract embeddings
-- Find similar pixels using FAISS similarity search
-- Visualize search results with similarity thresholds
-- Real-time distance metrics
+- **All similarity search runs locally in the browser** — no queries sent to server
+- FAISS data (embeddings + coordinates) downloaded once and cached in IndexedDB
+- Brute-force L2 search over ~250K vectors completes in ~100-200ms
+- Visualize search results with real-time threshold slider (instant local filtering)
+- Labels and search are fully private — only tile images are fetched from the server
 
 ### Advanced Viewer: 6-Panel Exploration & Temporal Analysis
 The **Advanced Viewer** extends the standard viewer with a comprehensive 6-panel layout for advanced analysis:
@@ -86,10 +88,10 @@ The **Advanced Viewer** extends the standard viewer with a comprehensive 6-panel
    - Toggle visibility or delete as needed
 
 #### Label Data
-- Labels are stored in a **SQLite database** at `~/blore_data/labels.db`
-- Indexed by viewport for fast lookups with concurrent access support
-- Includes source pixel coordinates, threshold settings, and matched pixels with distances
-- Survives page reloads - your labels are always preserved
+- Labels are stored in **browser localStorage** — fully private, no data sent to server
+- Only metadata is persisted (source pixel, threshold, color, name); pixel coverage is recomputed on load
+- Export/import as JSON for backup and sharing between browsers
+- Survives page reloads — your labels are always preserved
 - Automatically refresh when switching years to track temporal changes
 
 ## Quick Start
@@ -470,6 +472,49 @@ Content-Type: application/json
 }
 ```
 
+## Deployment
+
+### Local Development
+
+Start both servers locally:
+```bash
+bash restart.sh
+# Web server on http://localhost:8001, tile server on http://localhost:5125
+```
+
+### Remote Server (HTTPS)
+
+The viewer (`viewer.html`) works identically against local or remote servers. All API calls use relative URLs, so the viewer automatically adapts to the serving origin.
+
+**With Apache/Nginx reverse proxy + Gunicorn:**
+```bash
+# Start the web server with tile server URL pointing to your domain
+gunicorn backend.web_server:app --bind 0.0.0.0:8001 \
+  --env TILE_SERVER_URL=https://your-domain.com
+
+# Or pass via CLI flag
+python3 backend/web_server.py --tile-server https://your-domain.com
+```
+
+Configure your reverse proxy to forward:
+- `/` → Gunicorn (port 8001) for the web server and API
+- `/tiles/` → tile server (port 5125) for map tiles
+- `/health` → tile server health check
+
+When `--tile-server` is not set, the client defaults to the page's own origin (`window.location.origin`), which works when both web and tile servers are behind the same reverse proxy.
+
+### Architecture: Client-Server Separation
+
+The viewer is a single HTML file (`public/viewer.html`) that can be served from any web server or CDN. It communicates with the backend via:
+
+| Endpoint | Purpose | Direction |
+|----------|---------|-----------|
+| `/api/*` | Viewport management, pipeline status | Client → Web server |
+| `/api/faiss-data/...` | One-time FAISS data download (~130MB) | Client → Web server |
+| `${TILE_SERVER}/tiles/...` | Map tile images | Client → Tile server |
+
+After the initial FAISS data download (cached in IndexedDB), similarity search and labeling run entirely in the browser with no further server communication.
+
 ## Configuration
 
 ### Environment Variables
@@ -583,7 +628,7 @@ MIT License - See LICENSE file for details
 ## Authors
 
 - **S. Keshav** - Primary development and design
-- **Claude Opus 4.5** - AI-assisted development and feature implementation
+- **Claude Opus 4.6** - AI-assisted development and feature implementation
 
 ## Related Resources
 
@@ -607,7 +652,7 @@ If you use this project in research, please cite:
 ```bibtex
 @software{tee2025,
   title={TEE: Tessera Embeddings Explorer},
-  author={Keshav, S. and Claude Opus 4.5},
+  author={Keshav, S. and Claude Opus 4.6},
   year={2025},
   url={https://github.com/sk818/TEE}
 }
