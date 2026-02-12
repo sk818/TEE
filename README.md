@@ -524,6 +524,9 @@ Set the active viewport first, then run pipeline scripts.
 - Check if ports 8001 (web) or 5125 (tiles) are in use
 - Use `--port` to choose a different port: `python3 backend/web_server.py --port 9000`
 
+### Tile server not responding
+- If map tiles fail to load, restart both servers: `bash restart.sh`
+
 ### No data appears in viewer
 - Verify pyramids exist: `ls blore_data/pyramids/{viewport}/{year}/`
 - Check FAISS indices: `ls blore_data/faiss_indices/{viewport}/{year}/`
