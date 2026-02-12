@@ -2108,6 +2108,7 @@
         // Clear explorer results and visualization
         function clearExplorerResults() {
             if (explorerVisualization) {
+                explorerVisualization.clearLayers();
                 maps.rgb.removeLayer(explorerVisualization);
                 explorerVisualization = null;
             }
@@ -3659,6 +3660,7 @@
 
             // Clear the explorer preview (yellow overlay) and all markers
             clearExplorerResults();
+            clearCrossPanelMarkers();
 
             closeSaveLabelModal();
             console.log(`✓ Saved label: ${name} (${labelData.pixel_count} pixels)`);
