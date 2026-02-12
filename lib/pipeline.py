@@ -9,6 +9,7 @@ import subprocess
 import logging
 import signal
 import os
+import threading
 from pathlib import Path
 import time
 
@@ -87,9 +88,26 @@ class PipelineRunner:
         overall_percent = start + int((end - start) * stage_percent / 100)
         self.progress.update("processing", message, overall_percent, 100)
 
+    def _stream_pipe(self, pipe, label, lines_out):
+        """Read lines from a pipe, log them, and collect into lines_out."""
+        try:
+            for line in pipe:
+                line = line.rstrip('\n')
+                logger.info(f"[PIPELINE]   {label}: {line}")
+                lines_out.append(line)
+        except ValueError:
+            pass  # Pipe closed
+
     def run_script(self, script_name, *args, timeout=1800):
-        """Run a Python script and return result. Supports cancellation."""
+        """Run a Python script and return result. Supports cancellation.
+
+        Streams stdout/stderr to the log in real-time so output is not lost
+        if the process is killed (e.g. OOM SIGKILL).
+        """
         cmd = [str(self.venv_python), str(self.project_root / script_name)] + list(args)
+        cmd_str = ' '.join(str(c) for c in cmd)
+        logger.info(f"[PIPELINE] Running: {cmd_str}")
+        logger.info(f"[PIPELINE]   cwd: {self.project_root}")
 
         # Use Popen to allow cancellation
         try:
@@ -102,6 +120,18 @@ class PipelineRunner:
                 text=True,
                 start_new_session=True  # Create new process group
             )
+            logger.info(f"[PIPELINE]   PID: {proc.pid}")
+
+            # Stream stdout/stderr to log in real-time via reader threads.
+            # This ensures output is captured even if the process is killed.
+            stdout_lines = []
+            stderr_lines = []
+            stdout_thread = threading.Thread(
+                target=self._stream_pipe, args=(proc.stdout, 'stdout', stdout_lines), daemon=True)
+            stderr_thread = threading.Thread(
+                target=self._stream_pipe, args=(proc.stderr, 'stderr', stderr_lines), daemon=True)
+            stdout_thread.start()
+            stderr_thread.start()
 
             # Register the process for potential cancellation
             if self.viewport_name:
@@ -119,8 +149,11 @@ class PipelineRunner:
                     except:
                         proc.kill()
                     proc.wait()
-                    # Return a fake result indicating cancellation
-                    return subprocess.CompletedProcess(cmd, -1, '', 'Cancelled by user')
+                    stdout_thread.join(timeout=2)
+                    stderr_thread.join(timeout=2)
+                    logger.info(f"[PIPELINE]   Cancelled after {time.time() - start_time:.1f}s")
+                    return subprocess.CompletedProcess(
+                        cmd, -1, '\n'.join(stdout_lines), 'Cancelled by user')
 
                 # Check timeout
                 if time.time() - start_time > timeout:
@@ -129,17 +162,33 @@ class PipelineRunner:
                     except:
                         proc.kill()
                     proc.wait()
+                    stdout_thread.join(timeout=2)
+                    stderr_thread.join(timeout=2)
+                    logger.error(f"[PIPELINE]   Timed out after {timeout}s")
                     raise subprocess.TimeoutExpired(cmd, timeout)
 
                 time.sleep(0.5)  # Check every 500ms
 
-            stdout, stderr = proc.communicate()
+            # Process finished — wait for reader threads to drain remaining output
+            stdout_thread.join(timeout=5)
+            stderr_thread.join(timeout=5)
+
+            elapsed = time.time() - start_time
+            stdout = '\n'.join(stdout_lines)
+            stderr = '\n'.join(stderr_lines)
+            logger.info(f"[PIPELINE]   Exit code: {proc.returncode} (after {elapsed:.1f}s)")
+            if proc.returncode != 0 and not stderr_lines:
+                if proc.returncode < 0:
+                    sig = -proc.returncode
+                    logger.warning(f"[PIPELINE]   Process killed by signal {sig} (SIGKILL=9 often means OOM)")
+                else:
+                    logger.warning(f"[PIPELINE]   stderr: (empty despite non-zero exit code)")
             return subprocess.CompletedProcess(cmd, proc.returncode, stdout, stderr)
 
         except subprocess.TimeoutExpired:
             raise
         except Exception as e:
-            logger.error(f"[PIPELINE] Error running {script_name}: {e}")
+            logger.error(f"[PIPELINE] Error running {script_name}: {e}", exc_info=True)
             return subprocess.CompletedProcess(cmd, -1, '', str(e))
 
     def wait_for_file(self, file_path, min_size_bytes=1024, max_retries=30, retry_interval=1.0):
@@ -163,6 +212,7 @@ class PipelineRunner:
     def stage_1_download_embeddings(self, viewport_name, years_str):
         """Stage 1: Download embeddings from GeoTessera."""
         logger.info(f"[PIPELINE] STAGE 1/5: Downloading embeddings for '{viewport_name}' (years: {years_str})...")
+        logger.info(f"[PIPELINE]   Python: {self.venv_python}")
         logger.info(f"[PIPELINE]   $ python download_embeddings.py --years {years_str}")
 
         if years_str:
@@ -170,9 +220,18 @@ class PipelineRunner:
         else:
             result = self.run_script('download_embeddings.py')
 
-        logger.info(f"[PIPELINE]   stdout: {result.stdout[:200] if result.stdout else '(empty)'}")
         if result.returncode != 0:
-            error_msg = f"Stage 1 failed - Embeddings download:\n{result.stderr[:500]}"
+            stderr_text = result.stderr.strip() if result.stderr else '(no stderr output)'
+            stdout_tail = '\n'.join(result.stdout.strip().splitlines()[-10:]) if result.stdout else '(no stdout output)'
+            if result.returncode < 0:
+                kill_hint = f" [killed by signal {-result.returncode}, SIGKILL=9 usually means out of memory]"
+            else:
+                kill_hint = ""
+            error_msg = (
+                f"Stage 1 failed - Embeddings download (exit code {result.returncode}{kill_hint}):\n"
+                f"  stderr: {stderr_text[:1000]}\n"
+                f"  last stdout: {stdout_tail[:500]}"
+            )
             logger.error(f"[PIPELINE] ✗ {error_msg}")
             return False, error_msg
 
@@ -548,13 +607,22 @@ class PipelineRunner:
             return False, "Cancelled by user"
         self.update_progress('pca', 100, "PCA ready")
 
-        # Stage 5: Compute UMAP (always run for 6-panel view precomputation)
+        # Stage 5: Compute UMAP (optional)
         # ✓ After this stage, UMAP visualization BECOMES AVAILABLE
         if check_cancelled():
             return False, "Cancelled by user"
-        self.update_progress('umap', 0, "Computing UMAP projection...")
-        success, error = self.stage_5_compute_umap(viewport_name, umap_year or "")
-        self.update_progress('umap', 100, "UMAP complete")
+        if compute_umap:
+            effective_umap_year = umap_year
+            if not effective_umap_year and years_str:
+                effective_umap_year = years_str.split(',')[0].strip()
+            if effective_umap_year:
+                self.update_progress('umap', 0, "Computing UMAP projection...")
+                success, error = self.stage_5_compute_umap(viewport_name, effective_umap_year)
+                self.update_progress('umap', 100, "UMAP complete")
+            else:
+                logger.warning(f"[PIPELINE] ⚠️  Stage 5 skipped - no year specified for UMAP")
+        else:
+            logger.info(f"[PIPELINE] Stage 5 skipped (compute_umap=False)")
 
         if check_cancelled():
             return False, "Cancelled by user"

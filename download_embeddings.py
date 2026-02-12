@@ -8,19 +8,32 @@ Uses cache checking to avoid re-downloading for previously-selected viewports.
 
 import sys
 import json
-import numpy as np
-import rasterio
-from rasterio.transform import Affine
+import traceback
 from pathlib import Path
-import geotessera as gt
 
 # Add parent directory to path for lib imports
 sys.path.insert(0, str(Path(__file__).parent))
 
-from lib.viewport_utils import get_active_viewport, check_cache
-from lib.progress_tracker import ProgressTracker
-from lib.config import DATA_DIR, EMBEDDINGS_DIR, MOSAICS_DIR
-import math
+# Import dependencies with error reporting
+try:
+    import numpy as np
+    import rasterio
+    from rasterio.transform import Affine
+    import geotessera as gt
+    import math
+except ImportError as e:
+    print(f"IMPORT ERROR: {e}", file=sys.stderr)
+    traceback.print_exc(file=sys.stderr)
+    sys.exit(1)
+
+try:
+    from lib.viewport_utils import get_active_viewport, check_cache
+    from lib.progress_tracker import ProgressTracker
+    from lib.config import DATA_DIR, EMBEDDINGS_DIR, MOSAICS_DIR
+except ImportError as e:
+    print(f"LIB IMPORT ERROR: {e}", file=sys.stderr)
+    traceback.print_exc(file=sys.stderr)
+    sys.exit(1)
 
 # Configuration
 DEFAULT_YEARS = range(2017, 2026)  # Support 2017-2025 (Sentinel-2 availability)
@@ -118,9 +131,17 @@ def download_embeddings():
 
     # Initialize GeoTessera with embeddings directory
     print(f"\nConnecting to GeoTessera registry...")
+    print(f"   geotessera version: {gt.__version__ if hasattr(gt, '__version__') else 'unknown'}")
+    print(f"   embeddings_dir: {EMBEDDINGS_DIR.absolute()}")
     progress.update("initializing", "Connecting to GeoTessera registry...")
-    tessera = gt.GeoTessera(embeddings_dir=str(EMBEDDINGS_DIR))
-    print(f"✓ Connected to registry")
+    try:
+        tessera = gt.GeoTessera(embeddings_dir=str(EMBEDDINGS_DIR))
+        print(f"✓ Connected to registry")
+    except Exception as e:
+        print(f"✗ Failed to connect to GeoTessera: {type(e).__name__}: {e}", file=sys.stderr)
+        traceback.print_exc(file=sys.stderr)
+        progress.error(f"GeoTessera connection failed: {e}")
+        sys.exit(1)
 
     # Track successful downloads for metadata
     successful_years = []
@@ -270,13 +291,15 @@ def download_embeddings():
 
             except Exception as e:
                 if attempt == max_retries:
-                    print(f"   ⚠️  Year {year} not available: {e}")
+                    print(f"   ⚠️  Year {year} not available: {type(e).__name__}: {e}")
+                    print(f"   Traceback for {year}:", file=sys.stderr)
+                    traceback.print_exc(file=sys.stderr)
                     cumulative_bytes_done += est_bytes  # Count as done even if skipped
                     progress.update("processing", f"Year {year_idx+1}/{total_years}: Skipped {year} (not available)",
                                    current_file=output_file.name, current_value=cumulative_bytes_done, total_value=total_estimated_bytes)
                     break
                 else:
-                    print(f"   ⚠️  Attempt {attempt} failed, retrying: {e}")
+                    print(f"   ⚠️  Attempt {attempt} failed, retrying: {type(e).__name__}: {e}")
                     progress.update("processing", f"Year {year_idx+1}/{total_years}: Retrying {year}...",
                                    current_file=output_file.name, current_value=cumulative_bytes_done, total_value=total_estimated_bytes)
                     import time
@@ -316,8 +339,19 @@ def download_embeddings():
         print(f"\nTotal downloaded: {total_size_mb:.1f} MB for {len(successful_years)} years")
         progress.complete(f"Downloaded {total_size_mb:.1f} MB of embeddings ({len(successful_years)} years)")
     else:
-        print(f"\n✗ Error: No mosaics for {viewport_id} were created (all downloads failed)")
+        error_msg = f"No mosaics for {viewport_id} were created (all downloads failed for years: {list(YEARS)})"
+        print(f"\n✗ Error: {error_msg}")
+        print(f"ERROR: {error_msg}", file=sys.stderr)
         progress.error(f"Failed to download embeddings for any year")
+        sys.exit(1)
 
 if __name__ == "__main__":
-    download_embeddings()
+    import traceback
+    try:
+        download_embeddings()
+    except SystemExit:
+        raise  # Let sys.exit() propagate normally
+    except Exception as e:
+        print(f"\nFATAL ERROR in download_embeddings: {type(e).__name__}: {e}", file=sys.stderr)
+        traceback.print_exc(file=sys.stderr)
+        sys.exit(1)

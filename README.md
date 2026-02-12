@@ -155,9 +155,10 @@ The easiest way to run TEE is with Docker:
 
 1. **Start the web server:**
    ```bash
-   python3 backend/web_server.py
+   python3 backend/web_server.py          # debug mode (default)
+   python3 backend/web_server.py --prod   # production mode (debug off)
    ```
-   Server runs on http://localhost:8001
+   Server runs on http://localhost:8001. Use `--port` and `--host` to override defaults.
 
 2. **Open the viewport selector:**
    Navigate to http://localhost:8001 in your browser
@@ -521,7 +522,7 @@ Set the active viewport first, then run pipeline scripts.
 
 ### Server fails to start
 - Check if ports 8001 (web) or 5125 (tiles) are in use
-- Update port numbers in `backend/web_server.py` and `tile_server.py`
+- Use `--port` to choose a different port: `python3 backend/web_server.py --port 9000`
 
 ### No data appears in viewer
 - Verify pyramids exist: `ls blore_data/pyramids/{viewport}/{year}/`

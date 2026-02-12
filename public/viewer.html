@@ -566,7 +566,7 @@
     </div>
 
     <script>
-        const TILE_SERVER = 'http://localhost:5125';
+        let TILE_SERVER = 'http://localhost:5125'; // default, overridden by /api/config
         let center = [12.97, 77.59];  // Default: Bangalore
         let zoom = 12;
 
@@ -3074,6 +3074,18 @@
 
         // Initialize
         window.onload = async function() {
+            // Fetch tile server URL from backend config
+            try {
+                const configResp = await fetch('/api/config');
+                const config = await configResp.json();
+                if (config.tile_server) {
+                    TILE_SERVER = config.tile_server;
+                    console.log('Tile server:', TILE_SERVER);
+                }
+            } catch (e) {
+                console.warn('Failed to fetch config, using default tile server:', e);
+            }
+
             // Load viewport info first (determines map center/zoom)
             await updateMapViewport();
 

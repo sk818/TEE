@@ -5,6 +5,8 @@ from pathlib import Path
 from datetime import datetime
 from typing import Tuple, Optional
 
+from lib.viewport_utils import validate_viewport_name
+
 logger = logging.getLogger(__name__)
 
 
@@ -28,6 +30,9 @@ def create_viewport_from_bounds(
         ValueError: If bounds are invalid
         FileExistsError: If viewport file already exists
     """
+    # Validate viewport name against path traversal
+    validate_viewport_name(viewport_name)
+
     # Validate bounds
     min_lon, min_lat, max_lon, max_lat = bounds
 
@@ -90,9 +95,11 @@ def set_active_viewport(viewport_name: str) -> None:
         viewport_name: Viewport name (without .txt extension)
 
     Raises:
+        ValueError: If viewport name contains unsafe characters
         FileNotFoundError: If viewport file doesn't exist
         OSError: If symlink operation fails
     """
+    validate_viewport_name(viewport_name)
     viewports_dir = Path(__file__).parent.parent / "viewports"
     viewport_path = viewports_dir / f"{viewport_name}.txt"
     symlink_path = viewports_dir / "viewport.txt"

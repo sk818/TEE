@@ -21,10 +21,11 @@ A simple web-based interface for managing geographic viewports and data selectio
 From the blore project directory:
 
 ```bash
-python3 backend/web_server.py
+python3 backend/web_server.py          # debug mode (default)
+python3 backend/web_server.py --prod   # production mode (debug off)
 ```
 
-The server will start on **http://localhost:8001**
+The server will start on **http://localhost:8001**. Use `--port` to change the port.
 
 ### Using the Interface
 
@@ -150,7 +151,7 @@ Content-Type: application/json
 ### Port 8001 Already in Use
 If you get "Address already in use" error, the port is occupied. Either:
 1. Stop the other program using port 8001
-2. Edit `backend/web_server.py` and change the port number in the main section
+2. Use a different port: `python3 backend/web_server.py --port 9000`
 
 ### Viewport Files Not Found
 Make sure you're running the web server from the blore project root directory.

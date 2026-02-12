@@ -12,6 +12,37 @@ logger = logging.getLogger(__name__)
 # Tolerance for bounds matching (degrees, approximately 10 meters)
 BOUNDS_TOLERANCE = 0.0001
 
+# Strict allowlist: only alphanumeric, underscore, and hyphen
+_VIEWPORT_NAME_RE = re.compile(r'^[A-Za-z0-9_-]+$')
+
+
+def validate_viewport_name(name: str) -> str:
+    """Validate and return a safe viewport name.
+
+    Rejects names containing path separators, dots, or any character
+    outside [A-Za-z0-9_-] to prevent path traversal attacks.
+
+    Args:
+        name: Candidate viewport name
+
+    Returns:
+        The validated name (unchanged)
+
+    Raises:
+        ValueError: If the name is empty, too long, or contains
+                    disallowed characters
+    """
+    if not name:
+        raise ValueError("Viewport name must not be empty")
+    if len(name) > 128:
+        raise ValueError("Viewport name must be 128 characters or fewer")
+    if not _VIEWPORT_NAME_RE.match(name):
+        raise ValueError(
+            f"Invalid viewport name: {name!r}. "
+            "Only letters, digits, underscores, and hyphens are allowed."
+        )
+    return name
+
 
 def get_viewport_path() -> Path:
     """Get the path to the active viewport file."""
@@ -215,8 +246,10 @@ def read_viewport_file(viewport_name: str) -> Dict:
         Dictionary with viewport configuration
 
     Raises:
+        ValueError: If viewport name contains unsafe characters
         FileNotFoundError: If viewport file doesn't exist
     """
+    validate_viewport_name(viewport_name)
     viewport_path = Path(__file__).parent.parent / "viewports" / f"{viewport_name}.txt"
 
     if not viewport_path.exists():
