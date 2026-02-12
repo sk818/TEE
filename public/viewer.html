@@ -2121,6 +2121,10 @@
             explorerCanvasLayer = null;
             explorerResults = null;
 
+            // Hide stats overlay
+            const statsEl = document.getElementById('explorer-stats-overlay');
+            if (statsEl) statsEl.style.display = 'none';
+
             // Clear cross-panel triangle markers
             clearCrossPanelMarkers();
 
@@ -2256,9 +2260,23 @@
 
         // Update explorer stats display
         function updateExplorerStats(matches, threshold) {
-            // These elements don't exist in experimental viewer, so skip updates
-            // If they existed, this would display match statistics
-            console.log(`[EXPLORER] Stats: ${matches.length} matches at threshold ${threshold.toFixed(2)}`);
+            let statsEl = document.getElementById('explorer-stats-overlay');
+            if (!statsEl) {
+                statsEl = document.createElement('div');
+                statsEl.id = 'explorer-stats-overlay';
+                statsEl.style.cssText = `
+                    position: absolute; bottom: 50px; left: 50%; transform: translateX(-50%);
+                    background: rgba(0,0,0,0.85); color: #FFD700; padding: 8px 16px;
+                    border-radius: 6px; font-size: 14px; font-weight: 600;
+                    z-index: 600; pointer-events: none; white-space: nowrap;
+                    backdrop-filter: blur(5px);
+                `;
+                document.getElementById('map-embedding').appendChild(statsEl);
+            }
+            const total = faissLocal ? faissLocal.numVectors : 0;
+            const pct = total > 0 ? (matches.length / total * 100).toFixed(1) : '0.0';
+            statsEl.textContent = `${matches.length.toLocaleString()} pixels (${pct}%) at threshold ${threshold.toFixed(1)}`;
+            statsEl.style.display = 'block';
         }
 
         // Visualize explorer results with adaptive rendering
