@@ -988,11 +988,12 @@
             maps.embedding = L.map('map-embedding', {
                 center: center,
                 zoom: zoom,
-                zoomControl: true,
+                zoomControl: false,
                 minZoom: 6,
                 maxZoom: 17,
                 doubleClickZoom: false  // We use dblclick for similarity search
             });
+            L.control.zoom({position: 'bottomright'}).addTo(maps.embedding);
 
             let embeddingLayer = L.pixelatedTileLayer(`${TILE_SERVER}/tiles/${currentViewportName}/${currentEmbeddingYear}/{z}/{x}/{y}.png`, {
                 attribution: 'Tessera Embeddings',
@@ -1065,11 +1066,12 @@
             maps.embedding2 = L.map('map-embedding2', {
                 center: center,
                 zoom: zoom,
-                zoomControl: true,
+                zoomControl: false,
                 minZoom: 6,
                 maxZoom: 17,
                 doubleClickZoom: false  // We use dblclick for similarity search
             });
+            L.control.zoom({position: 'bottomright'}).addTo(maps.embedding2);
 
             let embedding2Layer = L.pixelatedTileLayer(`${TILE_SERVER}/tiles/${currentViewportName}/${currentEmbeddingYear2}/{z}/{x}/{y}.png`, {
                 attribution: 'Tessera Embeddings',
