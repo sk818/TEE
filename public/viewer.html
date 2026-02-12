@@ -967,11 +967,12 @@
             maps.osm = L.map('map-osm', {
                 center: center,
                 zoom: zoom,
-                zoomControl: true,
+                zoomControl: false,
                 minZoom: 6,
                 maxZoom: 18,
                 doubleClickZoom: false  // We use dblclick for similarity search
             });
+            L.control.zoom({position: 'bottomright'}).addTo(maps.osm);
 
             // Apply same bounds as embedding/RGB maps so all maps stay in sync
             if (viewportBounds) {
@@ -1013,11 +1014,12 @@
             maps.rgb = L.map('map-rgb', {
                 center: center,
                 zoom: zoom,
-                zoomControl: true,
+                zoomControl: false,
                 minZoom: 6,
                 maxZoom: 17,
                 doubleClickZoom: false  // We use dblclick for similarity search
             });
+            L.control.zoom({position: 'bottomright'}).addTo(maps.rgb);
 
             L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
                 attribution: 'Esri World Imagery',
@@ -1038,11 +1040,12 @@
             maps.heatmap = L.map('map-heatmap', {
                 center: center,
                 zoom: zoom,
-                zoomControl: true,
+                zoomControl: false,
                 minZoom: 6,
                 maxZoom: 17,
                 doubleClickZoom: false  // We use dblclick for similarity search
             });
+            L.control.zoom({position: 'bottomright'}).addTo(maps.heatmap);
 
             // No background layer for heatmap - pure color visualization
 
