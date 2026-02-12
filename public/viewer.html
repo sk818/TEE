@@ -3652,10 +3652,13 @@
             const filteredMatches = currentSearchCache.allMatches.filter(m => m.distance <= currentThreshold);
 
             // Compute similarity statistics
-            const distances = filteredMatches.map(m => m.distance);
-            const meanDist = distances.reduce((a, b) => a + b, 0) / (distances.length || 1);
-            const minDist = Math.min(...distances);
-            const maxDist = Math.max(...distances);
+            let minDist = Infinity, maxDist = -Infinity, sumDist = 0;
+            for (const m of filteredMatches) {
+                if (m.distance < minDist) minDist = m.distance;
+                if (m.distance > maxDist) maxDist = m.distance;
+                sumDist += m.distance;
+            }
+            const meanDist = sumDist / (filteredMatches.length || 1);
 
             const labelData = {
                 id: 'label_' + Date.now(),
