@@ -427,6 +427,13 @@
             <button id="toggle-all-overlays" style="padding: 8px 12px; background: #333; color: white; border: 1px solid #555; border-radius: 4px; cursor: pointer; font-size: 13px; font-weight: 600; white-space: nowrap;">
                 👁 Toggle Overlays
             </button>
+            <button id="export-labels-btn" style="padding: 8px 12px; background: #333; color: white; border: 1px solid #555; border-radius: 4px; cursor: pointer; font-size: 13px; white-space: nowrap;">
+                Export
+            </button>
+            <button id="import-labels-btn" style="padding: 8px 12px; background: #333; color: white; border: 1px solid #555; border-radius: 4px; cursor: pointer; font-size: 13px; white-space: nowrap;">
+                Import
+            </button>
+            <input type="file" id="import-labels-file" accept=".json" style="display: none;">
             <button id="status-btn" style="padding: 8px 12px; background: #333; color: white; border: 1px solid #555; border-radius: 4px; cursor: pointer; font-size: 13px; white-space: nowrap;">
                 ℹ️ Status
             </button>
@@ -604,6 +611,260 @@
         let currentDimReduction = 'pca';      // 'pca' or 'umap' - default to PCA (fast)
         let heatmapCanvasLayer = null;        // Distance heatmap layer
         let explorerCanvasLayer2 = null;      // Explorer viz for Panel 6
+
+        // Local FAISS data for client-side similarity search
+        let faissLocal = null;  // {embeddings: Float32Array, coords: Int32Array, metadata: Object, pixelLookup: Map, numVectors: number, dim: number, viewport: string, year: string}
+
+        // ===== IndexedDB Cache for FAISS Data =====
+        const FaissCache = {
+            DB_NAME: 'tee_faiss_cache',
+            STORE_NAME: 'faiss_data',
+            _db: null,
+
+            async open() {
+                if (this._db) return this._db;
+                return new Promise((resolve, reject) => {
+                    const req = indexedDB.open(this.DB_NAME, 1);
+                    req.onupgradeneeded = () => {
+                        req.result.createObjectStore(this.STORE_NAME);
+                    };
+                    req.onsuccess = () => {
+                        this._db = req.result;
+                        resolve(this._db);
+                    };
+                    req.onerror = () => reject(req.error);
+                });
+            },
+
+            async get(viewport, year) {
+                const db = await this.open();
+                return new Promise((resolve, reject) => {
+                    const tx = db.transaction(this.STORE_NAME, 'readonly');
+                    const req = tx.objectStore(this.STORE_NAME).get(`${viewport}/${year}`);
+                    req.onsuccess = () => resolve(req.result || null);
+                    req.onerror = () => reject(req.error);
+                });
+            },
+
+            async put(viewport, year, data) {
+                const db = await this.open();
+                return new Promise((resolve, reject) => {
+                    const tx = db.transaction(this.STORE_NAME, 'readwrite');
+                    tx.objectStore(this.STORE_NAME).put(data, `${viewport}/${year}`);
+                    tx.oncomplete = () => resolve();
+                    tx.onerror = () => reject(tx.error);
+                });
+            },
+
+            async delete(viewport, year) {
+                const db = await this.open();
+                return new Promise((resolve, reject) => {
+                    const tx = db.transaction(this.STORE_NAME, 'readwrite');
+                    tx.objectStore(this.STORE_NAME).delete(`${viewport}/${year}`);
+                    tx.oncomplete = () => resolve();
+                    tx.onerror = () => reject(tx.error);
+                });
+            }
+        };
+
+        function parseNpy(buffer) {
+            // Parse numpy .npy format: magic(6) + version(2) + header_len(2 or 4) + header + data
+            const view = new DataView(buffer);
+            const major = view.getUint8(6);
+            let headerLen, dataOffset;
+            if (major >= 2) {
+                headerLen = view.getUint32(8, true);
+                dataOffset = 12 + headerLen;
+            } else {
+                headerLen = view.getUint16(8, true);
+                dataOffset = 10 + headerLen;
+            }
+            return buffer.slice(dataOffset);
+        }
+
+        async function downloadFaissData(viewport, year) {
+            // Check IndexedDB cache first
+            const cached = await FaissCache.get(viewport, year);
+            if (cached) {
+                console.log(`[FAISS-LOCAL] Cache hit for ${viewport}/${year}`);
+                const numVectors = cached.embeddings.length / 128;
+                const pixelLookup = new Map();
+                for (let i = 0; i < numVectors; i++) {
+                    pixelLookup.set(`${cached.coords[i * 2]},${cached.coords[i * 2 + 1]}`, i);
+                }
+                faissLocal = {
+                    embeddings: cached.embeddings,
+                    coords: cached.coords,
+                    metadata: cached.metadata,
+                    pixelLookup,
+                    numVectors,
+                    dim: 128,
+                    viewport,
+                    year: String(year)
+                };
+                return faissLocal;
+            }
+
+            console.log(`[FAISS-LOCAL] Downloading FAISS data for ${viewport}/${year}...`);
+
+            // Show download progress
+            const overlay = document.getElementById('progress-overlay');
+            const title = document.getElementById('progress-title');
+            const message = document.getElementById('progress-message');
+            const bar = document.getElementById('progress-bar');
+            const percent = document.getElementById('progress-percent');
+            const status = document.getElementById('progress-status');
+            overlay.style.display = 'flex';
+            title.textContent = 'Downloading FAISS Data';
+            message.textContent = 'For local similarity search (one-time download)';
+            status.textContent = 'Starting download...';
+            bar.style.width = '0%';
+            percent.textContent = '0%';
+
+            try {
+                // Fetch metadata first (small)
+                const metaResp = await fetch(`/api/faiss-data/${viewport}/${year}/metadata.json`);
+                if (!metaResp.ok) throw new Error(`metadata.json: ${metaResp.status}`);
+                const metadata = await metaResp.json();
+                status.textContent = 'Downloading pixel coordinates...';
+                bar.style.width = '5%';
+                percent.textContent = '5%';
+
+                // Fetch coords
+                const coordsResp = await fetch(`/api/faiss-data/${viewport}/${year}/pixel_coords.npy`);
+                if (!coordsResp.ok) throw new Error(`pixel_coords.npy: ${coordsResp.status}`);
+                const coordsBuf = await coordsResp.arrayBuffer();
+                const coordsData = new Int32Array(parseNpy(coordsBuf));
+                status.textContent = 'Downloading embeddings...';
+                bar.style.width = '10%';
+                percent.textContent = '10%';
+
+                // Fetch embeddings with progress tracking (large file)
+                const embResp = await fetch(`/api/faiss-data/${viewport}/${year}/all_embeddings.npy`);
+                if (!embResp.ok) throw new Error(`all_embeddings.npy: ${embResp.status}`);
+                const contentLength = parseInt(embResp.headers.get('Content-Length') || '0');
+                const reader = embResp.body.getReader();
+                const chunks = [];
+                let received = 0;
+
+                while (true) {
+                    const {done, value} = await reader.read();
+                    if (done) break;
+                    chunks.push(value);
+                    received += value.length;
+                    if (contentLength > 0) {
+                        const pct = Math.min(95, 10 + Math.round((received / contentLength) * 85));
+                        bar.style.width = pct + '%';
+                        percent.textContent = pct + '%';
+                        status.textContent = `Downloading embeddings... ${(received / 1048576).toFixed(1)} / ${(contentLength / 1048576).toFixed(1)} MB`;
+                    }
+                }
+
+                // Combine chunks into single buffer
+                const embBuffer = new Uint8Array(received);
+                let offset = 0;
+                for (const chunk of chunks) {
+                    embBuffer.set(chunk, offset);
+                    offset += chunk.length;
+                }
+                const embeddingsData = new Float32Array(parseNpy(embBuffer.buffer));
+
+                status.textContent = 'Building lookup index...';
+                bar.style.width = '97%';
+                percent.textContent = '97%';
+
+                const numVectors = embeddingsData.length / 128;
+                const pixelLookup = new Map();
+                for (let i = 0; i < numVectors; i++) {
+                    pixelLookup.set(`${coordsData[i * 2]},${coordsData[i * 2 + 1]}`, i);
+                }
+
+                // Store in IndexedDB (without pixelLookup — rebuilt on load)
+                await FaissCache.put(viewport, year, {
+                    embeddings: embeddingsData,
+                    coords: coordsData,
+                    metadata
+                });
+
+                bar.style.width = '100%';
+                percent.textContent = '100%';
+                status.textContent = `Ready! ${numVectors.toLocaleString()} vectors loaded.`;
+
+                faissLocal = {
+                    embeddings: embeddingsData,
+                    coords: coordsData,
+                    metadata,
+                    pixelLookup,
+                    numVectors,
+                    dim: 128,
+                    viewport,
+                    year: String(year)
+                };
+
+                console.log(`[FAISS-LOCAL] Downloaded and cached: ${numVectors} vectors for ${viewport}/${year}`);
+                return faissLocal;
+
+            } catch (error) {
+                console.error('[FAISS-LOCAL] Download failed:', error);
+                status.textContent = `Download failed: ${error.message}`;
+                throw error;
+            } finally {
+                setTimeout(() => { overlay.style.display = 'none'; }, 1500);
+            }
+        }
+
+        // ===== Client-Side Search Functions =====
+
+        function localExtract(lat, lon) {
+            if (!faissLocal) return null;
+            const gt = faissLocal.metadata.geotransform;
+            // Affine transform: c=originX, a=pixelWidth, f=originY, e=pixelHeight(negative)
+            const px = Math.trunc((lon - gt.c) / gt.a);
+            const py = Math.trunc((lat - gt.f) / gt.e);
+
+            // Try exact match first
+            let idx = faissLocal.pixelLookup.get(`${px},${py}`);
+            // Try 8-neighborhood if not found
+            if (idx === undefined) {
+                const offsets = [[-1,0],[1,0],[0,-1],[0,1],[-1,-1],[-1,1],[1,-1],[1,1]];
+                for (const [dx, dy] of offsets) {
+                    idx = faissLocal.pixelLookup.get(`${px+dx},${py+dy}`);
+                    if (idx !== undefined) break;
+                }
+            }
+            if (idx === undefined) return null;
+
+            // Return 128-dim embedding slice
+            return faissLocal.embeddings.slice(idx * 128, (idx + 1) * 128);
+        }
+
+        function localSearchSimilar(embedding, threshold) {
+            if (!faissLocal) return [];
+            const gt = faissLocal.metadata.geotransform;
+            const N = faissLocal.numVectors;
+            const dim = faissLocal.dim;
+            const emb = faissLocal.embeddings;
+            const coords = faissLocal.coords;
+            const matches = [];
+            const threshSq = threshold * threshold;
+
+            for (let i = 0; i < N; i++) {
+                let distSq = 0;
+                const base = i * dim;
+                for (let d = 0; d < dim; d++) {
+                    const diff = emb[base + d] - embedding[d];
+                    distSq += diff * diff;
+                }
+                if (distSq <= threshSq) {
+                    const px = coords[i * 2];
+                    const py = coords[i * 2 + 1];
+                    const lon = gt.c + px * gt.a;
+                    const lat = gt.f + py * gt.e;
+                    matches.push({lat, lon, distance: Math.sqrt(distSq)});
+                }
+            }
+            return matches;
+        }
 
         // Fetch current viewport and update map center/zoom
         async function updateMapViewport() {
@@ -925,50 +1186,26 @@
 
         // Refresh all saved labels for a new year
         async function refreshLabelsForYear(year) {
+            // Ensure FAISS data is loaded for the target year
+            if (!faissLocal || faissLocal.year !== String(year)) {
+                try {
+                    await downloadFaissData(currentViewportName, year);
+                } catch (e) {
+                    console.error(`[LABEL] Cannot load FAISS data for year ${year}:`, e);
+                    return;
+                }
+            }
+
             for (const label of savedLabels) {
                 try {
-                    // Extract embedding at source pixel for new year
-                    const extractResp = await fetch('/api/embeddings/extract', {
-                        method: 'POST',
-                        headers: {'Content-Type': 'application/json'},
-                        body: JSON.stringify({
-                            lat: label.source_pixel.lat,
-                            lon: label.source_pixel.lon,
-                            year: parseInt(year)
-                        })
-                    });
-
-                    const extractData = await extractResp.json();
-                    if (!extractData.success) {
-                        console.warn(`[LABEL] Extract failed for ${label.name}: ${extractData.error}`);
+                    const embedding = localExtract(label.source_pixel.lat, label.source_pixel.lon);
+                    if (!embedding) {
+                        console.warn(`[LABEL] No embedding for ${label.name} at source pixel`);
                         continue;
                     }
-
-                    // Search for similar pixels with same threshold
-                    const searchResp = await fetch('/api/embeddings/search-similar', {
-                        method: 'POST',
-                        headers: {'Content-Type': 'application/json'},
-                        body: JSON.stringify({
-                            embedding: extractData.embedding,
-                            threshold: label.threshold,
-                            viewport_id: currentViewportName,
-                            year: parseInt(year)
-                        })
-                    });
-
-                    const searchData = await searchResp.json();
-                    if (!searchData.success) {
-                        console.warn(`[LABEL] Search failed for ${label.name}: ${searchData.error}`);
-                        continue;
-                    }
-
-                    // Update label's pixels with new year's results
-                    label.pixels = searchData.matches.map(m => ({
-                        lat: m.lat,
-                        lon: m.lon,
-                        distance: m.distance
-                    }));
-                    label.pixel_count = label.pixels.length;
+                    const matches = localSearchSimilar(embedding, label.threshold);
+                    label.pixels = matches;
+                    label.pixel_count = matches.length;
                 } catch (error) {
                     console.error(`[LABEL] Error refreshing ${label.name}:`, error);
                 }
@@ -1880,69 +2117,40 @@
             showExplorerLoading();
 
             try {
-                // Step 1: Extract embedding
-                const extractResp = await fetch('/api/embeddings/extract', {
-                    method: 'POST',
-                    headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify({lat, lon, year: parseInt(currentEmbeddingYear)})
-                });
-                const extractData = await extractResp.json();
-                if (!extractData.success) {
-                    console.error(`[EXPLORER] Extract failed: ${extractData.error}`);
-                    alert(`Error: ${extractData.error}`);
+                if (!faissLocal) {
+                    alert('FAISS data not loaded yet. Please wait for download to complete.');
                     return;
                 }
-                // Step 2: Search similar with wide threshold for caching
-                const cacheThreshold = 35.0;  // Cache up to max slider value
-                const searchResp = await fetch('/api/embeddings/search-similar', {
-                    method: 'POST',
-                    headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify({
-                        embedding: extractData.embedding,
-                        threshold: cacheThreshold,
-                        viewport_id: currentViewportName,
-                        year: parseInt(currentEmbeddingYear)
-                    })
-                });
-                const searchData = await searchResp.json();
-                if (!searchData.success) {
-                    console.error(`[EXPLORER] Search failed: ${searchData.error}`);
-                    alert(`Error: ${searchData.error}`);
+
+                // Step 1: Extract embedding locally
+                const t0 = performance.now();
+                const embedding = localExtract(lat, lon);
+                if (!embedding) {
+                    console.error(`[EXPLORER] No embedding found at ${lat}, ${lon}`);
+                    alert('No embedding found at this location.');
                     return;
                 }
-                // Log distance statistics (avoid spreading large arrays)
-                if (searchData.matches.length > 0) {
-                    let minDist = Infinity;
-                    let maxDist = -Infinity;
-                    let sumDist = 0;
 
-                    for (const match of searchData.matches) {
-                        minDist = Math.min(minDist, match.distance);
-                        maxDist = Math.max(maxDist, match.distance);
-                        sumDist += match.distance;
-                    }
-
-                    const avgDist = sumDist / searchData.matches.length;
-                    // Check if we're hitting result limit
-                    if (searchData.matches.length === 250000 && searchData.query_stats.matches_found > 250000) {
-                        console.warn(`[EXPLORER] ⚠️  HITTING RESULT LIMIT! Backend found ${searchData.query_stats.matches_found} matches but returning only 250K. Increase MAX_RESULTS in backend.`);
-                    }
-                }
+                // Step 2: Search similar locally with wide threshold for caching
+                const cacheThreshold = 35.0;
+                const matches = localSearchSimilar(embedding, cacheThreshold);
+                const queryTime = performance.now() - t0;
+                console.log(`[EXPLORER] Local search: ${matches.length} matches in ${queryTime.toFixed(1)}ms`);
 
                 // Step 3: Cache results
                 explorerResults = {
                     sourcePixel: {lat, lon},
-                    sourceEmbedding: extractData.embedding,  // Store for threshold expansion searches
-                    allMatches: searchData.matches,
-                    queryTime: searchData.query_stats.computation_time_ms,
+                    sourceEmbedding: Array.from(embedding),
+                    allMatches: matches,
+                    queryTime: queryTime,
                     cacheThreshold: cacheThreshold
                 };
 
                 // Also cache for persistent label system
                 currentSearchCache = {
                     sourcePixel: {lat, lon},
-                    embedding: extractData.embedding,
-                    allMatches: searchData.matches,
+                    embedding: Array.from(embedding),
+                    allMatches: matches,
                     threshold: parseInt(document.getElementById('similarity-threshold').value),
                     timestamp: Date.now()
                 };
@@ -1972,31 +2180,14 @@
             }
 
             const currentThreshold = parseFloat(document.getElementById('threshold-display').textContent);
-            // If threshold exceeds cache, fetch more matches from backend
-            if (currentThreshold > explorerResults.cacheThreshold) {
-                try {
-                    const searchResp = await fetch('/api/embeddings/search-similar', {
-                        method: 'POST',
-                        headers: {'Content-Type': 'application/json'},
-                        body: JSON.stringify({
-                            embedding: explorerResults.sourceEmbedding,
-                            threshold: currentThreshold,
-                            viewport_id: currentViewportName,
-                            year: parseInt(currentEmbeddingYear)
-                        })
-                    });
-                    const searchData = await searchResp.json();
-
-                    if (searchData.success) {
-                        // Update cache with new results
-                        explorerResults.allMatches = searchData.matches;
-                        explorerResults.cacheThreshold = currentThreshold;
-                    } else {
-                        console.error(`[EXPLORER] Backend search failed: ${searchData.error}`);
-                    }
-                } catch (error) {
-                    console.error(`[EXPLORER] Error fetching more matches:`, error);
-                }
+            // If threshold exceeds cache, re-search locally with wider threshold
+            if (currentThreshold > explorerResults.cacheThreshold && faissLocal) {
+                const embedding = explorerResults.sourceEmbedding instanceof Float32Array
+                    ? explorerResults.sourceEmbedding
+                    : new Float32Array(explorerResults.sourceEmbedding);
+                const matches = localSearchSimilar(embedding, currentThreshold);
+                explorerResults.allMatches = matches;
+                explorerResults.cacheThreshold = currentThreshold;
             }
 
             // Filter cached results by current threshold
@@ -2059,6 +2250,17 @@
                 this._map = map;
                 this._canvas = null;
                 this._ctx = null;
+                // Compute max distance for opacity scaling
+                this._maxDistance = 1;
+                this._updateMaxDistance();
+            }
+
+            _updateMaxDistance() {
+                let maxDist = 0;
+                for (const m of this.matches) {
+                    if (m.distance > maxDist) maxDist = m.distance;
+                }
+                this._maxDistance = maxDist || 1;
             }
 
             onAdd(map) {
@@ -2071,7 +2273,6 @@
                 this._canvas.style.top = '0';
                 this._canvas.style.left = '0';
                 this._canvas.style.pointerEvents = 'none';
-                this._canvas.style.opacity = '0.5';
                 this._canvas.style.zIndex = '999';
 
                 const mapContainer = map.getContainer();
@@ -2113,9 +2314,8 @@
                 // Clear canvas
                 ctx.clearRect(0, 0, size.x, size.y);
 
-                ctx.fillStyle = '#FFFF00';
-
                 let visibleCount = 0;
+                const maxDist = this._maxDistance;
 
                 // Draw each pixel with overlap to eliminate banding from rounding errors
                 const OVERLAP = 1.0;  // Pixels overlap by 1px to hide seams from coordinate rounding
@@ -2131,6 +2331,10 @@
                     }
 
                     visibleCount++;
+
+                    // Opacity proportional to similarity: distance=0 → alpha=0.85, distance=max → alpha=0.15
+                    const alpha = 0.85 - 0.7 * (match.distance / maxDist);
+                    ctx.fillStyle = `rgba(255, 255, 0, ${alpha.toFixed(3)})`;
 
                     // Calculate exact bounds without rounding, let canvas handle rendering
                     const x = sw.x - OVERLAP;
@@ -2148,6 +2352,7 @@
 
             updateMatches(newMatches) {
                 this.matches = newMatches;
+                this._updateMaxDistance();
                 this._redraw();
             }
         }
@@ -3069,9 +3274,21 @@
                         const faissCheckResp = await fetch(`/api/viewports/${currentViewportName}/is-ready`);
                         const faissStatus = await faissCheckResp.json();
                         if (faissStatus.has_faiss) {
-                            // FAISS is ready - show labeling controls
+                            // FAISS ready on server — download data for client-side search
+                            const year = currentEmbeddingYear || data.years[0];
+                            console.log(`[FAISS-LOCAL] Server FAISS ready, downloading data for ${currentViewportName}/${year}...`);
+                            try {
+                                await downloadFaissData(currentViewportName, year);
+                            } catch (e) {
+                                console.error('[FAISS-LOCAL] Download failed:', e);
+                            }
+                            // Show labeling controls after local data is cached
                             document.getElementById('label-controls-bar').style.display = 'flex';
-                            console.log('[ADVANCED VIEWER] FAISS index available - labeling enabled');
+                            console.log('[ADVANCED VIEWER] Local FAISS data ready - labeling enabled');
+                            // Recompute labels now that local data is available
+                            if (savedLabels.length > 0) {
+                                await recomputeLabelPixels();
+                            }
                             return; // Stop polling
                         }
                     }
@@ -3127,7 +3344,7 @@
             await loadAvailableYears();  // Panel 3: Load year selector
             await loadAvailableYears2(); // Panel 6: Load second year selector
             loadLabels();
-            await loadSavedLabels();  // Load persistent labels from server
+            await loadSavedLabels();  // Load label definitions from localStorage, recompute pixels from FAISS
             updateThresholdDisplay();  // Initialize threshold display
 
             // Poll for FAISS index and show labeling controls when ready
@@ -3229,24 +3446,55 @@
 
         // ===== PERSISTENT LABEL SYSTEM =====
         // Global variables for label management
-        let savedLabels = [];  // Array of label objects from server
+        let savedLabels = [];  // Array of label objects (stored in localStorage)
         let currentSearchCache = null;  // Cache of current FAISS search results
 
-        // Load saved labels from server on page load
+        // Persist labels to localStorage (metadata only, no pixel arrays)
+        function persistLabels() {
+            const toStore = savedLabels.map(l => {
+                const {pixels, visible, ...meta} = l;
+                return meta;
+            });
+            localStorage.setItem('tee_labels_' + currentViewportName, JSON.stringify(toStore));
+        }
+
+        // Load saved labels from localStorage, then recompute pixels from FAISS
         async function loadSavedLabels() {
             try {
-                const response = await fetch(`/api/viewports/${currentViewportName}/labels`);
-                const data = await response.json();
-
-                if (data.success) {
-                    savedLabels = data.labels.map(l => ({...l, visible: true}));
-                    updateLabelsUI();
-                    updateOverlay();
-                    console.log(`✓ Loaded ${data.label_count} labels`);
+                const raw = localStorage.getItem('tee_labels_' + currentViewportName);
+                savedLabels = raw ? JSON.parse(raw).map(l => ({...l, visible: true, pixels: []})) : [];
+                updateLabelsUI();
+                console.log(`✓ Loaded ${savedLabels.length} label definitions from localStorage`);
+                if (savedLabels.length > 0) {
+                    await recomputeLabelPixels();
                 }
             } catch (error) {
                 console.error('Error loading labels:', error);
+                savedLabels = [];
             }
+        }
+
+        // Recompute pixel coverage for all labels from FAISS index
+        async function recomputeLabelPixels() {
+            if (!faissLocal) {
+                console.warn('[LABEL] FAISS data not loaded, skipping recompute');
+                return;
+            }
+            for (const label of savedLabels) {
+                try {
+                    const embedding = localExtract(label.source_pixel.lat, label.source_pixel.lon);
+                    if (!embedding) {
+                        console.warn(`[LABEL] No embedding for ${label.name} at source pixel`);
+                        continue;
+                    }
+                    const matches = localSearchSimilar(embedding, label.threshold);
+                    label.pixels = matches;
+                    label.pixel_count = matches.length;
+                } catch (error) {
+                    console.error(`[LABEL] Error recomputing ${label.name}:`, error);
+                }
+            }
+            updateOverlay();
         }
 
         // Update labels UI list
@@ -3289,7 +3537,7 @@
                         <div style="width: 14px; height: 14px; background: ${label.color}; border-radius: 2px; margin-right: 8px;"></div>
                         <div style="font-weight: 600; font-size: 13px; color: #333;">${label.name}</div>
                       </div>
-                      <div style="font-size: 11px; color: #999; margin-left: 22px;">${label.pixel_count.toLocaleString()} pixels, threshold: ${label.threshold}</div>
+                      <div style="font-size: 11px; color: #999; margin-left: 22px;">${label.pixel_count.toLocaleString()} pixels, threshold: ${label.threshold}${label.mean_distance != null ? `, similarity: ${label.mean_distance.toFixed(2)} avg (${label.min_distance.toFixed(2)}–${label.max_distance.toFixed(2)})` : ''}</div>
                     </div>
                     <div style="display: flex; gap: 6px;">
                       <button class="toggle-label-btn" data-label-id="${label.id}" style="padding: 5px 8px; background: #e8f0ff; border: 1px solid #b0d4ff; border-radius: 3px; cursor: pointer; font-size: 12px; color: #0066cc; font-weight: 600;" title="Toggle visibility">Show</button>
@@ -3316,7 +3564,7 @@
         }
 
         // Handle save label confirmation
-        async function confirmSaveLabel() {
+        function confirmSaveLabel() {
             const name = document.getElementById('label-name-input').value.trim();
             const color = document.getElementById('label-color-input').value;
 
@@ -3331,11 +3579,24 @@
             // Filter matches by current threshold
             const filteredMatches = currentSearchCache.allMatches.filter(m => m.distance <= currentThreshold);
 
+            // Compute similarity statistics
+            const distances = filteredMatches.map(m => m.distance);
+            const meanDist = distances.reduce((a, b) => a + b, 0) / (distances.length || 1);
+            const minDist = Math.min(...distances);
+            const maxDist = Math.max(...distances);
+
             const labelData = {
+                id: 'label_' + Date.now(),
                 name: name,
                 color: color,
                 threshold: currentThreshold,
+                mean_distance: meanDist,
+                min_distance: minDist,
+                max_distance: maxDist,
                 source_pixel: currentSearchCache.sourcePixel,
+                pixel_count: filteredMatches.length,
+                created: new Date().toISOString(),
+                visible: true,
                 pixels: filteredMatches.map(m => ({
                     lat: m.lat,
                     lon: m.lon,
@@ -3343,32 +3604,16 @@
                 }))
             };
 
-            try {
-                const response = await fetch(`/api/viewports/${currentViewportName}/labels`, {
-                    method: 'POST',
-                    headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify(labelData)
-                });
+            savedLabels.push(labelData);
+            persistLabels();
+            updateLabelsUI();
+            updateOverlay();
 
-                const result = await response.json();
-                if (result.success) {
-                    labelData.id = result.label_id;
-                    labelData.pixel_count = result.pixel_count;
-                    labelData.visible = true;
-                    savedLabels.push(labelData);
-                    updateLabelsUI();
-                    updateOverlay();
+            // Clear the explorer preview (yellow overlay) and all markers
+            clearExplorerResults();
 
-                    // Clear the explorer preview (yellow overlay) and all markers
-                    clearExplorerResults();
-
-                    closeSaveLabelModal();
-                    console.log(`✓ Saved label: ${name} (${result.pixel_count} pixels)`);
-                }
-            } catch (error) {
-                console.error('Error saving label:', error);
-                alert('Failed to save label');
-            }
+            closeSaveLabelModal();
+            console.log(`✓ Saved label: ${name} (${labelData.pixel_count} pixels)`);
         }
 
         // Close save label modal
@@ -3377,25 +3622,14 @@
         }
 
         // Delete a saved label
-        async function deleteSavedLabel(labelId) {
+        function deleteSavedLabel(labelId) {
             if (!confirm('Delete this label?')) return;
 
-            try {
-                const response = await fetch(`/api/viewports/${currentViewportName}/labels/${labelId}`, {
-                    method: 'DELETE'
-                });
-
-                const result = await response.json();
-                if (result.success) {
-                    savedLabels = savedLabels.filter(l => l.id !== labelId);
-                    updateLabelsUI();
-                    updateOverlay();
-                    console.log(`✓ Deleted label: ${labelId}`);
-                }
-            } catch (error) {
-                console.error('Error deleting label:', error);
-                alert('Failed to delete label');
-            }
+            savedLabels = savedLabels.filter(l => l.id !== labelId);
+            persistLabels();
+            updateLabelsUI();
+            updateOverlay();
+            console.log(`✓ Deleted label: ${labelId}`);
         }
 
         // Toggle label visibility
@@ -3414,6 +3648,58 @@
             savedLabels.forEach(l => l.visible = !allVisible);
             updateOverlay();
             updateLabelsUI();
+        }
+
+        // Export saved labels as JSON file (metadata only - source points + attributes)
+        function exportSavedLabels() {
+            if (savedLabels.length === 0) {
+                alert('No labels to export.');
+                return;
+            }
+            const data = savedLabels.map(l => {
+                const {pixels, visible, ...meta} = l;
+                return meta;
+            });
+            const blob = new Blob([JSON.stringify(data, null, 2)], {type: 'application/json'});
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `${currentViewportName}_labels.json`;
+            a.click();
+            URL.revokeObjectURL(url);
+        }
+
+        // Import saved labels from JSON file
+        async function importSavedLabels(file) {
+            const reader = new FileReader();
+            reader.onload = async function(e) {
+                try {
+                    const imported = JSON.parse(e.target.result);
+                    if (!Array.isArray(imported)) {
+                        alert('Invalid label file: expected a JSON array.');
+                        return;
+                    }
+                    const existingIds = new Set(savedLabels.map(l => l.id));
+                    let added = 0;
+                    for (const label of imported) {
+                        if (!label.id || !label.name || !label.source_pixel) continue;
+                        if (existingIds.has(label.id)) continue;
+                        label.visible = true;
+                        label.pixels = [];
+                        savedLabels.push(label);
+                        added++;
+                    }
+                    persistLabels();
+                    updateLabelsUI();
+                    console.log(`✓ Imported ${added} labels (${imported.length - added} skipped as duplicates)`);
+                    if (added > 0) {
+                        await recomputeLabelPixels();
+                    }
+                } catch (err) {
+                    alert('Failed to parse label file: ' + err.message);
+                }
+            };
+            reader.readAsText(file);
         }
 
         // PersistentLabelOverlay class - renders all labels as colored pixels on RGB map
@@ -3523,6 +3809,16 @@
         document.addEventListener('DOMContentLoaded', () => {
             document.getElementById('save-label-btn').addEventListener('click', saveCurrentSearchAsLabel);
             document.getElementById('toggle-all-overlays').addEventListener('click', toggleAllOverlays);
+            document.getElementById('export-labels-btn').addEventListener('click', exportSavedLabels);
+            document.getElementById('import-labels-btn').addEventListener('click', () => {
+                document.getElementById('import-labels-file').click();
+            });
+            document.getElementById('import-labels-file').addEventListener('change', (e) => {
+                if (e.target.files[0]) {
+                    importSavedLabels(e.target.files[0]);
+                    e.target.value = '';  // reset so same file can be re-imported
+                }
+            });
 
             // Modal button listeners
             document.getElementById('label-save-confirm').addEventListener('click', confirmSaveLabel);

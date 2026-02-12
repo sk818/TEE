@@ -1295,6 +1295,32 @@ def api_is_viewport_ready(viewport_name):
         return jsonify({'ready': False, 'message': f'Error: {str(e)}'}), 400
 
 
+@app.route('/api/faiss-data/<viewport>/<year>/<filename>', methods=['GET'])
+def api_serve_faiss_data(viewport, year, filename):
+    """Serve FAISS data files (embeddings, coords, metadata) for client-side search."""
+    ALLOWED_FILES = {'all_embeddings.npy', 'pixel_coords.npy', 'metadata.json'}
+    if filename not in ALLOWED_FILES:
+        return jsonify({'error': 'File not allowed'}), 403
+
+    try:
+        validate_viewport_name(viewport)
+    except ValueError as e:
+        return jsonify({'error': str(e)}), 400
+
+    faiss_dir = FAISS_INDICES_DIR / viewport / str(year)
+    file_path = faiss_dir / filename
+
+    if not file_path.exists():
+        return jsonify({'error': 'File not found'}), 404
+
+    content_type = 'application/json' if filename.endswith('.json') else 'application/octet-stream'
+    file_size = file_path.stat().st_size
+
+    response = send_from_directory(str(faiss_dir), filename, mimetype=content_type)
+    response.headers['Content-Length'] = file_size
+    return response
+
+
 @app.route('/api/embeddings/extract', methods=['POST'])
 def api_extract_embedding():
     """Extract embedding vector at a given latitude/longitude coordinate.
