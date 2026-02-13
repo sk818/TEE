@@ -3545,136 +3545,170 @@
             updateUMAPColorsFromLabels();
         }
 
-        // Export map as high-resolution JPG with labels and legend
+        // Export map as high-resolution JPG with labels and legend.
+        // Fetches satellite tiles at max zoom (18) for the current view,
+        // composites them with label overlays and a colour legend.
         async function exportMapAsJPG() {
             if (!maps.rgb) return;
 
             const btn = document.getElementById('export-map-btn');
-            btn.textContent = 'Exporting...';
             btn.disabled = true;
-
-            // Use setTimeout to let the UI update before the heavy work
-            await new Promise(r => setTimeout(r, 50));
+            const MAX_ZOOM = 18;
+            const TILE_SZ = 256;
 
             try {
                 const map = maps.rgb;
-                const size = map.getSize();
-                const scale = 2; // 2x resolution for high-res export
-                const canvasW = size.x * scale;
-                const canvasH = size.y * scale;
+                const bounds = map.getBounds();
+
+                // Convert visible bounds to pixel coordinates at max zoom
+                const nwPoint = map.project(bounds.getNorthWest(), MAX_ZOOM);
+                const sePoint = map.project(bounds.getSouthEast(), MAX_ZOOM);
+
+                // Tile range at max zoom
+                const tileMinX = Math.floor(nwPoint.x / TILE_SZ);
+                const tileMinY = Math.floor(nwPoint.y / TILE_SZ);
+                const tileMaxX = Math.floor(sePoint.x / TILE_SZ);
+                const tileMaxY = Math.floor(sePoint.y / TILE_SZ);
+
+                const tilesX = tileMaxX - tileMinX + 1;
+                const tilesY = tileMaxY - tileMinY + 1;
+                const totalTiles = tilesX * tilesY;
+
+                // Canvas sized to cover these tiles exactly
+                const canvasW = tilesX * TILE_SZ;
+                const canvasH = tilesY * TILE_SZ;
+
+                // Offset: how many pixels into the first tile the view starts
+                const offsetX = nwPoint.x - tileMinX * TILE_SZ;
+                const offsetY = nwPoint.y - tileMinY * TILE_SZ;
+
+                // The actual visible area in pixels at max zoom
+                const viewW = sePoint.x - nwPoint.x;
+                const viewH = sePoint.y - nwPoint.y;
+
+                btn.textContent = `Fetching 0/${totalTiles} tiles...`;
+                await new Promise(r => setTimeout(r, 50));
 
                 const canvas = document.createElement('canvas');
                 canvas.width = canvasW;
                 canvas.height = canvasH;
                 const ctx = canvas.getContext('2d');
                 ctx.imageSmoothingEnabled = false;
-                ctx.scale(scale, scale);
 
-                // Step 1: Draw satellite tiles
-                const tilePane = map.getPane('tilePane');
-                const tileContainers = tilePane.querySelectorAll('.leaflet-tile-container');
-                for (const container of tileContainers) {
-                    const tiles = container.querySelectorAll('img.leaflet-tile');
-                    for (const tile of tiles) {
-                        if (!tile.complete || tile.naturalWidth === 0) continue;
-                        // Get tile position from CSS transform or style
-                        const style = window.getComputedStyle(tile);
-                        const transform = style.transform;
-                        let tx = 0, ty = 0;
-                        if (transform && transform !== 'none') {
-                            const m = transform.match(/matrix\(([^)]+)\)/);
-                            if (m) {
-                                const vals = m[1].split(',').map(Number);
-                                tx = vals[4];
-                                ty = vals[5];
-                            }
-                        }
-                        // Convert from layer coordinates to container coordinates
-                        const origin = map.getPixelOrigin();
-                        const mapPanePos = map.getPane('mapPane')._leaflet_pos || {x: 0, y: 0};
-                        const x = tx + mapPanePos.x;
-                        const y = ty + mapPanePos.y;
-                        const w = tile.offsetWidth || 256;
-                        const h = tile.offsetHeight || 256;
-                        try {
-                            ctx.drawImage(tile, x, y, w, h);
-                        } catch (e) {
-                            // CORS or security error - skip this tile
-                        }
+                // Step 1: Fetch and draw all satellite tiles at max zoom
+                let loaded = 0;
+                const BATCH = 8; // concurrent fetches
+                const tileJobs = [];
+                for (let ty = tileMinY; ty <= tileMaxY; ty++) {
+                    for (let tx = tileMinX; tx <= tileMaxX; tx++) {
+                        tileJobs.push({tx, ty});
                     }
                 }
 
-                // Step 2: Draw label pixels (same as PersistentLabelOverlay._redraw)
-                const OVERLAP = 1.0;
+                for (let i = 0; i < tileJobs.length; i += BATCH) {
+                    const batch = tileJobs.slice(i, i + BATCH);
+                    await Promise.all(batch.map(({tx, ty}) => new Promise(resolve => {
+                        const img = new Image();
+                        img.crossOrigin = 'anonymous';
+                        img.onload = () => {
+                            const dx = (tx - tileMinX) * TILE_SZ;
+                            const dy = (ty - tileMinY) * TILE_SZ;
+                            ctx.drawImage(img, dx, dy, TILE_SZ, TILE_SZ);
+                            loaded++;
+                            btn.textContent = `Fetching ${loaded}/${totalTiles} tiles...`;
+                            resolve();
+                        };
+                        img.onerror = () => { loaded++; resolve(); };
+                        img.src = `https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/${MAX_ZOOM}/${ty}/${tx}`;
+                    })));
+                }
+
+                btn.textContent = 'Rendering labels...';
+                await new Promise(r => setTimeout(r, 50));
+
+                // Step 2: Draw label pixels at max-zoom pixel coordinates
                 const visibleLabels = savedLabels.filter(l => l.visible && l.pixels && l.pixels.length > 0);
                 for (const label of visibleLabels) {
                     const c = label.color;
-                    const r = parseInt(c.substr(1,2), 16);
-                    const g = parseInt(c.substr(3,2), 16);
-                    const b = parseInt(c.substr(5,2), 16);
-                    ctx.fillStyle = `rgba(${r}, ${g}, ${b}, 0.7)`;
+                    const cr = parseInt(c.substr(1,2), 16);
+                    const cg = parseInt(c.substr(3,2), 16);
+                    const cb = parseInt(c.substr(5,2), 16);
+                    ctx.fillStyle = `rgba(${cr}, ${cg}, ${cb}, 0.7)`;
 
                     for (const pixel of label.pixels) {
                         const pb = calculatePixelBounds(pixel.lat, pixel.lon);
-                        const sw = map.latLngToContainerPoint(pb[0]);
-                        const ne = map.latLngToContainerPoint(pb[1]);
-                        if (ne.x < 0 || sw.x > size.x || sw.y < 0 || ne.y > size.y) continue;
-                        const px = sw.x - OVERLAP;
-                        const py = ne.y - OVERLAP;
-                        const pw = ne.x - sw.x + 2 * OVERLAP;
-                        const ph = sw.y - ne.y + 2 * OVERLAP;
-                        if (pw > 0.1 && ph > 0.1) ctx.fillRect(px, py, pw, ph);
+                        // Project pixel bounds to max-zoom pixel coords
+                        const swPx = map.project(L.latLng(pb[0][0], pb[0][1]), MAX_ZOOM);
+                        const nePx = map.project(L.latLng(pb[1][0], pb[1][1]), MAX_ZOOM);
+                        // Convert to canvas coords (relative to tile grid origin)
+                        const x = swPx.x - tileMinX * TILE_SZ;
+                        const y = nePx.y - tileMinY * TILE_SZ;
+                        const w = nePx.x - swPx.x + 1;
+                        const h = swPx.y - nePx.y + 1;
+                        if (x + w < 0 || x > canvasW || y + h < 0 || y > canvasH) continue;
+                        if (w > 0.1 && h > 0.1) ctx.fillRect(x, y, w, h);
                     }
                 }
 
-                // Step 3: Draw legend
+                // Step 3: Crop to visible area only
+                const outCanvas = document.createElement('canvas');
+                outCanvas.width = Math.round(viewW);
+                outCanvas.height = Math.round(viewH);
+                const outCtx = outCanvas.getContext('2d');
+                outCtx.imageSmoothingEnabled = false;
+                outCtx.drawImage(canvas, -offsetX, -offsetY);
+
+                // Step 4: Draw legend (scaled for high-res output)
                 if (visibleLabels.length > 0) {
-                    const legendX = 10;
-                    const legendY = size.y - 10 - (visibleLabels.length * 24 + 16);
-                    const legendW = 180;
-                    const legendH = visibleLabels.length * 24 + 16;
+                    const s = Math.max(1, Math.round(outCanvas.width / 600)); // scale factor for legend
+                    const pad = 12 * s;
+                    const rowH = 28 * s;
+                    const swatchSz = 16 * s;
+                    const fontSize = 15 * s;
+                    const legendW = 200 * s;
+                    const legendH = visibleLabels.length * rowH + pad * 2;
+                    const legendX = pad;
+                    const legendY = outCanvas.height - pad - legendH;
 
-                    // Background
-                    ctx.fillStyle = 'rgba(255, 255, 255, 0.9)';
-                    ctx.strokeStyle = 'rgba(0, 0, 0, 0.3)';
-                    ctx.lineWidth = 1;
-                    ctx.fillRect(legendX, legendY, legendW, legendH);
-                    ctx.strokeRect(legendX, legendY, legendW, legendH);
+                    outCtx.fillStyle = 'rgba(255, 255, 255, 0.92)';
+                    outCtx.strokeStyle = 'rgba(0, 0, 0, 0.3)';
+                    outCtx.lineWidth = s;
+                    outCtx.fillRect(legendX, legendY, legendW, legendH);
+                    outCtx.strokeRect(legendX, legendY, legendW, legendH);
 
-                    // Legend entries
-                    ctx.font = '13px Arial, sans-serif';
-                    ctx.textBaseline = 'middle';
+                    outCtx.font = `bold ${fontSize}px Arial, sans-serif`;
+                    outCtx.textBaseline = 'middle';
                     for (let i = 0; i < visibleLabels.length; i++) {
                         const label = visibleLabels[i];
-                        const ey = legendY + 12 + i * 24;
+                        const ey = legendY + pad + i * rowH + rowH / 2;
 
-                        // Color swatch
-                        ctx.fillStyle = label.color;
-                        ctx.fillRect(legendX + 10, ey - 6, 14, 14);
-                        ctx.strokeStyle = 'rgba(0,0,0,0.4)';
-                        ctx.lineWidth = 0.5;
-                        ctx.strokeRect(legendX + 10, ey - 6, 14, 14);
+                        outCtx.fillStyle = label.color;
+                        outCtx.fillRect(legendX + pad, ey - swatchSz/2, swatchSz, swatchSz);
+                        outCtx.strokeStyle = 'rgba(0,0,0,0.4)';
+                        outCtx.lineWidth = s * 0.5;
+                        outCtx.strokeRect(legendX + pad, ey - swatchSz/2, swatchSz, swatchSz);
 
-                        // Label name
-                        ctx.fillStyle = '#333';
-                        ctx.fillText(label.name, legendX + 32, ey + 1);
+                        outCtx.fillStyle = '#333';
+                        outCtx.fillText(label.name, legendX + pad + swatchSz + 10 * s, ey);
                     }
                 }
 
-                // Step 4: Download as JPG
-                canvas.toBlob(function(blob) {
+                // Step 5: Download as JPG
+                btn.textContent = 'Saving...';
+                outCanvas.toBlob(function(blob) {
                     const url = URL.createObjectURL(blob);
                     const a = document.createElement('a');
                     a.href = url;
-                    a.download = `${currentViewportName}_labels_z${map.getZoom()}.jpg`;
+                    a.download = `${currentViewportName}_labels_z${MAX_ZOOM}.jpg`;
                     a.click();
                     URL.revokeObjectURL(url);
+                    btn.textContent = 'Export Map';
+                    btn.disabled = false;
                 }, 'image/jpeg', 0.95);
 
             } catch (e) {
                 console.error('[EXPORT] Error exporting map:', e);
                 alert('Error exporting map. Check console for details.');
-            } finally {
                 btn.textContent = 'Export Map';
                 btn.disabled = false;
             }
