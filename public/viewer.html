@@ -1010,7 +1010,7 @@
                 zoom: zoom,
                 zoomControl: false,
                 minZoom: 6,
-                maxZoom: 17,
+                maxZoom: 18,
                 doubleClickZoom: false  // We use dblclick for similarity search
             });
             L.control.zoom({position: 'bottomright'}).addTo(maps.embedding);
@@ -1018,7 +1018,8 @@
             let embeddingLayer = L.pixelatedTileLayer(`${TILE_SERVER}/tiles/${currentViewportName}/${currentEmbeddingYear}/{z}/{x}/{y}.png`, {
                 attribution: 'Tessera Embeddings',
                 opacity: 1.0,
-                maxZoom: 17,
+                maxZoom: 18,
+                maxNativeZoom: 17,
                 minZoom: 6,
                 tileSize: 256
             }).addTo(maps.embedding);
@@ -1035,7 +1036,7 @@
                 zoom: zoom,
                 zoomControl: false,
                 minZoom: 6,
-                maxZoom: 17,
+                maxZoom: 18,
                 doubleClickZoom: false  // We use dblclick for similarity search
             });
             L.control.zoom({position: 'bottomright'}).addTo(maps.rgb);
@@ -1061,7 +1062,7 @@
                 zoom: zoom,
                 zoomControl: false,
                 minZoom: 6,
-                maxZoom: 17,
+                maxZoom: 18,
                 doubleClickZoom: false  // We use dblclick for similarity search
             });
             L.control.zoom({position: 'bottomright'}).addTo(maps.heatmap);
@@ -1090,7 +1091,7 @@
                 zoom: zoom,
                 zoomControl: false,
                 minZoom: 6,
-                maxZoom: 17,
+                maxZoom: 18,
                 doubleClickZoom: false  // We use dblclick for similarity search
             });
             L.control.zoom({position: 'bottomright'}).addTo(maps.embedding2);
@@ -1098,7 +1099,8 @@
             let embedding2Layer = L.pixelatedTileLayer(`${TILE_SERVER}/tiles/${currentViewportName}/${currentEmbeddingYear2}/{z}/{x}/{y}.png`, {
                 attribution: 'Tessera Embeddings',
                 opacity: 1.0,
-                maxZoom: 17,
+                maxZoom: 18,
+                maxNativeZoom: 17,
                 tileSize: 256
             }).addTo(maps.embedding2);
 
