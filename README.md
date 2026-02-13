@@ -445,33 +445,6 @@ GET /api/viewports/{viewport_name}/available-years
 ```
 Returns: `{success: bool, years: [2024, 2023, ...]}`
 
-### Embeddings
-
-**Extract embedding at location:**
-```
-POST /api/embeddings/extract
-Content-Type: application/json
-
-{
-  "lat": 13.0,
-  "lon": 77.55,
-  "year": 2024
-}
-```
-
-**Search for similar locations:**
-```
-POST /api/embeddings/search-similar
-Content-Type: application/json
-
-{
-  "embedding": [0.1, 0.2, ...],  // 128D vector
-  "threshold": 20,                 // Distance threshold
-  "viewport_id": "London",
-  "year": 2024
-}
-```
-
 ## Deployment
 
 ### Local Development
