@@ -204,8 +204,7 @@ blore/
 │   └── README.md                      # Frontend documentation
 │
 ├── backend/                           # Flask web server
-│   ├── web_server.py                  # API endpoints and server
-│   └── labels_db.py                   # SQLite database for labels
+│   └── web_server.py                  # API endpoints and server
 │
 ├── lib/                               # Python utilities
 │   ├── config.py                      # Centralized configuration (paths, env vars)

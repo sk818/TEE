@@ -33,14 +33,6 @@ from lib.viewport_utils import (
 from lib.viewport_writer import set_active_viewport, clear_active_viewport, create_viewport_from_bounds
 from lib.pipeline import PipelineRunner, cancel_pipeline
 from lib.config import DATA_DIR, MOSAICS_DIR, PYRAMIDS_DIR, FAISS_DIR, VIEWPORTS_DIR, ensure_dirs
-from backend.labels_db import (
-    init_db as init_labels_db,
-    get_labels,
-    save_label,
-    delete_label,
-    delete_viewport_labels,
-    get_label_count
-)
 
 # Configure logging
 logging.basicConfig(
@@ -1038,14 +1030,6 @@ def api_delete_viewport():
             except Exception as e:
                 logger.warning(f"Error deleting FAISS index directory for {viewport_name}: {e}")
 
-        # Delete labels from SQLite database
-        try:
-            labels_deleted = delete_viewport_labels(viewport_name)
-            if labels_deleted > 0:
-                deleted_items.append(f"labels: {labels_deleted} from database")
-                logger.info(f"✓ Deleted {labels_deleted} labels from database")
-        except Exception as e:
-            logger.warning(f"Error deleting labels from database for {viewport_name}: {e}")
 
         # Also delete legacy labels JSON file if it exists
         labels_file = viewports_dir / f'{viewport_name}_labels.json'
@@ -1654,70 +1638,6 @@ def api_distance_heatmap():
         return jsonify({'success': False, 'error': str(e)}), 500
 
 
-# ============================================================================
-# PERSISTENT LABELS API
-# ============================================================================
-
-@app.route('/api/viewports/<viewport_name>/labels', methods=['GET'])
-def api_get_viewport_labels(viewport_name):
-    """Load all saved labels for a viewport from SQLite database."""
-    try:
-        validate_viewport_name(viewport_name)
-    except ValueError as e:
-        return jsonify({'success': False, 'error': str(e)}), 400
-    try:
-        labels = get_labels(viewport_name)
-        return jsonify({
-            'success': True,
-            'labels': labels,
-            'label_count': len(labels)
-        })
-    except Exception as e:
-        logger.error(f"Error loading labels for viewport {viewport_name}: {e}")
-        return jsonify({'success': False, 'error': str(e)}), 500
-
-
-@app.route('/api/viewports/<viewport_name>/labels', methods=['POST'])
-def api_save_viewport_label(viewport_name):
-    """Save a new label to SQLite database."""
-    try:
-        validate_viewport_name(viewport_name)
-    except ValueError as e:
-        return jsonify({'success': False, 'error': str(e)}), 400
-    try:
-        label_data = request.get_json()
-        label_id = save_label(viewport_name, label_data)
-        pixel_count = len(label_data.get('pixels', []))
-
-        return jsonify({
-            'success': True,
-            'label_id': label_id,
-            'pixel_count': pixel_count
-        })
-
-    except Exception as e:
-        logger.error(f"Error saving label for viewport {viewport_name}: {e}")
-        return jsonify({'success': False, 'error': str(e)}), 500
-
-
-@app.route('/api/viewports/<viewport_name>/labels/<label_id>', methods=['DELETE'])
-def api_delete_viewport_label(viewport_name, label_id):
-    """Delete a specific label from SQLite database."""
-    try:
-        validate_viewport_name(viewport_name)
-    except ValueError as e:
-        return jsonify({'success': False, 'error': str(e)}), 400
-    try:
-        deleted = delete_label(viewport_name, label_id)
-
-        if not deleted:
-            return jsonify({'success': False, 'error': 'Label not found'}), 404
-
-        return jsonify({'success': True, 'label_id': label_id})
-
-    except Exception as e:
-        logger.error(f"Error deleting label from viewport {viewport_name}: {e}")
-        return jsonify({'success': False, 'error': str(e)}), 500
 
 
 # ============================================================================
@@ -1791,8 +1711,5 @@ if __name__ == '__main__':
     if debug:
         print("Debug mode enabled (use --prod to disable)")
     print("Press Ctrl+C to stop")
-
-    # Initialize labels database
-    init_labels_db()
 
     app.run(debug=debug, host=args.host, port=args.port)

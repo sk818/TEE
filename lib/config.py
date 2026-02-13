@@ -16,8 +16,6 @@ MOSAICS_DIR = DATA_DIR / 'mosaics'
 PYRAMIDS_DIR = DATA_DIR / 'pyramids'
 FAISS_DIR = DATA_DIR / 'faiss_indices'
 EMBEDDINGS_DIR = DATA_DIR / 'embeddings'
-LABELS_DB_PATH = DATA_DIR / 'labels.db'
-
 # Application directory - configurable via BLORE_APP_DIR env var
 APP_DIR = Path(os.environ.get('BLORE_APP_DIR', Path.home() / 'blore'))
 VIEWPORTS_DIR = APP_DIR / 'viewports'
