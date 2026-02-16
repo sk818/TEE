@@ -18,7 +18,6 @@ services:
     environment:
       - BLORE_DATA_DIR=/data
       - BLORE_APP_DIR=/app
-      - TILE_SERVER_URL=http://localhost:5125
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8001/health"]
@@ -29,7 +28,7 @@ services:
 
   tiles:
     build: .
-    command: ["python3", "tile_server.py", "--prod"]
+    command: ["gunicorn", "-w", "1", "--threads", "4", "-b", "0.0.0.0:5125", "tile_server:app"]
     ports:
       - "5125:5125"
     volumes:

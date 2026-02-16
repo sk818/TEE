@@ -1,12 +1,14 @@
 """
 Progress tracking utility for long-running operations.
 
-Writes progress JSON to /tmp/<operation_id>.json for frontend polling.
+Writes progress JSON to PROGRESS_DIR/<operation_id>.json for frontend polling.
 """
 
 import json
 from pathlib import Path
 from datetime import datetime
+
+from lib.config import PROGRESS_DIR
 
 
 class ProgressTracker:
@@ -20,7 +22,7 @@ class ProgressTracker:
             operation_id: Unique operation identifier (e.g., 'iitdellhi_embeddings')
         """
         self.operation_id = operation_id
-        self.progress_file = Path(f"/tmp/{operation_id}_progress.json")
+        self.progress_file = PROGRESS_DIR / f"{operation_id}_progress.json"
         self.start_time = datetime.now().isoformat()
 
     def update(self, status: str, message: str = "", current_value: int = 0,

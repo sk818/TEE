@@ -22,6 +22,8 @@ from backend.auth import init_auth
 
 app = Flask(__name__)
 CORS(app, supports_credentials=True)
+from werkzeug.middleware.proxy_fix import ProxyFix
+app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1)
 init_auth(app, DATA_DIR)
 
 PYRAMIDS_BASE_DIR = PYRAMIDS_DIR

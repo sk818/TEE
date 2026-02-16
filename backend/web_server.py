@@ -32,7 +32,7 @@ from lib.viewport_utils import (
 )
 from lib.viewport_writer import set_active_viewport, clear_active_viewport, create_viewport_from_bounds
 from lib.pipeline import PipelineRunner, cancel_pipeline
-from lib.config import DATA_DIR, MOSAICS_DIR, PYRAMIDS_DIR, FAISS_DIR, VIEWPORTS_DIR, ensure_dirs
+from lib.config import DATA_DIR, MOSAICS_DIR, PYRAMIDS_DIR, FAISS_DIR, VIEWPORTS_DIR, PROGRESS_DIR, ensure_dirs
 from backend.auth import init_auth
 
 # Configure logging
@@ -44,7 +44,16 @@ logger = logging.getLogger(__name__)
 
 app = Flask(__name__, static_folder=str(Path(__file__).parent.parent / 'public'))
 CORS(app, supports_credentials=True)
+from werkzeug.middleware.proxy_fix import ProxyFix
+app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1)
 init_auth(app, DATA_DIR)
+
+# Set tile server URL from env var (for gunicorn; __main__ also supports --tile-server flag)
+_tile_server_url = os.environ.get('TILE_SERVER_URL')
+if _tile_server_url:
+    app.config['TILE_SERVER_URL'] = _tile_server_url
+
+ensure_dirs()
 
 # Data directories (from lib.config, configurable via env vars)
 FAISS_INDICES_DIR = FAISS_DIR  # Alias for compatibility
@@ -789,7 +798,7 @@ def api_downloads_progress(task_id):
             viewport_name = viewport['viewport_id']
 
             # Single source of truth: pipeline progress file
-            progress_file = Path(f"/tmp/{viewport_name}_pipeline_progress.json")
+            progress_file = PROGRESS_DIR / f"{viewport_name}_pipeline_progress.json"
             if progress_file.exists():
                 try:
                     with open(progress_file, 'r') as f:
@@ -824,11 +833,11 @@ def api_operations_progress(operation_id):
     to provide unified progress tracking with full detail (current_file, bytes, etc.).
     """
     try:
-        # Validate operation_id to prevent path traversal in /tmp/ reads
+        # Validate operation_id to prevent path traversal in progress dir reads
         if not re.match(r'^[A-Za-z0-9_-]+$', operation_id):
             return jsonify({'success': False, 'error': 'Invalid operation_id'}), 400
 
-        progress_file = Path(f"/tmp/{operation_id}_progress.json")
+        progress_file = PROGRESS_DIR / f"{operation_id}_progress.json"
 
         if not progress_file.exists():
             return jsonify({
@@ -918,11 +927,11 @@ def api_cancel_processing(viewport_name):
 
         # Clean up progress files
         progress_patterns = [
-            f"/tmp/{viewport_name}_progress.json",
-            f"/tmp/{viewport_name}_*_progress.json"
+            f"{viewport_name}_progress.json",
+            f"{viewport_name}_*_progress.json"
         ]
         for pattern in progress_patterns:
-            for f in glob.glob(pattern):
+            for f in glob.glob(str(PROGRESS_DIR / pattern)):
                 try:
                     Path(f).unlink()
                     deleted_items.append(f"progress: {Path(f).name}")
@@ -1128,7 +1137,6 @@ def api_delete_viewport():
                 logger.warning(f"Error deleting config file for {viewport_name}: {e}")
 
         # Delete progress tracking files for this viewport
-        tmp_dir = Path('/tmp')
         progress_patterns = [
             f'{viewport_name}_download_progress.json',
             f'{viewport_name}_pyramids_progress.json',
@@ -1143,7 +1151,7 @@ def api_delete_viewport():
             f'{viewport_name}_pca_*_progress.json',
         ]
         for pattern in progress_patterns:
-            for progress_file in tmp_dir.glob(pattern):
+            for progress_file in PROGRESS_DIR.glob(pattern):
                 try:
                     progress_file.unlink()
                     deleted_items.append(f"progress file: {progress_file.name}")
@@ -1499,7 +1507,7 @@ def api_umap_status(viewport_name):
         faiss_dir = FAISS_INDICES_DIR / viewport_name / str(year)
         umap_file = faiss_dir / 'umap_coords.npy'
         operation_id = f"{viewport_name}_pipeline"  # Single source of truth
-        progress_file = Path(f"/tmp/{operation_id}_progress.json")
+        progress_file = PROGRESS_DIR / f"{operation_id}_progress.json"
 
         # Already computed
         if umap_file.exists():
@@ -1537,7 +1545,7 @@ def api_pca_status(viewport_name):
         faiss_dir = FAISS_INDICES_DIR / viewport_name / str(year)
         pca_file = faiss_dir / 'pca_coords.npy'
         operation_id = f"{viewport_name}_pipeline"  # Single source of truth
-        progress_file = Path(f"/tmp/{operation_id}_progress.json")
+        progress_file = PROGRESS_DIR / f"{operation_id}_progress.json"
 
         # Already computed
         if pca_file.exists():

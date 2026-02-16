@@ -142,6 +142,7 @@ def init_auth(app, data_dir):
     app.config['SESSION_COOKIE_NAME'] = 'tee_session'
     app.config['SESSION_COOKIE_HTTPONLY'] = True
     app.config['SESSION_COOKIE_SAMESITE'] = 'Lax'
+    app.config['SESSION_COOKIE_SECURE'] = os.environ.get('BLORE_HTTPS', '') in ('1', 'true')
 
     # Register hook
     app.before_request(_require_auth)
