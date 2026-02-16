@@ -494,6 +494,29 @@ The viewer is a single HTML file (`public/viewer.html`) that can be served from 
 
 After the initial FAISS data download (cached in IndexedDB), similarity search and labeling run entirely in the browser with no further server communication.
 
+## Authentication & User Management
+
+TEE supports optional per-user authentication via a `passwd` file.
+
+### Setup
+
+Create a `passwd` file in your data directory (`blore_data/passwd`) with one `username:bcrypt_hash` entry per line:
+
+```bash
+# Generate a bcrypt hash for a password
+python3 -c "import bcrypt; print(bcrypt.hashpw(b'mypassword', bcrypt.gensalt()).decode())"
+
+# Example passwd file (blore_data/passwd)
+admin:$2b$12$...
+alice:$2b$12$...
+```
+
+If no `passwd` file exists, authentication is disabled and all users have open access with no quota limits.
+
+### Disk Quota
+
+Each user has a **2 GB disk quota** for viewport data. When creating a viewport, the server estimates the disk usage and rejects the request if it would exceed the quota. The `admin` user is exempt and has unlimited disk space.
+
 ## Configuration
 
 ### Environment Variables

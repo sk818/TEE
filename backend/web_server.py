@@ -8,7 +8,7 @@ import sys
 import os
 import re
 from pathlib import Path
-from flask import Flask, jsonify, request, send_from_directory
+from flask import Flask, jsonify, request, send_from_directory, session
 from flask_cors import CORS
 import logging
 import threading
@@ -151,6 +151,62 @@ def get_viewport_data_size(viewport_name, active_viewport_name):
 
     # Convert to MB
     return round(total_size / (1024 * 1024), 1)
+
+# Per-user disk quota (2 GB default)
+USER_QUOTA_MB = 2048
+
+def get_user_viewports(username):
+    """Return list of viewport names owned by username (from *_config.json files)."""
+    viewports = []
+    if not VIEWPORTS_DIR.exists():
+        return viewports
+    for config_file in VIEWPORTS_DIR.glob('*_config.json'):
+        try:
+            with open(config_file) as f:
+                config = json.load(f)
+            if config.get('created_by') == username:
+                # viewport name = filename minus _config.json
+                name = config_file.stem.replace('_config', '')
+                viewports.append(name)
+        except Exception:
+            pass
+    return viewports
+
+def get_user_total_data_size(username):
+    """Sum get_viewport_data_size() for all viewports owned by username. Returns MB."""
+    total = 0.0
+    for vp_name in get_user_viewports(username):
+        total += get_viewport_data_size(vp_name, None)
+    return total
+
+def estimate_viewport_size(bounds, num_years):
+    """Estimate disk usage (MB) for a viewport from its bounds and year count.
+
+    Uses the same math as download_embeddings.py:estimate_mosaic_dimensions() inlined.
+    bounds: (minLon, minLat, maxLon, maxLat) in EPSG:4326
+    """
+    import math
+    min_lon, min_lat, max_lon, max_lat = bounds
+
+    # Convert degrees to meters (approximate at center latitude)
+    center_lat = (min_lat + max_lat) / 2
+    meters_per_deg_lon = 111_320 * math.cos(math.radians(center_lat))
+    meters_per_deg_lat = 110_540
+
+    width_m = (max_lon - min_lon) * meters_per_deg_lon
+    height_m = (max_lat - min_lat) * meters_per_deg_lat
+
+    # 10m resolution
+    width_px = width_m / 10
+    height_px = height_m / 10
+    pixels = width_px * height_px
+
+    # 128-dim float32 embeddings, ~0.4 compression ratio for GeoTIFF
+    embeddings_mb = pixels * 128 * 4 * 0.4 / (1024 * 1024)
+
+    # Total: embeddings + pyramids (~2x) + FAISS (~1x) ≈ 3x per year
+    total_mb = embeddings_mb * 3 * num_years
+    return total_mb
 
 def trigger_data_download_and_processing(viewport_name, years=None):
     """Download embeddings and run full preprocessing pipeline using shared PipelineRunner.
@@ -394,6 +450,24 @@ def api_create_viewport():
         years = data.get('years')  # Will be list of integers or None
         logger.info(f"[NEW VIEWPORT] API received years: {years} (type: {type(years).__name__})")
 
+        # Per-user disk quota check
+        user = session.get('user')
+        if user and user != 'admin':
+            num_years = len(years) if years else 1
+            estimated_mb = estimate_viewport_size(bounds, num_years)
+            current_mb = get_user_total_data_size(user)
+            if current_mb + estimated_mb > USER_QUOTA_MB:
+                return jsonify({
+                    'success': False,
+                    'error': (
+                        f'Disk quota exceeded. '
+                        f'Your existing viewports use {current_mb:.0f} MB, '
+                        f'this viewport would add ~{estimated_mb:.0f} MB, '
+                        f'but your limit is {USER_QUOTA_MB} MB ({USER_QUOTA_MB / 1024:.0f} GB). '
+                        f'Delete some viewports to free up space.'
+                    )
+                }), 403
+
         # Create viewport
         create_viewport_from_bounds(name, bounds, description)
 
@@ -401,12 +475,12 @@ def api_create_viewport():
         viewport = read_viewport_file(name)
         viewport['name'] = name
 
-        # Save selected years to config file (for auto-resume)
-        if years:
-            config_file = VIEWPORTS_DIR / f"{name}_config.json"
-            with open(config_file, 'w') as f:
-                json.dump({'years': years}, f)
-            logger.info(f"[NEW VIEWPORT] Saved years config: {config_file}")
+        # Save selected years and ownership to config file (for auto-resume + quota)
+        config = {'years': years, 'created_by': session.get('user')}
+        config_file = VIEWPORTS_DIR / f"{name}_config.json"
+        with open(config_file, 'w') as f:
+            json.dump(config, f)
+        logger.info(f"[NEW VIEWPORT] Saved config: {config_file}")
 
         # Automatically trigger data download and processing for new viewport
         logger.info(f"[NEW VIEWPORT] Triggering data download for new viewport '{name}' with years={years}...")
