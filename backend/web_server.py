@@ -33,6 +33,7 @@ from lib.viewport_utils import (
 from lib.viewport_writer import set_active_viewport, clear_active_viewport, create_viewport_from_bounds
 from lib.pipeline import PipelineRunner, cancel_pipeline
 from lib.config import DATA_DIR, MOSAICS_DIR, PYRAMIDS_DIR, FAISS_DIR, VIEWPORTS_DIR, ensure_dirs
+from backend.auth import init_auth
 
 # Configure logging
 logging.basicConfig(
@@ -42,7 +43,8 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 app = Flask(__name__, static_folder=str(Path(__file__).parent.parent / 'public'))
-CORS(app)
+CORS(app, supports_credentials=True)
+init_auth(app, DATA_DIR)
 
 # Data directories (from lib.config, configurable via env vars)
 FAISS_INDICES_DIR = FAISS_DIR  # Alias for compatibility

@@ -626,6 +626,22 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
 
     <script>
+        // Auth check: redirect to login if auth is enabled and not logged in
+        fetch('/api/auth/status').then(r => r.json()).then(data => {
+            if (data.auth_enabled && !data.logged_in) window.location.href = '/login.html';
+        }).catch(() => {});
+
+        // Wrap global fetch to redirect on 401
+        const _origFetch = window.fetch;
+        window.fetch = function(url, opts) {
+            return _origFetch(url, opts).then(resp => {
+                if (resp.status === 401 && !String(url).includes('/api/auth/')) {
+                    window.location.href = '/login.html';
+                }
+                return resp;
+            });
+        };
+
         // Global state
         let map;
         let viewportBox;

@@ -604,6 +604,22 @@
     </div>
 
     <script>
+        // Auth check: redirect to login if auth is enabled and not logged in
+        fetch('/api/auth/status').then(r => r.json()).then(data => {
+            if (data.auth_enabled && !data.logged_in) window.location.href = '/login.html?next=' + encodeURIComponent(window.location.pathname + window.location.search);
+        }).catch(() => {});
+
+        // Wrap global fetch to redirect on 401
+        const _origFetch = window.fetch;
+        window.fetch = function(url, opts) {
+            return _origFetch(url, opts).then(resp => {
+                if (resp.status === 401 && !String(url).includes('/api/auth/')) {
+                    window.location.href = '/login.html?next=' + encodeURIComponent(window.location.pathname + window.location.search);
+                }
+                return resp;
+            });
+        };
+
         let TILE_SERVER = window.location.origin; // default, overridden by /api/config
         let center = [12.97, 77.59];  // Default: Bangalore
         let zoom = 12;
@@ -3671,7 +3687,7 @@
                     const batch = tileJobs.slice(i, i + BATCH);
                     await Promise.all(batch.map(({tx, ty}) => new Promise(resolve => {
                         const img = new Image();
-                        img.crossOrigin = 'anonymous';
+                        img.crossOrigin = 'use-credentials';
                         img.onload = () => {
                             const dx = (tx - tileMinX) * TILE_SZ;
                             const dy = (ty - tileMinY) * TILE_SZ;
@@ -3920,7 +3936,7 @@
     L.PixelatedTileLayer = L.GridLayer.extend({
         options: {
             tileSize: 256,
-            crossOrigin: true
+            crossOrigin: 'use-credentials'
         },
 
         initialize: function(urlTemplate, options) {
@@ -3942,7 +3958,7 @@
             ctx.msImageSmoothingEnabled = false;
 
             const img = new Image();
-            img.crossOrigin = 'anonymous';
+            img.crossOrigin = 'use-credentials';
 
             img.onload = () => {
                 // Re-apply after image load (some browsers reset it)
