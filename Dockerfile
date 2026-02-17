@@ -4,8 +4,8 @@
 # Run:   docker run -p 8001:8001 -v ~/blore_data:/data tee
 #
 # Environment variables:
-#   BLORE_DATA_DIR - Data directory (default: /data)
-#   BLORE_APP_DIR  - Application directory (default: /app)
+#   TEE_DATA_DIR - Data directory (default: /data)
+#   TEE_APP_DIR  - Application directory (default: /app)
 
 FROM ghcr.io/osgeo/gdal:ubuntu-small-3.10.0
 
@@ -31,8 +31,8 @@ COPY . .
 RUN mkdir -p /data
 
 # Set environment variables
-ENV BLORE_DATA_DIR=/data
-ENV BLORE_APP_DIR=/app
+ENV TEE_DATA_DIR=/data
+ENV TEE_APP_DIR=/app
 
 # Expose port
 EXPOSE 8001

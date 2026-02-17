@@ -16,8 +16,8 @@ services:
       - ~/blore_data:/data
       - ./viewports:/app/viewports
     environment:
-      - BLORE_DATA_DIR=/data
-      - BLORE_APP_DIR=/app
+      - TEE_DATA_DIR=/data
+      - TEE_APP_DIR=/app
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8001/health"]
@@ -34,8 +34,8 @@ services:
     volumes:
       - ~/blore_data:/data
     environment:
-      - BLORE_DATA_DIR=/data
-      - BLORE_APP_DIR=/app
+      - TEE_DATA_DIR=/data
+      - TEE_APP_DIR=/app
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:5125/health"]
