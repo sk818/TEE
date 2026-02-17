@@ -204,7 +204,11 @@ blore/
 │   └── README.md                      # Frontend documentation
 │
 ├── backend/                           # Flask web server
-│   └── web_server.py                  # API endpoints and server
+│   ├── web_server.py                  # API endpoints and server
+│   └── auth.py                        # Per-user authentication (passwd file + sessions)
+│
+├── scripts/                           # Management scripts
+│   └── manage_users.py                # Add/remove/list users for authentication
 │
 ├── lib/                               # Python utilities
 │   ├── config.py                      # Centralized configuration (paths, env vars)
@@ -496,26 +500,64 @@ After the initial FAISS data download (cached in IndexedDB), similarity search a
 
 ## Authentication & User Management
 
-TEE supports optional per-user authentication via a `passwd` file.
+TEE supports optional per-user authentication. When enabled, users must log in before accessing the interface. A logout button appears in the header of both the viewport selector and viewer.
 
-### Setup
+### Enabling Authentication
 
-Create a `passwd` file in your data directory (`blore_data/passwd`) with one `username:bcrypt_hash` entry per line:
+Authentication is controlled by the presence of a `passwd` file in the data directory (`blore_data/passwd`). If no passwd file exists, auth is disabled and all users have open access with no quota limits.
+
+### Managing Users
+
+Use the `manage_users.py` script (run with the venv Python so bcrypt is available):
 
 ```bash
-# Generate a bcrypt hash for a password
-python3 -c "import bcrypt; print(bcrypt.hashpw(b'mypassword', bcrypt.gensalt()).decode())"
+# Add a user (prompts for password with confirmation)
+./venv/bin/python3 scripts/manage_users.py add admin
 
-# Example passwd file (blore_data/passwd)
-admin:$2b$12$...
-alice:$2b$12$...
+# Add another user
+./venv/bin/python3 scripts/manage_users.py add alice
+
+# List all users
+./venv/bin/python3 scripts/manage_users.py list
+
+# Verify a user's password
+./venv/bin/python3 scripts/manage_users.py check admin
+
+# Remove a user
+./venv/bin/python3 scripts/manage_users.py remove alice
 ```
 
-If no `passwd` file exists, authentication is disabled and all users have open access with no quota limits.
+In Docker:
+```bash
+docker exec -it <container> python3 scripts/manage_users.py add admin
+```
+
+### Disabling Authentication
+
+Remove all users or delete the passwd file:
+```bash
+./venv/bin/python3 scripts/manage_users.py remove admin
+# or
+rm ~/blore_data/passwd
+```
+When the last user is removed, the script deletes the passwd file automatically, returning to open access. No server restart is needed — the passwd file is re-read on every request.
+
+### The `admin` User
+
+The `admin` user has special privileges:
+- **No disk quota** — can create viewports without size limits
+- All other users are subject to a **2 GB disk quota** per user
 
 ### Disk Quota
 
-Each user has a **2 GB disk quota** for viewport data. When creating a viewport, the server estimates the disk usage and rejects the request if it would exceed the quota. The `admin` user is exempt and has unlimited disk space.
+Each non-admin user has a **2 GB disk quota** for viewport data. When creating a viewport, the server estimates the disk usage and rejects the request if it would exceed the quota. Delete existing viewports to free up space.
+
+### HTTPS Session Cookies
+
+When deploying behind HTTPS, set `BLORE_HTTPS=1` to mark session cookies as secure:
+```bash
+export BLORE_HTTPS=1
+```
 
 ## Configuration
 
