@@ -399,6 +399,12 @@
         <!-- Back to Viewports -->
         <button style="background: #6c757d; color: white; padding: 8px 12px; border: none; border-radius: 4px; cursor: pointer; font-weight: 600;" onclick="window.location.href = '/'">← Back</button>
 
+        <!-- User / Logout -->
+        <div id="userInfo" style="display:none; margin-left:auto; align-items:center; gap:8px; font-size:13px;">
+            <span id="userName" style="opacity:0.7;"></span>
+            <button style="background:#6c757d; color:white; padding:6px 12px; border:none; border-radius:4px; cursor:pointer; font-size:12px;" onclick="doLogout()">Logout</button>
+        </div>
+
         <!-- Similarity Search Controls -->
         <div style="display: flex; gap: 10px; align-items: center; margin-left: 20px; border-left: 1px solid #444; padding-left: 20px;">
             <label style="margin: 0;">Similarity:</label>
@@ -607,7 +613,17 @@
         // Auth check: redirect to login if auth is enabled and not logged in
         fetch('/api/auth/status').then(r => r.json()).then(data => {
             if (data.auth_enabled && !data.logged_in) window.location.href = '/login.html?next=' + encodeURIComponent(window.location.pathname + window.location.search);
+            if (data.logged_in && data.user) {
+                document.getElementById('userName').textContent = data.user;
+                document.getElementById('userInfo').style.display = 'flex';
+            }
         }).catch(() => {});
+
+        function doLogout() {
+            fetch('/api/auth/logout', {method: 'POST'}).then(() => {
+                window.location.href = '/login.html';
+            });
+        }
 
         // Wrap global fetch to redirect on 401
         const _origFetch = window.fetch;

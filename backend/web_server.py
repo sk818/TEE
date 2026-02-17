@@ -849,7 +849,28 @@ def api_operations_progress(operation_id):
         with open(progress_file, 'r') as f:
             progress_data = json.load(f)
 
-        # Single source of truth - all progress written to {viewport}_pipeline_progress.json
+        # For pipeline operations, merge detail from the active sub-operation
+        # (e.g., _download, _pyramids, _faiss) which has current_file, byte counts, etc.
+        if operation_id.endswith('_pipeline'):
+            viewport_name = operation_id.rsplit('_pipeline', 1)[0]
+            for sub_op in ('download', 'pyramids', 'faiss', 'umap', 'pca', 'rgb'):
+                sub_file = PROGRESS_DIR / f"{viewport_name}_{sub_op}_progress.json"
+                if sub_file.exists():
+                    try:
+                        with open(sub_file, 'r') as f:
+                            sub_data = json.load(f)
+                        # Only merge if the sub-operation is still active
+                        if sub_data.get('status') not in ('complete', 'error'):
+                            for key in ('current_file', 'current_value', 'total_value'):
+                                if sub_data.get(key):
+                                    progress_data[key] = sub_data[key]
+                            # Use sub-operation message if pipeline message is generic
+                            if sub_data.get('message'):
+                                progress_data['message'] = sub_data['message']
+                            break
+                    except (json.JSONDecodeError, IOError):
+                        pass
+
         return jsonify({
             'success': True,
             **progress_data
@@ -1257,10 +1278,8 @@ def api_is_viewport_ready(viewport_name):
         if is_ready:
             year_count = len(years_available)
             message = f"✓ Ready to view ({year_count} year{'s' if year_count != 1 else ''})"
-        elif not has_embeddings:
-            message = "⏳ Downloading embeddings..."
         else:
-            # Embeddings exist but pyramids don't — check if pipeline is actually running.
+            # Data incomplete — check if pipeline is actually running.
             # If not (e.g. daemon thread died on restart), re-trigger it so processing
             # resumes automatically instead of staying stuck forever.
             operation_id = f"{viewport_name}_full_pipeline"
@@ -1284,6 +1303,8 @@ def api_is_viewport_ready(viewport_name):
                         logger.warning(f"[is-ready] Could not read config file: {e}")
                 trigger_data_download_and_processing(viewport_name, years=saved_years)
                 message = "⏳ Restarting pipeline..."
+            elif not has_embeddings:
+                message = "⏳ Downloading embeddings..."
             else:
                 message = "⏳ Creating pyramids..."
 

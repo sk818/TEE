@@ -46,6 +46,12 @@
             color: white;
         }
 
+        .sidebar-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+
         .sidebar-header h1 {
             font-size: 20px;
             margin-bottom: 4px;
@@ -54,6 +60,28 @@
         .sidebar-header p {
             font-size: 12px;
             opacity: 0.9;
+        }
+
+        .user-info {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            font-size: 12px;
+            opacity: 0.9;
+        }
+
+        .logout-btn {
+            background: rgba(255,255,255,0.2);
+            color: white;
+            border: 1px solid rgba(255,255,255,0.4);
+            border-radius: 4px;
+            padding: 4px 10px;
+            font-size: 11px;
+            cursor: pointer;
+        }
+
+        .logout-btn:hover {
+            background: rgba(255,255,255,0.3);
         }
 
         .sidebar-content {
@@ -470,6 +498,10 @@
         <div class="sidebar">
             <div class="sidebar-header">
                 <h1>TEE Viewport Manager</h1>
+                <div class="user-info" id="userInfo" style="display:none;">
+                    <span id="userName"></span>
+                    <button class="logout-btn" onclick="doLogout()">Logout</button>
+                </div>
             </div>
 
             <div class="sidebar-content">
@@ -629,7 +661,17 @@
         // Auth check: redirect to login if auth is enabled and not logged in
         fetch('/api/auth/status').then(r => r.json()).then(data => {
             if (data.auth_enabled && !data.logged_in) window.location.href = '/login.html';
+            if (data.logged_in && data.user) {
+                document.getElementById('userName').textContent = data.user;
+                document.getElementById('userInfo').style.display = '';
+            }
         }).catch(() => {});
+
+        function doLogout() {
+            fetch('/api/auth/logout', {method: 'POST'}).then(() => {
+                window.location.href = '/login.html';
+            });
+        }
 
         // Wrap global fetch to redirect on 401
         const _origFetch = window.fetch;
