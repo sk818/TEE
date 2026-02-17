@@ -554,9 +554,9 @@ Each non-admin user has a **2 GB disk quota** for viewport data. When creating a
 
 ### HTTPS Session Cookies
 
-When deploying behind HTTPS, set `BLORE_HTTPS=1` to mark session cookies as secure:
+When deploying behind HTTPS, set `TEE_HTTPS=1` to mark session cookies as secure:
 ```bash
-export BLORE_HTTPS=1
+export TEE_HTTPS=1
 ```
 
 ## Configuration
