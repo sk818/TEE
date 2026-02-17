@@ -30,6 +30,9 @@ echo ""
 echo "🚀 Starting Blore Services..."
 echo ""
 
+# macOS: prevent gunicorn fork() crash with Obj-C runtime
+export OBJC_DISABLE_INITIALIZE_FORK_SAFETY=YES
+
 # Start the web server
 echo "  → Web server on port 8001"
 TILE_SERVER_URL=http://localhost:5125 ./venv/bin/gunicorn -w 1 --threads 4 -b 0.0.0.0:8001 backend.web_server:app > /tmp/web_server.log 2>&1 &
