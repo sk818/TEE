@@ -18,9 +18,13 @@ import numpy as np
 sys.path.insert(0, str(Path(__file__).parent))
 from lib.config import DATA_DIR, PYRAMIDS_DIR
 from lib.viewport_utils import validate_viewport_name
+from backend.auth import init_auth
 
 app = Flask(__name__)
-CORS(app)
+CORS(app, supports_credentials=True)
+from werkzeug.middleware.proxy_fix import ProxyFix
+app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1)
+init_auth(app, DATA_DIR)
 
 PYRAMIDS_BASE_DIR = PYRAMIDS_DIR
 YEARS = [str(y) for y in range(2017, 2026)] + ['satellite']

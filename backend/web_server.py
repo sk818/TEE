@@ -8,7 +8,7 @@ import sys
 import os
 import re
 from pathlib import Path
-from flask import Flask, jsonify, request, send_from_directory
+from flask import Flask, jsonify, request, send_from_directory, session
 from flask_cors import CORS
 import logging
 import threading
@@ -32,7 +32,8 @@ from lib.viewport_utils import (
 )
 from lib.viewport_writer import set_active_viewport, clear_active_viewport, create_viewport_from_bounds
 from lib.pipeline import PipelineRunner, cancel_pipeline
-from lib.config import DATA_DIR, MOSAICS_DIR, PYRAMIDS_DIR, FAISS_DIR, VIEWPORTS_DIR, ensure_dirs
+from lib.config import DATA_DIR, MOSAICS_DIR, PYRAMIDS_DIR, FAISS_DIR, VIEWPORTS_DIR, PROGRESS_DIR, ensure_dirs
+from backend.auth import init_auth
 
 # Configure logging
 logging.basicConfig(
@@ -42,13 +43,17 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 app = Flask(__name__, static_folder=str(Path(__file__).parent.parent / 'public'))
+CORS(app, supports_credentials=True)
+from werkzeug.middleware.proxy_fix import ProxyFix
+app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1)
+init_auth(app, DATA_DIR)
 
-if os.environ.get('TESSERA_ENV') == 'production':
-    CORS(app, origins=[
-        os.environ.get('TESSERA_ORIGIN', 'https://tessera.yourdomain.com')
-    ])
-else:
-    CORS(app)  # Allow all in development
+# Set tile server URL from env var (for gunicorn; __main__ also supports --tile-server flag)
+_tile_server_url = os.environ.get('TILE_SERVER_URL')
+if _tile_server_url:
+    app.config['TILE_SERVER_URL'] = _tile_server_url
+
+ensure_dirs()
 
 # Data directories (from lib.config, configurable via env vars)
 FAISS_INDICES_DIR = FAISS_DIR  # Alias for compatibility
@@ -155,6 +160,62 @@ def get_viewport_data_size(viewport_name, active_viewport_name):
 
     # Convert to MB
     return round(total_size / (1024 * 1024), 1)
+
+# Per-user disk quota (2 GB default)
+USER_QUOTA_MB = 2048
+
+def get_user_viewports(username):
+    """Return list of viewport names owned by username (from *_config.json files)."""
+    viewports = []
+    if not VIEWPORTS_DIR.exists():
+        return viewports
+    for config_file in VIEWPORTS_DIR.glob('*_config.json'):
+        try:
+            with open(config_file) as f:
+                config = json.load(f)
+            if config.get('created_by') == username:
+                # viewport name = filename minus _config.json
+                name = config_file.stem.replace('_config', '')
+                viewports.append(name)
+        except Exception:
+            pass
+    return viewports
+
+def get_user_total_data_size(username):
+    """Sum get_viewport_data_size() for all viewports owned by username. Returns MB."""
+    total = 0.0
+    for vp_name in get_user_viewports(username):
+        total += get_viewport_data_size(vp_name, None)
+    return total
+
+def estimate_viewport_size(bounds, num_years):
+    """Estimate disk usage (MB) for a viewport from its bounds and year count.
+
+    Uses the same math as download_embeddings.py:estimate_mosaic_dimensions() inlined.
+    bounds: (minLon, minLat, maxLon, maxLat) in EPSG:4326
+    """
+    import math
+    min_lon, min_lat, max_lon, max_lat = bounds
+
+    # Convert degrees to meters (approximate at center latitude)
+    center_lat = (min_lat + max_lat) / 2
+    meters_per_deg_lon = 111_320 * math.cos(math.radians(center_lat))
+    meters_per_deg_lat = 110_540
+
+    width_m = (max_lon - min_lon) * meters_per_deg_lon
+    height_m = (max_lat - min_lat) * meters_per_deg_lat
+
+    # 10m resolution
+    width_px = width_m / 10
+    height_px = height_m / 10
+    pixels = width_px * height_px
+
+    # 128-dim float32 embeddings, ~0.4 compression ratio for GeoTIFF
+    embeddings_mb = pixels * 128 * 4 * 0.4 / (1024 * 1024)
+
+    # Total: embeddings + pyramids (~2x) + FAISS (~1x) ≈ 3x per year
+    total_mb = embeddings_mb * 3 * num_years
+    return total_mb
 
 def trigger_data_download_and_processing(viewport_name, years=None):
     """Download embeddings and run full preprocessing pipeline using shared PipelineRunner.
@@ -398,6 +459,24 @@ def api_create_viewport():
         years = data.get('years')  # Will be list of integers or None
         logger.info(f"[NEW VIEWPORT] API received years: {years} (type: {type(years).__name__})")
 
+        # Per-user disk quota check
+        user = session.get('user')
+        if user and user != 'admin':
+            num_years = len(years) if years else 1
+            estimated_mb = estimate_viewport_size(bounds, num_years)
+            current_mb = get_user_total_data_size(user)
+            if current_mb + estimated_mb > USER_QUOTA_MB:
+                return jsonify({
+                    'success': False,
+                    'error': (
+                        f'Disk quota exceeded. '
+                        f'Your existing viewports use {current_mb:.0f} MB, '
+                        f'this viewport would add ~{estimated_mb:.0f} MB, '
+                        f'but your limit is {USER_QUOTA_MB} MB ({USER_QUOTA_MB / 1024:.0f} GB). '
+                        f'Delete some viewports to free up space.'
+                    )
+                }), 403
+
         # Create viewport
         create_viewport_from_bounds(name, bounds, description)
 
@@ -405,12 +484,12 @@ def api_create_viewport():
         viewport = read_viewport_file(name)
         viewport['name'] = name
 
-        # Save selected years to config file (for auto-resume)
-        if years:
-            config_file = VIEWPORTS_DIR / f"{name}_config.json"
-            with open(config_file, 'w') as f:
-                json.dump({'years': years}, f)
-            logger.info(f"[NEW VIEWPORT] Saved years config: {config_file}")
+        # Save selected years and ownership to config file (for auto-resume + quota)
+        config = {'years': years, 'created_by': session.get('user')}
+        config_file = VIEWPORTS_DIR / f"{name}_config.json"
+        with open(config_file, 'w') as f:
+            json.dump(config, f)
+        logger.info(f"[NEW VIEWPORT] Saved config: {config_file}")
 
         # Automatically trigger data download and processing for new viewport
         logger.info(f"[NEW VIEWPORT] Triggering data download for new viewport '{name}' with years={years}...")
@@ -719,7 +798,7 @@ def api_downloads_progress(task_id):
             viewport_name = viewport['viewport_id']
 
             # Single source of truth: pipeline progress file
-            progress_file = Path(f"/tmp/{viewport_name}_pipeline_progress.json")
+            progress_file = PROGRESS_DIR / f"{viewport_name}_pipeline_progress.json"
             if progress_file.exists():
                 try:
                     with open(progress_file, 'r') as f:
@@ -754,11 +833,11 @@ def api_operations_progress(operation_id):
     to provide unified progress tracking with full detail (current_file, bytes, etc.).
     """
     try:
-        # Validate operation_id to prevent path traversal in /tmp/ reads
+        # Validate operation_id to prevent path traversal in progress dir reads
         if not re.match(r'^[A-Za-z0-9_-]+$', operation_id):
             return jsonify({'success': False, 'error': 'Invalid operation_id'}), 400
 
-        progress_file = Path(f"/tmp/{operation_id}_progress.json")
+        progress_file = PROGRESS_DIR / f"{operation_id}_progress.json"
 
         if not progress_file.exists():
             return jsonify({
@@ -770,7 +849,28 @@ def api_operations_progress(operation_id):
         with open(progress_file, 'r') as f:
             progress_data = json.load(f)
 
-        # Single source of truth - all progress written to {viewport}_pipeline_progress.json
+        # For pipeline operations, merge detail from the active sub-operation
+        # (e.g., _download, _pyramids, _faiss) which has current_file, byte counts, etc.
+        if operation_id.endswith('_pipeline'):
+            viewport_name = operation_id.rsplit('_pipeline', 1)[0]
+            for sub_op in ('download', 'pyramids', 'faiss', 'umap', 'pca', 'rgb'):
+                sub_file = PROGRESS_DIR / f"{viewport_name}_{sub_op}_progress.json"
+                if sub_file.exists():
+                    try:
+                        with open(sub_file, 'r') as f:
+                            sub_data = json.load(f)
+                        # Only merge if the sub-operation is still active
+                        if sub_data.get('status') not in ('complete', 'error'):
+                            for key in ('current_file', 'current_value', 'total_value'):
+                                if sub_data.get(key):
+                                    progress_data[key] = sub_data[key]
+                            # Use sub-operation message if pipeline message is generic
+                            if sub_data.get('message'):
+                                progress_data['message'] = sub_data['message']
+                            break
+                    except (json.JSONDecodeError, IOError):
+                        pass
+
         return jsonify({
             'success': True,
             **progress_data
@@ -848,11 +948,11 @@ def api_cancel_processing(viewport_name):
 
         # Clean up progress files
         progress_patterns = [
-            f"/tmp/{viewport_name}_progress.json",
-            f"/tmp/{viewport_name}_*_progress.json"
+            f"{viewport_name}_progress.json",
+            f"{viewport_name}_*_progress.json"
         ]
         for pattern in progress_patterns:
-            for f in glob.glob(pattern):
+            for f in glob.glob(str(PROGRESS_DIR / pattern)):
                 try:
                     Path(f).unlink()
                     deleted_items.append(f"progress: {Path(f).name}")
@@ -1037,6 +1137,16 @@ def api_delete_viewport():
                 logger.warning(f"Error deleting FAISS index directory for {viewport_name}: {e}")
 
 
+        # Also delete legacy labels JSON file if it exists
+        labels_file = viewports_dir / f'{viewport_name}_labels.json'
+        if labels_file.exists():
+            try:
+                labels_file.unlink()
+                deleted_items.append(f"labels JSON: {labels_file.name}")
+                logger.info(f"✓ Deleted legacy labels file: {labels_file.name}")
+            except Exception as e:
+                logger.warning(f"Error deleting labels file for {viewport_name}: {e}")
+
         # Delete viewport config JSON file (stores years selection)
         config_file = viewports_dir / f'{viewport_name}_config.json'
         if config_file.exists():
@@ -1048,7 +1158,6 @@ def api_delete_viewport():
                 logger.warning(f"Error deleting config file for {viewport_name}: {e}")
 
         # Delete progress tracking files for this viewport
-        tmp_dir = Path('/tmp')
         progress_patterns = [
             f'{viewport_name}_download_progress.json',
             f'{viewport_name}_pyramids_progress.json',
@@ -1063,7 +1172,7 @@ def api_delete_viewport():
             f'{viewport_name}_pca_*_progress.json',
         ]
         for pattern in progress_patterns:
-            for progress_file in tmp_dir.glob(pattern):
+            for progress_file in PROGRESS_DIR.glob(pattern):
                 try:
                     progress_file.unlink()
                     deleted_items.append(f"progress file: {progress_file.name}")
@@ -1169,10 +1278,8 @@ def api_is_viewport_ready(viewport_name):
         if is_ready:
             year_count = len(years_available)
             message = f"✓ Ready to view ({year_count} year{'s' if year_count != 1 else ''})"
-        elif not has_embeddings:
-            message = "⏳ Downloading embeddings..."
         else:
-            # Embeddings exist but pyramids don't — check if pipeline is actually running.
+            # Data incomplete — check if pipeline is actually running.
             # If not (e.g. daemon thread died on restart), re-trigger it so processing
             # resumes automatically instead of staying stuck forever.
             operation_id = f"{viewport_name}_full_pipeline"
@@ -1196,6 +1303,8 @@ def api_is_viewport_ready(viewport_name):
                         logger.warning(f"[is-ready] Could not read config file: {e}")
                 trigger_data_download_and_processing(viewport_name, years=saved_years)
                 message = "⏳ Restarting pipeline..."
+            elif not has_embeddings:
+                message = "⏳ Downloading embeddings..."
             else:
                 message = "⏳ Creating pyramids..."
 
@@ -1419,7 +1528,7 @@ def api_umap_status(viewport_name):
         faiss_dir = FAISS_INDICES_DIR / viewport_name / str(year)
         umap_file = faiss_dir / 'umap_coords.npy'
         operation_id = f"{viewport_name}_pipeline"  # Single source of truth
-        progress_file = Path(f"/tmp/{operation_id}_progress.json")
+        progress_file = PROGRESS_DIR / f"{operation_id}_progress.json"
 
         # Already computed
         if umap_file.exists():
@@ -1457,7 +1566,7 @@ def api_pca_status(viewport_name):
         faiss_dir = FAISS_INDICES_DIR / viewport_name / str(year)
         pca_file = faiss_dir / 'pca_coords.npy'
         operation_id = f"{viewport_name}_pipeline"  # Single source of truth
-        progress_file = Path(f"/tmp/{operation_id}_progress.json")
+        progress_file = PROGRESS_DIR / f"{operation_id}_progress.json"
 
         # Already computed
         if pca_file.exists():
@@ -1634,6 +1743,8 @@ def api_distance_heatmap():
         return jsonify({'success': False, 'error': str(e)}), 500
 
 
+
+
 # ============================================================================
 # CLIENT CONFIG
 # ============================================================================
@@ -1641,21 +1752,11 @@ def api_distance_heatmap():
 @app.route('/api/config', methods=['GET'])
 def get_config():
     """Return client configuration including tile server URL."""
-    config = {
-        'deployment': os.environ.get('TESSERA_ENV', 'development'),
-    }
+    config = {}
     tile_server = app.config.get('TILE_SERVER_URL')
     if tile_server:
         config['tile_server'] = tile_server
     return jsonify(config)
-
-
-@app.route('/api/auth-check', methods=['GET'])
-def api_auth_check():
-    """Auth probe endpoint. Apache protects this with Basic Auth.
-    Returns 200 if authenticated (Apache passes request through).
-    Returns 401 if not (Apache blocks before reaching Flask)."""
-    return jsonify({'authenticated': True, 'mode': 'admin'})
 
 
 # ============================================================================
@@ -1698,7 +1799,7 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Tessera Web Server')
     parser.add_argument('--prod', action='store_true', help='Disable Flask debug mode for production use')
     parser.add_argument('--port', type=int, default=8001, help='Port to listen on (default: 8001)')
-    parser.add_argument('--host', default='127.0.0.1', help='Host to bind to (default: 127.0.0.1)')
+    parser.add_argument('--host', default='0.0.0.0', help='Host to bind to (default: 0.0.0.0)')
     parser.add_argument('--tile-server', default=None,
                         help='Tile server URL (default: same as page origin, env: TILE_SERVER_URL)')
     args = parser.parse_args()

@@ -399,6 +399,12 @@
         <!-- Back to Viewports -->
         <button style="background: #6c757d; color: white; padding: 8px 12px; border: none; border-radius: 4px; cursor: pointer; font-weight: 600;" onclick="window.location.href = '/'">← Back</button>
 
+        <!-- User / Logout -->
+        <div id="userInfo" style="display:none; margin-left:auto; align-items:center; gap:8px; font-size:13px;">
+            <span id="userName" style="opacity:0.7;"></span>
+            <button style="background:#6c757d; color:white; padding:6px 12px; border:none; border-radius:4px; cursor:pointer; font-size:12px;" onclick="doLogout()">Logout</button>
+        </div>
+
         <!-- Similarity Search Controls -->
         <div style="display: flex; gap: 10px; align-items: center; margin-left: 20px; border-left: 1px solid #444; padding-left: 20px;">
             <label style="margin: 0;">Similarity:</label>
@@ -604,24 +610,31 @@
     </div>
 
     <script>
-        // ============================================================
-        // DEMO MODE DETECTION
-        // ============================================================
-        let isAdminMode = false;
+        // Auth check: redirect to login if auth is enabled and not logged in
+        fetch('/api/auth/status').then(r => r.json()).then(data => {
+            if (data.auth_enabled && !data.logged_in) window.location.href = '/login.html?next=' + encodeURIComponent(window.location.pathname + window.location.search);
+            if (data.logged_in && data.user) {
+                document.getElementById('userName').textContent = data.user;
+                document.getElementById('userInfo').style.display = 'flex';
+            }
+        }).catch(() => {});
 
-        async function checkAdminAuth() {
-            try {
-                const resp = await fetch('/api/auth-check', { credentials: 'same-origin' });
-                isAdminMode = resp.ok;
-            } catch { isAdminMode = false; }
-            applyDemoMode();
-        }
-
-        function applyDemoMode() {
-            document.querySelectorAll('[data-admin-only]').forEach(el => {
-                el.style.display = isAdminMode ? '' : 'none';
+        function doLogout() {
+            fetch('/api/auth/logout', {method: 'POST'}).then(() => {
+                window.location.href = '/login.html';
             });
         }
+
+        // Wrap global fetch to redirect on 401
+        const _origFetch = window.fetch;
+        window.fetch = function(url, opts) {
+            return _origFetch(url, opts).then(resp => {
+                if (resp.status === 401 && !String(url).includes('/api/auth/')) {
+                    window.location.href = '/login.html?next=' + encodeURIComponent(window.location.pathname + window.location.search);
+                }
+                return resp;
+            });
+        };
 
         let TILE_SERVER = window.location.origin; // default, overridden by /api/config
         let center = [12.97, 77.59];  // Default: Bangalore
@@ -687,7 +700,7 @@
             async open() {
                 if (this._db) return this._db;
                 return new Promise((resolve, reject) => {
-                    const req = indexedDB.open(this.DB_NAME, 2);
+                    const req = indexedDB.open(this.DB_NAME, 3);
                     req.onupgradeneeded = (e) => {
                         const db = req.result;
                         // Delete old store on upgrade to invalidate stale cache
@@ -763,23 +776,33 @@
             // Check IndexedDB cache first
             const cached = await FaissCache.get(viewport, year);
             if (cached) {
-                console.log(`[FAISS-LOCAL] Cache hit for ${viewport}/${year}`);
-                const numVectors = cached.embeddings.length / 128;
-                const pixelLookup = new Map();
-                for (let i = 0; i < numVectors; i++) {
-                    pixelLookup.set(`${cached.coords[i * 2]},${cached.coords[i * 2 + 1]}`, i);
+                // Validate cached embeddings aren't all zeros (corrupt data)
+                let hasNonZero = false;
+                for (let i = 0; i < Math.min(1000, cached.embeddings.length); i++) {
+                    if (cached.embeddings[i] !== 0) { hasNonZero = true; break; }
                 }
-                faissLocal = {
-                    embeddings: cached.embeddings,
-                    coords: cached.coords,
-                    metadata: cached.metadata,
-                    pixelLookup,
-                    numVectors,
-                    dim: 128,
-                    viewport,
-                    year: String(year)
-                };
-                return faissLocal;
+                if (hasNonZero) {
+                    console.log(`[FAISS-LOCAL] Cache hit for ${viewport}/${year}`);
+                    const numVectors = cached.embeddings.length / 128;
+                    const pixelLookup = new Map();
+                    for (let i = 0; i < numVectors; i++) {
+                        pixelLookup.set(`${cached.coords[i * 2]},${cached.coords[i * 2 + 1]}`, i);
+                    }
+                    faissLocal = {
+                        embeddings: cached.embeddings,
+                        coords: cached.coords,
+                        metadata: cached.metadata,
+                        pixelLookup,
+                        numVectors,
+                        dim: 128,
+                        viewport,
+                        year: String(year)
+                    };
+                    return faissLocal;
+                } else {
+                    console.warn(`[FAISS-LOCAL] Cached data for ${viewport}/${year} is all zeros — purging stale cache`);
+                    await FaissCache.delete(viewport, year);
+                }
             }
 
             console.log(`[FAISS-LOCAL] Downloading FAISS data for ${viewport}/${year}...`);
@@ -886,6 +909,18 @@
                 percent.textContent = '97%';
 
                 const numVectors = embeddingsData.length / embDim;
+
+                // Validate embeddings aren't all zeros (indicates corrupt source data)
+                let hasNonZero = false;
+                for (let i = 0; i < Math.min(1000, embeddingsData.length); i++) {
+                    if (embeddingsData[i] !== 0) { hasNonZero = true; break; }
+                }
+                if (!hasNonZero) {
+                    console.error(`[FAISS-LOCAL] Downloaded embeddings for ${viewport}/${year} are all zeros — data is corrupt on server`);
+                    status.textContent = `Error: embeddings for ${year} are corrupt (all zeros)`;
+                    throw new Error(`Embeddings for ${year} are all zeros`);
+                }
+
                 const pixelLookup = new Map();
                 for (let i = 0; i < numVectors; i++) {
                     pixelLookup.set(`${coordsData[i * 2]},${coordsData[i * 2 + 1]}`, i);
@@ -1304,7 +1339,16 @@
             window.embeddingLayer.addTo(maps.embedding);
             console.log(`✓ Switched to year ${year}`);
 
-            // Update labels FIRST (fast, user sees immediate feedback)
+            // Always reload FAISS data for the new year (needed for similarity search)
+            if (faissLocal && faissLocal.year !== String(year)) {
+                try {
+                    await downloadFaissData(currentViewportName, year);
+                } catch (e) {
+                    console.error(`[FAISS] Failed to load data for year ${year}:`, e);
+                }
+            }
+
+            // Update labels (re-compute with new year's embeddings)
             if (savedLabels.length > 0) {
                 console.log(`🔄 Updating ${savedLabels.length} saved labels for year ${year}`);
                 await refreshLabelsForYear(year);
@@ -3690,7 +3734,7 @@
                     const batch = tileJobs.slice(i, i + BATCH);
                     await Promise.all(batch.map(({tx, ty}) => new Promise(resolve => {
                         const img = new Image();
-                        img.crossOrigin = 'anonymous';
+                        img.crossOrigin = 'use-credentials';
                         img.onload = () => {
                             const dx = (tx - tileMinX) * TILE_SZ;
                             const dy = (ty - tileMinY) * TILE_SZ;
@@ -3939,7 +3983,7 @@
     L.PixelatedTileLayer = L.GridLayer.extend({
         options: {
             tileSize: 256,
-            crossOrigin: true
+            crossOrigin: 'use-credentials'
         },
 
         initialize: function(urlTemplate, options) {
@@ -3961,7 +4005,7 @@
             ctx.msImageSmoothingEnabled = false;
 
             const img = new Image();
-            img.crossOrigin = 'anonymous';
+            img.crossOrigin = 'use-credentials';
 
             img.onload = () => {
                 // Re-apply after image load (some browsers reset it)

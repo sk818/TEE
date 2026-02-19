@@ -46,6 +46,12 @@
             color: white;
         }
 
+        .sidebar-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+
         .sidebar-header h1 {
             font-size: 20px;
             margin-bottom: 4px;
@@ -54,6 +60,28 @@
         .sidebar-header p {
             font-size: 12px;
             opacity: 0.9;
+        }
+
+        .user-info {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            font-size: 12px;
+            opacity: 0.9;
+        }
+
+        .logout-btn {
+            background: rgba(255,255,255,0.2);
+            color: white;
+            border: 1px solid rgba(255,255,255,0.4);
+            border-radius: 4px;
+            padding: 4px 10px;
+            font-size: 11px;
+            cursor: pointer;
+        }
+
+        .logout-btn:hover {
+            background: rgba(255,255,255,0.3);
         }
 
         .sidebar-content {
@@ -470,6 +498,10 @@
         <div class="sidebar">
             <div class="sidebar-header">
                 <h1>TEE Viewport Manager</h1>
+                <div class="user-info" id="userInfo" style="display:none;">
+                    <span id="userName"></span>
+                    <button class="logout-btn" onclick="doLogout()">Logout</button>
+                </div>
             </div>
 
             <div class="sidebar-content">
@@ -518,8 +550,8 @@
                     <div id="processingBytes" style="font-size: 10px; color: #888; margin-top: 2px;"></div>
                 </div>
 
-                <!-- Create New Viewport (admin only) -->
-                <div class="section" data-admin-only>
+                <!-- Create New Viewport -->
+                <div class="section">
                     <button class="btn btn-toggle" onclick="toggleCreateForm()">+ Create New Viewport</button>
 
                     <div class="create-form" id="createForm">
@@ -626,24 +658,31 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
 
     <script>
-        // ============================================================
-        // DEMO MODE DETECTION
-        // ============================================================
-        let isAdminMode = false;
+        // Auth check: redirect to login if auth is enabled and not logged in
+        fetch('/api/auth/status').then(r => r.json()).then(data => {
+            if (data.auth_enabled && !data.logged_in) window.location.href = '/login.html';
+            if (data.logged_in && data.user) {
+                document.getElementById('userName').textContent = data.user;
+                document.getElementById('userInfo').style.display = '';
+            }
+        }).catch(() => {});
 
-        async function checkAdminAuth() {
-            try {
-                const resp = await fetch('/api/auth-check', { credentials: 'same-origin' });
-                isAdminMode = resp.ok;
-            } catch { isAdminMode = false; }
-            applyDemoMode();
-        }
-
-        function applyDemoMode() {
-            document.querySelectorAll('[data-admin-only]').forEach(el => {
-                el.style.display = isAdminMode ? '' : 'none';
+        function doLogout() {
+            fetch('/api/auth/logout', {method: 'POST'}).then(() => {
+                window.location.href = '/login.html';
             });
         }
+
+        // Wrap global fetch to redirect on 401
+        const _origFetch = window.fetch;
+        window.fetch = function(url, opts) {
+            return _origFetch(url, opts).then(resp => {
+                if (resp.status === 401 && !String(url).includes('/api/auth/')) {
+                    window.location.href = '/login.html';
+                }
+                return resp;
+            });
+        };
 
         // Global state
         let map;
@@ -1613,7 +1652,7 @@ Max Lon: ${bounds.maxLon.toFixed(4)}°
                         <div class="viewport-item-coords" style="color: #0066cc; font-weight: 500; margin-top: 3px;">💾 ${sizeText}</div>
                         <div class="viewport-item-actions">
                             <button class="viewport-item-btn" onclick="switchViewport('${vp.name}')">Select</button>
-                            ${isAdminMode ? `<button class="viewport-item-btn delete" onclick="deleteViewport('${vp.name}')">Delete</button>` : ''}
+                            <button class="viewport-item-btn delete" onclick="deleteViewport('${vp.name}')">Delete</button>
                         </div>
                     </div>
                 `;
@@ -2033,8 +2072,7 @@ Max Lon: ${bounds.maxLon.toFixed(4)}°
         });
 
         // Initialize on page load
-        window.addEventListener('DOMContentLoaded', async function() {
-            await checkAdminAuth();
+        window.addEventListener('DOMContentLoaded', function() {
             initMap();
             initGeocodeSearch();
             loadCurrentViewport();

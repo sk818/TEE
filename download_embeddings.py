@@ -16,6 +16,7 @@ sys.path.insert(0, str(Path(__file__).parent))
 
 # Import dependencies with error reporting
 try:
+    import gc
     import numpy as np
     import rasterio
     from rasterio.transform import Affine
@@ -275,6 +276,8 @@ def download_embeddings():
                     progress.update("processing", f"Year {year_idx+1}/{total_years}: ✓ Saved {year} ({actual_size_mb:.1f} MB)",
                                    current_file=output_file.name, current_value=cumulative_bytes_done, total_value=total_estimated_bytes)
                     year_success = True
+                    del mosaic_array, mosaic_transform
+                    gc.collect()
                     break  # File is valid, exit retry loop
                 except Exception as val_error:
                     print(f"   ✗ File validation failed: {val_error}")

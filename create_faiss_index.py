@@ -208,6 +208,13 @@ def create_faiss_index_for_year(viewport_id, bounds, year):
             logger.info(f"   ✓ Loaded all embeddings (clipped): {all_embeddings.shape}")
             logger.info(f"     Embeddings: {all_embeddings.shape[0]:,} pixels × {all_embeddings.shape[1]} dims")
 
+            # Validate embeddings are not all zeros (indicates corrupt/empty mosaic)
+            if np.count_nonzero(all_embeddings) == 0:
+                error_msg = f"All embeddings are zero for {year} — mosaic may be corrupt or empty"
+                logger.error(f"   ✗ {error_msg}")
+                progress.error(error_msg)
+                return False
+
             # Save all embeddings
             embeddings_file = output_dir / "all_embeddings.npy"
             np.save(embeddings_file, all_embeddings)

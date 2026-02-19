@@ -1,6 +1,6 @@
 # TEE: Tessera Embeddings Explorer
 
-**Version 1.1.1** | [Docker Hub](https://hub.docker.com/r/sk818/tee)
+**Version 1.2.0** | [Docker Hub](https://hub.docker.com/r/sk818/tee)
 
 A comprehensive system for downloading, processing, and visualizing Sentinel-2 satellite embeddings across multiple years (2017-2025) with an interactive web interface for geographic viewports.
 
@@ -118,8 +118,8 @@ The easiest way to run TEE is with Docker:
 
 2. **Pull and run from Docker Hub (easiest):**
    ```bash
-   docker pull sk818/tee:1.1.1
-   docker run -p 8001:8001 -v ~/blore_data:/data sk818/tee:1.1.1
+   docker pull sk818/tee:1.2.0
+   docker run -p 8001:8001 -v ~/blore_data:/data sk818/tee:1.2.0
    ```
 
    **Or build from source:**
@@ -205,7 +205,10 @@ blore/
 │
 ├── backend/                           # Flask web server
 │   ├── web_server.py                  # API endpoints and server
-│   └── labels_db.py                   # SQLite database for labels
+│   └── auth.py                        # Per-user authentication (passwd file + sessions)
+│
+├── scripts/                           # Management scripts
+│   └── manage_users.py                # Add/remove/list users for authentication
 │
 ├── lib/                               # Python utilities
 │   ├── config.py                      # Centralized configuration (paths, env vars)
@@ -494,6 +497,67 @@ The viewer is a single HTML file (`public/viewer.html`) that can be served from 
 | `${TILE_SERVER}/tiles/...` | Map tile images | Client → Tile server |
 
 After the initial FAISS data download (cached in IndexedDB), similarity search and labeling run entirely in the browser with no further server communication.
+
+## Authentication & User Management
+
+TEE supports optional per-user authentication. When enabled, users must log in before accessing the interface. A logout button appears in the header of both the viewport selector and viewer.
+
+### Enabling Authentication
+
+Authentication is controlled by the presence of a `passwd` file in the data directory (`blore_data/passwd`). If no passwd file exists, auth is disabled and all users have open access with no quota limits.
+
+### Managing Users
+
+Use the `manage_users.py` script (run with the venv Python so bcrypt is available):
+
+```bash
+# Add a user (prompts for password with confirmation)
+./venv/bin/python3 scripts/manage_users.py add admin
+
+# Add another user
+./venv/bin/python3 scripts/manage_users.py add alice
+
+# List all users
+./venv/bin/python3 scripts/manage_users.py list
+
+# Verify a user's password
+./venv/bin/python3 scripts/manage_users.py check admin
+
+# Remove a user
+./venv/bin/python3 scripts/manage_users.py remove alice
+```
+
+In Docker:
+```bash
+docker exec -it <container> python3 scripts/manage_users.py add admin
+```
+
+### Disabling Authentication
+
+Remove all users or delete the passwd file:
+```bash
+./venv/bin/python3 scripts/manage_users.py remove admin
+# or
+rm ~/blore_data/passwd
+```
+When the last user is removed, the script deletes the passwd file automatically, returning to open access. No server restart is needed — the passwd file is re-read on every request.
+
+### The `admin` User
+
+The `admin` user has special privileges:
+- **No disk quota** — can create viewports without size limits
+- All other users are subject to a **2 GB disk quota** per user
+
+### Disk Quota
+
+Each non-admin user has a **2 GB disk quota** for viewport data. When creating a viewport, the server estimates the disk usage and rejects the request if it would exceed the quota. Delete existing viewports to free up space.
+
+### HTTPS Session Cookies
+
+When deploying behind HTTPS, set `TEE_HTTPS=1` to mark session cookies as secure:
+```bash
+export TEE_HTTPS=1
+```
 
 ## Configuration
 
