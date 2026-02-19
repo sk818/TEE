@@ -859,17 +859,18 @@ def api_operations_progress(operation_id):
                     try:
                         with open(sub_file, 'r') as f:
                             sub_data = json.load(f)
-                        # Only merge if the sub-operation is still active
+                        # Find the active sub-operation (not complete/error)
                         if sub_data.get('status') not in ('complete', 'error'):
                             for key in ('current_file', 'current_value', 'total_value'):
                                 if sub_data.get(key):
                                     progress_data[key] = sub_data[key]
-                            # Use sub-operation message if pipeline message is generic
+                            # Use sub-operation message to surface detailed info
+                            # (e.g., "Downloading tile 42/150 (500MB/1.2GB)")
                             if sub_data.get('message'):
                                 progress_data['message'] = sub_data['message']
-                            break
+                            break  # found the active sub-op
                     except (json.JSONDecodeError, IOError):
-                        pass
+                        continue
 
         return jsonify({
             'success': True,

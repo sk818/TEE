@@ -91,14 +91,36 @@ PUBLIC_PATHS = {
     '/login.html',
 }
 
+# Endpoints that require login (write/destructive operations)
+WRITE_ENDPOINTS = {
+    '/api/viewports/create',
+    '/api/viewports/delete',
+    '/api/downloads/embeddings',
+    '/api/downloads/process',
+}
+
 
 def _is_public_path(path):
     """Check if the request path is public (no auth required)."""
     return path in PUBLIC_PATHS
 
 
+def _is_write_endpoint(path):
+    """Check if the request path is a write/destructive endpoint requiring login."""
+    if path in WRITE_ENDPOINTS:
+        return True
+    # Match /api/viewports/<name>/cancel-processing
+    if path.startswith('/api/viewports/') and path.endswith('/cancel-processing'):
+        return True
+    return False
+
+
 def _require_auth():
-    """before_request hook: enforce authentication when enabled."""
+    """before_request hook: enforce authentication when enabled.
+
+    Strategy: allow unauthenticated read access (demo mode),
+    but require login for write/destructive operations.
+    """
     if not auth_enabled():
         return  # no passwd file → open access
 
@@ -108,11 +130,12 @@ def _require_auth():
     if session.get('user'):
         return  # logged in
 
-    # Not authenticated
-    if request.path.startswith('/api/') or request.path.startswith('/tiles/') or request.path.startswith('/bounds/'):
-        return jsonify({'error': 'Authentication required'}), 401
-    else:
-        return redirect('/login.html')
+    # Not authenticated — block write endpoints, allow reads (demo mode)
+    if _is_write_endpoint(request.path):
+        if request.path.startswith('/api/'):
+            return jsonify({'error': 'Authentication required'}), 401
+        else:
+            return redirect('/login.html')
 
 
 def init_auth(app, data_dir):

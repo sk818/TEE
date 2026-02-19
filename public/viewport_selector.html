@@ -505,6 +505,11 @@
             </div>
 
             <div class="sidebar-content">
+                <!-- Demo mode banner -->
+                <div id="demoBanner" style="display: none; padding: 10px 12px; background: #fff3cd; border: 1px solid #ffc107; border-radius: 6px; margin-bottom: 16px; font-size: 12px; color: #856404;">
+                    Browsing in demo mode. <a href="/login.html" style="color: #667eea; font-weight: 600;">Log in</a> for full access.
+                </div>
+
                 <!-- Search -->
                 <div class="section">
                     <div class="section-title">Search Viewports</div>
@@ -534,7 +539,7 @@
                 <div class="section" id="processingSection" style="display: none; background: #f0f4ff; padding: 12px; border-radius: 6px; border-left: 3px solid #667eea;">
                     <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
                         <div style="font-size: 12px; color: #667eea; font-weight: 600;">Processing Viewport</div>
-                        <button id="cancelProcessingBtn" onclick="cancelProcessing()" style="padding: 4px 10px; font-size: 11px; background: #ff5252; color: white; border: none; border-radius: 4px; cursor: pointer;">Cancel</button>
+                        <button id="cancelProcessingBtn" class="auth-required" onclick="cancelProcessing()" style="padding: 4px 10px; font-size: 11px; background: #ff5252; color: white; border: none; border-radius: 4px; cursor: pointer;">Cancel</button>
                     </div>
                     <div id="processingViewportName" style="font-size: 14px; font-weight: 600; color: #333; margin-bottom: 6px;"></div>
                     <div style="background: #e0e0e0; border-radius: 4px; height: 10px; overflow: hidden; margin-bottom: 6px;">
@@ -551,7 +556,7 @@
                 </div>
 
                 <!-- Create New Viewport -->
-                <div class="section">
+                <div class="section auth-required">
                     <button class="btn btn-toggle" onclick="toggleCreateForm()">+ Create New Viewport</button>
 
                     <div class="create-form" id="createForm">
@@ -658,12 +663,18 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
 
     <script>
-        // Auth check: redirect to login if auth is enabled and not logged in
+        // Auth check: set demo mode for unauthenticated users
+        let isLoggedIn = false;
         fetch('/api/auth/status').then(r => r.json()).then(data => {
-            if (data.auth_enabled && !data.logged_in) window.location.href = '/login.html';
             if (data.logged_in && data.user) {
+                isLoggedIn = true;
                 document.getElementById('userName').textContent = data.user;
                 document.getElementById('userInfo').style.display = '';
+            }
+            if (data.auth_enabled && !data.logged_in) {
+                // Demo mode: hide admin controls, show login banner
+                document.getElementById('demoBanner').style.display = 'block';
+                document.querySelectorAll('.auth-required').forEach(el => el.style.display = 'none');
             }
         }).catch(() => {});
 
@@ -673,11 +684,11 @@
             });
         }
 
-        // Wrap global fetch to redirect on 401
+        // Wrap global fetch to redirect on 401 (only for logged-in users)
         const _origFetch = window.fetch;
         window.fetch = function(url, opts) {
             return _origFetch(url, opts).then(resp => {
-                if (resp.status === 401 && !String(url).includes('/api/auth/')) {
+                if (resp.status === 401 && !String(url).includes('/api/auth/') && isLoggedIn) {
                     window.location.href = '/login.html';
                 }
                 return resp;
@@ -1644,6 +1655,9 @@ Max Lon: ${bounds.maxLon.toFixed(4)}°
                 const sizeText = dataSize > 1000
                     ? `${(dataSize / 1024).toFixed(1)} GB`
                     : `${dataSize.toFixed(0)} MB`;
+                const deleteBtn = isLoggedIn
+                    ? `<button class="viewport-item-btn delete" onclick="deleteViewport('${vp.name}')">Delete</button>`
+                    : '';
 
                 return `
                     <div class="viewport-item ${isActive}">
@@ -1652,7 +1666,7 @@ Max Lon: ${bounds.maxLon.toFixed(4)}°
                         <div class="viewport-item-coords" style="color: #0066cc; font-weight: 500; margin-top: 3px;">💾 ${sizeText}</div>
                         <div class="viewport-item-actions">
                             <button class="viewport-item-btn" onclick="switchViewport('${vp.name}')">Select</button>
-                            <button class="viewport-item-btn delete" onclick="deleteViewport('${vp.name}')">Delete</button>
+                            ${deleteBtn}
                         </div>
                     </div>
                 `;
