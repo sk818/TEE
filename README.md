@@ -455,6 +455,35 @@ GET /api/viewports/{viewport_name}/available-years
 ```
 Returns: `{success: bool, years: [2024, 2023, ...]}`
 
+### Authentication
+
+**Check auth status:**
+```
+GET /api/auth/status
+```
+Returns: `{auth_enabled: bool, logged_in: bool, user: string|null}`
+
+**Log in:**
+```
+POST /api/auth/login
+Content-Type: application/json
+
+{"username": "admin", "password": "secret"}
+```
+
+**Log out:**
+```
+POST /api/auth/logout
+```
+
+**Change password (requires active session):**
+```
+POST /api/auth/change-password
+Content-Type: application/json
+
+{"current_password": "old", "new_password": "new"}
+```
+
 ## Deployment
 
 ### Local Development
@@ -500,7 +529,7 @@ After the initial FAISS data download (cached in IndexedDB), similarity search a
 
 ## Authentication & User Management
 
-TEE supports optional per-user authentication. When enabled, users must log in before accessing the interface. A logout button appears in the header of both the viewport selector and viewer.
+TEE supports optional per-user authentication. When enabled, unauthenticated users can browse in read-only **demo mode** with a **Login** button in the header. Logged-in users see their username, a **Change Password** button, and a **Logout** button in the header of both the viewport selector and viewer.
 
 ### Enabling Authentication
 
@@ -551,6 +580,10 @@ The `admin` user has special privileges:
 ### Disk Quota
 
 Each non-admin user has a **2 GB disk quota** for viewport data. When creating a viewport, the server estimates the disk usage and rejects the request if it would exceed the quota. Delete existing viewports to free up space.
+
+### Changing Passwords
+
+Logged-in users can change their password via the **Password** button in the header, which opens a modal dialog. This calls `POST /api/auth/change-password` with the current and new passwords. Passwords must be at least 6 characters.
 
 ### HTTPS Session Cookies
 
