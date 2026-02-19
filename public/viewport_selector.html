@@ -80,9 +80,106 @@
             cursor: pointer;
         }
 
-        .logout-btn:hover {
+        .logout-btn:hover, .auth-btn:hover {
             background: rgba(255,255,255,0.3);
         }
+
+        .auth-btn {
+            background: rgba(255,255,255,0.2);
+            color: white;
+            border: 1px solid rgba(255,255,255,0.4);
+            border-radius: 4px;
+            padding: 4px 10px;
+            font-size: 11px;
+            cursor: pointer;
+        }
+
+        .login-btn {
+            background: rgba(255,255,255,0.25);
+            color: white;
+            border: 1px solid rgba(255,255,255,0.5);
+            border-radius: 4px;
+            padding: 4px 12px;
+            font-size: 11px;
+            cursor: pointer;
+            font-weight: 600;
+        }
+
+        .login-btn:hover {
+            background: rgba(255,255,255,0.4);
+        }
+
+        .modal-overlay {
+            display: none;
+            position: fixed;
+            top: 0; left: 0; right: 0; bottom: 0;
+            background: rgba(0,0,0,0.5);
+            z-index: 10000;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .modal-overlay.active {
+            display: flex;
+        }
+
+        .modal-box {
+            background: white;
+            border-radius: 8px;
+            padding: 24px;
+            width: 360px;
+            box-shadow: 0 8px 32px rgba(0,0,0,0.3);
+        }
+
+        .modal-box h3 {
+            margin: 0 0 16px 0;
+            font-size: 16px;
+            color: #333;
+        }
+
+        .modal-box input {
+            width: 100%;
+            padding: 8px 10px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            font-size: 13px;
+            margin-bottom: 10px;
+        }
+
+        .modal-box .btn-row {
+            display: flex;
+            gap: 8px;
+            justify-content: flex-end;
+            margin-top: 6px;
+        }
+
+        .modal-box .btn-row button {
+            padding: 6px 16px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 13px;
+        }
+
+        .modal-box .btn-primary {
+            background: #667eea;
+            color: white;
+            font-weight: 600;
+        }
+
+        .modal-box .btn-cancel {
+            background: #e9ecef;
+            color: #333;
+        }
+
+        .modal-msg {
+            font-size: 12px;
+            margin-top: 8px;
+            min-height: 18px;
+        }
+
+        .modal-msg.error { color: #dc3545; }
+        .modal-msg.success { color: #28a745; }
 
         .sidebar-content {
             flex: 1;
@@ -500,8 +597,10 @@
                 <h1>TEE Viewport Manager</h1>
                 <div class="user-info" id="userInfo" style="display:none;">
                     <span id="userName"></span>
+                    <button class="auth-btn" onclick="showChangePassword()">Password</button>
                     <button class="logout-btn" onclick="doLogout()">Logout</button>
                 </div>
+                <button class="login-btn" id="loginBtn" style="display:none;" onclick="window.location.href='/login.html'">Login</button>
             </div>
 
             <div class="sidebar-content">
@@ -672,8 +771,9 @@
                 document.getElementById('userInfo').style.display = '';
             }
             if (data.auth_enabled && !data.logged_in) {
-                // Demo mode: hide admin controls, show login banner
+                // Demo mode: hide admin controls, show login banner + login button
                 document.getElementById('demoBanner').style.display = 'block';
+                document.getElementById('loginBtn').style.display = '';
                 document.querySelectorAll('.auth-required').forEach(el => el.style.display = 'none');
             }
         }).catch(() => {});
@@ -2091,6 +2191,77 @@ Max Lon: ${bounds.maxLon.toFixed(4)}°
             initGeocodeSearch();
             loadCurrentViewport();
             loadViewports();
+        });
+    </script>
+
+    <!-- Change Password Modal -->
+    <div class="modal-overlay" id="changePasswordModal">
+        <div class="modal-box">
+            <h3>Change Password</h3>
+            <input type="password" id="cpCurrent" placeholder="Current password" />
+            <input type="password" id="cpNew" placeholder="New password" />
+            <input type="password" id="cpConfirm" placeholder="Confirm new password" />
+            <div class="modal-msg" id="cpMsg"></div>
+            <div class="btn-row">
+                <button class="btn-cancel" onclick="hideChangePassword()">Cancel</button>
+                <button class="btn-primary" onclick="submitChangePassword()">Change</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        function showChangePassword() {
+            document.getElementById('cpCurrent').value = '';
+            document.getElementById('cpNew').value = '';
+            document.getElementById('cpConfirm').value = '';
+            document.getElementById('cpMsg').textContent = '';
+            document.getElementById('cpMsg').className = 'modal-msg';
+            document.getElementById('changePasswordModal').classList.add('active');
+        }
+
+        function hideChangePassword() {
+            document.getElementById('changePasswordModal').classList.remove('active');
+        }
+
+        function submitChangePassword() {
+            const current = document.getElementById('cpCurrent').value;
+            const newPw = document.getElementById('cpNew').value;
+            const confirm = document.getElementById('cpConfirm').value;
+            const msg = document.getElementById('cpMsg');
+
+            if (!current || !newPw) {
+                msg.textContent = 'Please fill in all fields.';
+                msg.className = 'modal-msg error';
+                return;
+            }
+            if (newPw !== confirm) {
+                msg.textContent = 'New passwords do not match.';
+                msg.className = 'modal-msg error';
+                return;
+            }
+
+            fetch('/api/auth/change-password', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({current_password: current, new_password: newPw})
+            }).then(r => r.json()).then(data => {
+                if (data.success) {
+                    msg.textContent = 'Password changed successfully.';
+                    msg.className = 'modal-msg success';
+                    setTimeout(hideChangePassword, 1500);
+                } else {
+                    msg.textContent = data.error || 'Failed to change password.';
+                    msg.className = 'modal-msg error';
+                }
+            }).catch(() => {
+                msg.textContent = 'Network error.';
+                msg.className = 'modal-msg error';
+            });
+        }
+
+        // Close modal on overlay click
+        document.getElementById('changePasswordModal').addEventListener('click', function(e) {
+            if (e.target === this) hideChangePassword();
         });
     </script>
 </body>

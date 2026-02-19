@@ -402,8 +402,10 @@
         <!-- User / Logout -->
         <div id="userInfo" style="display:none; margin-left:auto; align-items:center; gap:8px; font-size:13px;">
             <span id="userName" style="opacity:0.7;"></span>
+            <button style="background:#555; color:white; padding:6px 12px; border:none; border-radius:4px; cursor:pointer; font-size:12px;" onclick="showChangePassword()">Password</button>
             <button style="background:#6c757d; color:white; padding:6px 12px; border:none; border-radius:4px; cursor:pointer; font-size:12px;" onclick="doLogout()">Logout</button>
         </div>
+        <button id="loginBtn" style="display:none; margin-left:auto; background:#667eea; color:white; padding:6px 14px; border:none; border-radius:4px; cursor:pointer; font-size:12px; font-weight:600;" onclick="window.location.href='/login.html'">Login</button>
 
         <!-- Similarity Search Controls -->
         <div style="display: flex; gap: 10px; align-items: center; margin-left: 20px; border-left: 1px solid #444; padding-left: 20px;">
@@ -610,12 +612,17 @@
     </div>
 
     <script>
-        // Auth check: redirect to login if auth is enabled and not logged in
+        // Auth check: set demo mode for unauthenticated users
+        let isLoggedIn = false;
         fetch('/api/auth/status').then(r => r.json()).then(data => {
-            if (data.auth_enabled && !data.logged_in) window.location.href = '/login.html?next=' + encodeURIComponent(window.location.pathname + window.location.search);
             if (data.logged_in && data.user) {
+                isLoggedIn = true;
                 document.getElementById('userName').textContent = data.user;
                 document.getElementById('userInfo').style.display = 'flex';
+            }
+            if (data.auth_enabled && !data.logged_in) {
+                // Demo mode: show login button instead of redirecting
+                document.getElementById('loginBtn').style.display = '';
             }
         }).catch(() => {});
 
@@ -625,11 +632,11 @@
             });
         }
 
-        // Wrap global fetch to redirect on 401
+        // Wrap global fetch to redirect on 401 (only for logged-in users)
         const _origFetch = window.fetch;
         window.fetch = function(url, opts) {
             return _origFetch(url, opts).then(resp => {
-                if (resp.status === 401 && !String(url).includes('/api/auth/')) {
+                if (resp.status === 401 && !String(url).includes('/api/auth/') && isLoggedIn) {
                     window.location.href = '/login.html?next=' + encodeURIComponent(window.location.pathname + window.location.search);
                 }
                 return resp;
@@ -4453,6 +4460,79 @@
     // Also expose the cross-panel helpers so the click handler above can call them.
     // The main script defines them inside a closure; re-export them on window if not already there.
     // (They are already on window via the main script's global scope in non-strict mode — this is a safety net.)
+    </script>
+
+    <!-- Change Password Modal -->
+    <div id="changePasswordModal" style="display:none; position:fixed; top:0; left:0; right:0; bottom:0; background:rgba(0,0,0,0.5); z-index:10000; align-items:center; justify-content:center;">
+        <div style="background:white; border-radius:8px; padding:24px; width:360px; box-shadow:0 8px 32px rgba(0,0,0,0.3);">
+            <h3 style="margin:0 0 16px 0; font-size:16px; color:#333;">Change Password</h3>
+            <input type="password" id="cpCurrent" placeholder="Current password" style="width:100%; padding:8px 10px; border:1px solid #ddd; border-radius:4px; font-size:13px; margin-bottom:10px;" />
+            <input type="password" id="cpNew" placeholder="New password" style="width:100%; padding:8px 10px; border:1px solid #ddd; border-radius:4px; font-size:13px; margin-bottom:10px;" />
+            <input type="password" id="cpConfirm" placeholder="Confirm new password" style="width:100%; padding:8px 10px; border:1px solid #ddd; border-radius:4px; font-size:13px; margin-bottom:10px;" />
+            <div id="cpMsg" style="font-size:12px; margin-top:8px; min-height:18px;"></div>
+            <div style="display:flex; gap:8px; justify-content:flex-end; margin-top:6px;">
+                <button onclick="hideChangePassword()" style="padding:6px 16px; border:none; border-radius:4px; cursor:pointer; font-size:13px; background:#e9ecef; color:#333;">Cancel</button>
+                <button onclick="submitChangePassword()" style="padding:6px 16px; border:none; border-radius:4px; cursor:pointer; font-size:13px; background:#667eea; color:white; font-weight:600;">Change</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        function showChangePassword() {
+            document.getElementById('cpCurrent').value = '';
+            document.getElementById('cpNew').value = '';
+            document.getElementById('cpConfirm').value = '';
+            var msg = document.getElementById('cpMsg');
+            msg.textContent = '';
+            msg.style.color = '';
+            var modal = document.getElementById('changePasswordModal');
+            modal.style.display = 'flex';
+        }
+
+        function hideChangePassword() {
+            document.getElementById('changePasswordModal').style.display = 'none';
+        }
+
+        function submitChangePassword() {
+            var current = document.getElementById('cpCurrent').value;
+            var newPw = document.getElementById('cpNew').value;
+            var confirm = document.getElementById('cpConfirm').value;
+            var msg = document.getElementById('cpMsg');
+
+            if (!current || !newPw) {
+                msg.textContent = 'Please fill in all fields.';
+                msg.style.color = '#dc3545';
+                return;
+            }
+            if (newPw !== confirm) {
+                msg.textContent = 'New passwords do not match.';
+                msg.style.color = '#dc3545';
+                return;
+            }
+
+            fetch('/api/auth/change-password', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({current_password: current, new_password: newPw})
+            }).then(function(r) { return r.json(); }).then(function(data) {
+                if (data.success) {
+                    msg.textContent = 'Password changed successfully.';
+                    msg.style.color = '#28a745';
+                    setTimeout(hideChangePassword, 1500);
+                } else {
+                    msg.textContent = data.error || 'Failed to change password.';
+                    msg.style.color = '#dc3545';
+                }
+            }).catch(function() {
+                msg.textContent = 'Network error.';
+                msg.style.color = '#dc3545';
+            });
+        }
+
+        // Close modal on overlay click
+        document.getElementById('changePasswordModal').addEventListener('click', function(e) {
+            if (e.target === this) hideChangePassword();
+        });
     </script>
 </body>
 </html>

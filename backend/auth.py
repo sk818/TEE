@@ -88,6 +88,7 @@ PUBLIC_PATHS = {
     '/api/auth/login',
     '/api/auth/logout',
     '/api/auth/status',
+    '/api/auth/change-password',
     '/login.html',
 }
 
@@ -191,6 +192,51 @@ def init_auth(app, data_dir):
     @app.route('/api/auth/logout', methods=['POST'])
     def auth_logout():
         session.pop('user', None)
+        return jsonify({'success': True})
+
+    @app.route('/api/auth/change-password', methods=['POST'])
+    def auth_change_password():
+        user = session.get('user')
+        if not user:
+            return jsonify({'success': False, 'error': 'Not logged in'}), 401
+
+        data = request.get_json(silent=True) or {}
+        current_password = data.get('current_password', '')
+        new_password = data.get('new_password', '')
+
+        if not current_password or not new_password:
+            return jsonify({'success': False, 'error': 'Current and new password required'}), 400
+
+        if len(new_password) < 6:
+            return jsonify({'success': False, 'error': 'New password must be at least 6 characters'}), 400
+
+        if not check_credentials(user, current_password):
+            time.sleep(0.5)
+            return jsonify({'success': False, 'error': 'Current password is incorrect'}), 403
+
+        # Hash new password and update passwd file in-place
+        new_hash = bcrypt.hashpw(new_password.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
+        try:
+            lines = _passwd_file.read_text().splitlines()
+            new_lines = []
+            for line in lines:
+                stripped = line.strip()
+                if stripped and not stripped.startswith('#') and ':' in stripped:
+                    uname = stripped.split(':', 1)[0].strip()
+                    if uname == user:
+                        new_lines.append(f'{user}:{new_hash}')
+                        continue
+                new_lines.append(line)
+            _passwd_file.write_text('\n'.join(new_lines) + '\n')
+        except OSError as e:
+            logger.error(f"Error updating passwd file: {e}")
+            return jsonify({'success': False, 'error': 'Failed to update password'}), 500
+
+        # Clear mtime cache so the change is picked up immediately
+        global _passwd_mtime
+        _passwd_mtime = 0
+
+        logger.info(f"Password changed for user: {user}")
         return jsonify({'success': True})
 
     @app.route('/api/auth/status', methods=['GET'])
