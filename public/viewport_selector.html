@@ -518,8 +518,8 @@
                     <div id="processingBytes" style="font-size: 10px; color: #888; margin-top: 2px;"></div>
                 </div>
 
-                <!-- Create New Viewport -->
-                <div class="section">
+                <!-- Create New Viewport (admin only) -->
+                <div class="section" data-admin-only>
                     <button class="btn btn-toggle" onclick="toggleCreateForm()">+ Create New Viewport</button>
 
                     <div class="create-form" id="createForm">
@@ -626,6 +626,25 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
 
     <script>
+        // ============================================================
+        // DEMO MODE DETECTION
+        // ============================================================
+        let isAdminMode = false;
+
+        async function checkAdminAuth() {
+            try {
+                const resp = await fetch('/api/auth-check', { credentials: 'same-origin' });
+                isAdminMode = resp.ok;
+            } catch { isAdminMode = false; }
+            applyDemoMode();
+        }
+
+        function applyDemoMode() {
+            document.querySelectorAll('[data-admin-only]').forEach(el => {
+                el.style.display = isAdminMode ? '' : 'none';
+            });
+        }
+
         // Global state
         let map;
         let viewportBox;
@@ -1594,7 +1613,7 @@ Max Lon: ${bounds.maxLon.toFixed(4)}°
                         <div class="viewport-item-coords" style="color: #0066cc; font-weight: 500; margin-top: 3px;">💾 ${sizeText}</div>
                         <div class="viewport-item-actions">
                             <button class="viewport-item-btn" onclick="switchViewport('${vp.name}')">Select</button>
-                            <button class="viewport-item-btn delete" onclick="deleteViewport('${vp.name}')">Delete</button>
+                            ${isAdminMode ? `<button class="viewport-item-btn delete" onclick="deleteViewport('${vp.name}')">Delete</button>` : ''}
                         </div>
                     </div>
                 `;
@@ -2014,7 +2033,8 @@ Max Lon: ${bounds.maxLon.toFixed(4)}°
         });
 
         // Initialize on page load
-        window.addEventListener('DOMContentLoaded', function() {
+        window.addEventListener('DOMContentLoaded', async function() {
+            await checkAdminAuth();
             initMap();
             initGeocodeSearch();
             loadCurrentViewport();

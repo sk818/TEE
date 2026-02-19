@@ -604,6 +604,25 @@
     </div>
 
     <script>
+        // ============================================================
+        // DEMO MODE DETECTION
+        // ============================================================
+        let isAdminMode = false;
+
+        async function checkAdminAuth() {
+            try {
+                const resp = await fetch('/api/auth-check', { credentials: 'same-origin' });
+                isAdminMode = resp.ok;
+            } catch { isAdminMode = false; }
+            applyDemoMode();
+        }
+
+        function applyDemoMode() {
+            document.querySelectorAll('[data-admin-only]').forEach(el => {
+                el.style.display = isAdminMode ? '' : 'none';
+            });
+        }
+
         let TILE_SERVER = window.location.origin; // default, overridden by /api/config
         let center = [12.97, 77.59];  // Default: Bangalore
         let zoom = 12;

@@ -8,7 +8,7 @@ Deploy the Tessera Embedding Explorer (web server + tile server) behind Apache o
 
 | Service | Port | Purpose |
 |---------|------|---------|
-| Web Server (Flask) | 8001 | API endpoints, labels, similarity search |
+| Web Server (Flask) | 8001 | API endpoints, similarity search |
 | Tile Server (Flask) | 5125 | Map tile serving from GeoTIFFs |
 | Frontend | - | Static HTML/JS served by web server |
 
@@ -303,28 +303,9 @@ else:
     CORS(app)  # Allow all in development
 ```
 
-### 3.5 SQLite Concurrency Fix
+### 3.5 Labels (Client-Side Only)
 
-**File: `backend/labels_db.py`** (update connection function)
-```python
-import sqlite3
-import os
-
-def get_db_path():
-    data_dir = os.environ.get('TESSERA_DATA', os.path.expanduser('~/blore_data'))
-    return os.path.join(data_dir, 'labels.db')
-
-def get_db_connection():
-    db_path = get_db_path()
-    conn = sqlite3.connect(db_path, timeout=30)
-
-    # Essential concurrency settings only
-    conn.execute('PRAGMA journal_mode=WAL')      # Better concurrency
-    conn.execute('PRAGMA busy_timeout=30000')    # Wait up to 30s if locked
-
-    conn.row_factory = sqlite3.Row
-    return conn
-```
+Labels are stored exclusively in the browser's `localStorage` for user privacy. No server-side label storage exists — the SQLite labels API and `labels_db.py` have been removed.
 
 ---
 
@@ -510,24 +491,7 @@ For uptime alerts, use a free service like UptimeRobot to monitor:
 
 ## Phase 9: Backups
 
-### 9.1 Simple Backup Script
-
-**File: `/opt/tessera/backup.sh`**
-```bash
-#!/bin/bash
-BACKUP_DIR="/var/tessera_data/backups"
-mkdir -p "$BACKUP_DIR"
-sqlite3 /var/tessera_data/labels.db ".backup '$BACKUP_DIR/labels_$(date +%Y%m%d).db'"
-# Keep last 7 days
-find "$BACKUP_DIR" -name "labels_*.db" -mtime +7 -delete
-```
-
-### 9.2 Cron Job
-
-```bash
-# Add to tessera user's crontab: crontab -u tessera -e
-0 2 * * * /opt/tessera/backup.sh
-```
+Labels are stored in the browser's `localStorage` (no server-side data to back up). If you later add server-side state, add a backup cron job here.
 
 ---
 
@@ -654,7 +618,7 @@ No additional code changes needed. If you observe performance issues after deplo
 - [ ] Viewer loads after login
 - [ ] Tiles display correctly
 - [ ] Similarity search works
-- [ ] Labels save/load correctly
+- [ ] Labels save/load correctly (client-side localStorage)
 
 ### Operations
 - [ ] Services running (`systemctl status tessera-web tessera-tiles`)
