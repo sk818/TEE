@@ -280,6 +280,10 @@ def trigger_data_download_and_processing(viewport_name, years=None):
             with tasks_lock:
                 tasks[operation_id] = {'status': 'failed', 'current_stage': 'exception', 'error': error_msg}
 
+    # Mark as starting BEFORE spawning thread so concurrent is-ready requests see it
+    with tasks_lock:
+        tasks[operation_id] = {'status': 'starting', 'current_stage': 'initialization', 'error': None}
+
     thread = threading.Thread(target=download_and_process, daemon=True)
     thread.start()
 
@@ -1285,11 +1289,14 @@ def api_is_viewport_ready(viewport_name):
             # resumes automatically instead of staying stuck forever.
             operation_id = f"{viewport_name}_full_pipeline"
             pipeline_running = False
+            pipeline_failed = False
             with tasks_lock:
                 if operation_id in tasks:
-                    pipeline_running = tasks[operation_id].get('status') in ('starting', 'in_progress')
+                    status = tasks[operation_id].get('status')
+                    pipeline_running = status in ('starting', 'in_progress')
+                    pipeline_failed = status == 'failed'
 
-            if not pipeline_running:
+            if not pipeline_running and not pipeline_failed:
                 logger.info(f"[is-ready] Pipeline not running for '{viewport_name}' but data incomplete — re-triggering pipeline")
                 # Read saved years from config file (if exists)
                 config_file = VIEWPORTS_DIR / f"{viewport_name}_config.json"
