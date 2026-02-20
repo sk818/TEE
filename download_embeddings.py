@@ -28,7 +28,7 @@ except ImportError as e:
     sys.exit(1)
 
 try:
-    from lib.viewport_utils import get_active_viewport, check_cache
+    from lib.viewport_utils import get_active_viewport
     from lib.progress_tracker import ProgressTracker
     from lib.config import DATA_DIR, EMBEDDINGS_DIR, MOSAICS_DIR
 except ImportError as e:
@@ -162,16 +162,6 @@ def download_embeddings():
         print(f"   Expected size: {est_mb:.1f} MB")
         progress.update("processing", f"Year {year_idx+1}/{total_years}: Processing {year}...",
                        current_file=output_file.name, current_value=cumulative_bytes_done, total_value=total_estimated_bytes)
-
-        # Check cache for matching bounds
-        cached_file = check_cache(BBOX, 'embeddings')
-        if cached_file:
-            print(f"   ✓ Cache hit! Using existing mosaic: {cached_file}")
-            cumulative_bytes_done += est_bytes
-            progress.update("processing", f"Year {year_idx+1}/{total_years}: Using cached {year}",
-                           current_file=output_file.name, current_value=cumulative_bytes_done, total_value=total_estimated_bytes)
-            successful_years.append(year)
-            continue
 
         if output_file.exists():
             print(f"   ✓ Mosaic already exists: {output_file}")
