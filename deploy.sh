@@ -40,8 +40,8 @@ sudo -u tee mkdir -p /home/tee/data /home/tee/.cache
 # --- 3. Fix app directory ownership ---
 echo "[3/7] Fixing app directory ownership..."
 chown -R tee:tee "$SCRIPT_DIR/viewports"
-mkdir -p "$SCRIPT_DIR/logs"
-chown tee:tee "$SCRIPT_DIR/logs"
+mkdir -p /var/log/tee
+chown tee:tee /var/log/tee
 
 # --- 4. Remove old systemd services ---
 echo "[4/7] Cleaning up old systemd services..."
@@ -64,7 +64,7 @@ fi
 
 # --- 6. Auto-start on reboot ---
 echo "[6/7] Setting up auto-start..."
-CRON_LINE="@reboot cd $SCRIPT_DIR && bash restart.sh >> $SCRIPT_DIR/logs/startup.log 2>&1"
+CRON_LINE="@reboot cd $SCRIPT_DIR && bash restart.sh >> /var/log/tee/startup.log 2>&1"
 EXISTING=$(crontab -l 2>/dev/null || true)
 if echo "$EXISTING" | grep -qF "restart.sh"; then
     echo "  @reboot entry already exists"

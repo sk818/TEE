@@ -33,7 +33,7 @@ Internet (Port 443)
   deploy.sh                 # First-time setup (run once)
   restart.sh                # Start/restart services
   shutdown.sh               # Stop services
-  logs/                     # Server logs
+  logs/                     # Server logs (local dev only)
 
 /home/tee/data/             # Data (auto-created), owned by tee
   mosaics/
@@ -107,8 +107,8 @@ bash status.sh
 
 **View logs:**
 ```bash
-tail -f /opt/tee/logs/web_server.log
-tail -f /opt/tee/logs/tile_server.log
+tail -f /var/log/tee/web_server.log
+tail -f /var/log/tee/tile_server.log
 ```
 
 **Manage users:**

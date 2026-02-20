@@ -522,7 +522,7 @@ cd /opt/tee
 sudo git pull && sudo bash restart.sh   # Update and restart
 sudo bash shutdown.sh                    # Stop services
 bash status.sh                           # Check status
-tail -f logs/web_server.log              # View logs
+tail -f /var/log/tee/web_server.log      # View logs
 ```
 
 `restart.sh` auto-detects the environment: if a `tee` system user exists, services run as `tee`; otherwise they run as the current user. No code changes needed between server and laptop.
@@ -731,7 +731,7 @@ MIT License - See LICENSE file for details
 
 For issues or questions:
 1. Check the troubleshooting section
-2. Review server logs: `logs/web_server.log` and `logs/tile_server.log`
+2. Review server logs: `/var/log/tee/web_server.log` (server) or `logs/web_server.log` (local)
 3. Verify data files exist in `~/data/`
 4. Check browser console for JavaScript errors
 

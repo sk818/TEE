@@ -13,8 +13,6 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$SCRIPT_DIR"
 
 PYTHON="$SCRIPT_DIR/venv/bin/python3"
-LOG_DIR="$SCRIPT_DIR/logs"
-mkdir -p "$LOG_DIR"
 
 # Auto-detect run mode: server (tee user) vs local (current user)
 if id tee >/dev/null 2>&1; then
@@ -26,6 +24,14 @@ else
     MODE="local"
     echo "TEE local mode (running as $(whoami))"
 fi
+
+# Logs: /var/log/tee on server, ./logs locally
+if [ "$MODE" = "server" ]; then
+    LOG_DIR="/var/log/tee"
+else
+    LOG_DIR="$SCRIPT_DIR/logs"
+fi
+mkdir -p "$LOG_DIR"
 
 echo "Shutting down existing services..."
 
