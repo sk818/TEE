@@ -158,6 +158,38 @@
             font-weight: 700 !important;
         }
 
+        .export-dropdown-menu {
+            display: none;
+            position: absolute;
+            top: 100%;
+            left: 0;
+            background: #2a2a2a;
+            border: 1px solid #555;
+            border-radius: 4px;
+            min-width: 170px;
+            z-index: 1000;
+            margin-top: 4px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.4);
+        }
+        .export-dropdown-menu button {
+            display: block;
+            width: 100%;
+            padding: 9px 14px;
+            background: none;
+            color: white;
+            border: none;
+            text-align: left;
+            cursor: pointer;
+            font-size: 13px;
+            white-space: nowrap;
+        }
+        .export-dropdown-menu button:hover {
+            background: #444;
+        }
+        .export-dropdown-menu button:not(:last-child) {
+            border-bottom: 1px solid #444;
+        }
+
         #map-container {
             position: fixed;
             top: 110px;
@@ -447,9 +479,16 @@
             <button id="toggle-all-overlays" style="padding: 8px 12px; background: #333; color: white; border: 1px solid #555; border-radius: 4px; cursor: pointer; font-size: 13px; font-weight: 600; white-space: nowrap;">
                 👁 Toggle Overlays
             </button>
-            <button id="export-labels-btn" style="padding: 8px 12px; background: #333; color: white; border: 1px solid #555; border-radius: 4px; cursor: pointer; font-size: 13px; white-space: nowrap;">
-                Export Labels
-            </button>
+            <div style="position: relative; display: inline-block;">
+                <button id="export-dropdown-btn" style="padding: 8px 12px; background: #333; color: white; border: 1px solid #555; border-radius: 4px; cursor: pointer; font-size: 13px; white-space: nowrap;">
+                    Export &#9662;
+                </button>
+                <div id="export-dropdown-menu" class="export-dropdown-menu">
+                    <button id="export-labels-json-btn">Labels (JSON)</button>
+                    <button id="export-labels-geojson-btn">Labels (GeoJSON)</button>
+                    <button id="export-map-btn">Map (JPG)</button>
+                </div>
+            </div>
             <span id="unsaved-labels-warning" style="display: none; background: #ff9800; color: #000; padding: 4px 10px; border-radius: 3px; font-weight: 700; font-size: 12px; white-space: nowrap; animation: pulse-warning 1.5s ease-in-out 3;">⚠ Unsaved labels — export to avoid losing work</span>
             <button id="import-labels-btn" style="padding: 8px 12px; background: #333; color: white; border: 1px solid #555; border-radius: 4px; cursor: pointer; font-size: 13px; white-space: nowrap;">
                 Import
@@ -457,9 +496,6 @@
             <input type="file" id="import-labels-file" accept=".json" style="display: none;">
             <button id="status-btn" style="padding: 8px 12px; background: #333; color: white; border: 1px solid #555; border-radius: 4px; cursor: pointer; font-size: 13px; white-space: nowrap;">
                 ℹ️ Status
-            </button>
-            <button id="export-map-btn" style="padding: 8px 12px; background: #2d6a4f; color: white; border: 1px solid #555; border-radius: 4px; cursor: pointer; font-size: 13px; font-weight: 600; white-space: nowrap;">
-                Export Map
             </button>
         </div>
 
@@ -3368,7 +3404,7 @@
             countEl.textContent = savedLabels.length;
 
             // Highlight export button and show warning when unexported labels exist
-            const exportBtn = document.getElementById('export-labels-btn');
+            const exportBtn = document.getElementById('export-dropdown-btn');
             const warning = document.getElementById('unsaved-labels-warning');
             if (savedLabels.length > 0 && !labelsExportedSinceChange) {
                 exportBtn.classList.add('export-btn-highlight');
@@ -3557,6 +3593,72 @@
             updateLabelsUI();
         }
 
+        // Export saved labels as GeoJSON FeatureCollection
+        // Uses same zoom-18 Mercator projection as the JPG export so polygons
+        // align pixel-perfectly with the exported map image.
+        function exportSavedLabelsGeoJSON() {
+            if (savedLabels.length === 0) {
+                alert('No labels to export.');
+                return;
+            }
+            if (!maps.rgb) {
+                alert('Map not ready.');
+                return;
+            }
+            const map = maps.rgb;
+            const MAX_ZOOM = 18;
+            const features = [];
+            for (const label of savedLabels) {
+                if (!label.pixels || label.pixels.length === 0) continue;
+                for (const pixel of label.pixels) {
+                    const pb = calculatePixelBounds(pixel.lat, pixel.lon);
+                    // Project to zoom-18 pixel coords (same as JPG export)
+                    const swPx = map.project(L.latLng(pb[0][0], pb[0][1]), MAX_ZOOM);
+                    const nePx = map.project(L.latLng(pb[1][0], pb[1][1]), MAX_ZOOM);
+                    // Match JPG export +1 pixel coverage
+                    const x0 = swPx.x;
+                    const y0 = nePx.y;            // top (north)
+                    const x1 = nePx.x + 1;
+                    const y1 = swPx.y + 1;         // bottom (south)
+                    // Unproject back to geographic coords
+                    const sw = map.unproject(L.point(x0, y1), MAX_ZOOM);
+                    const ne = map.unproject(L.point(x1, y0), MAX_ZOOM);
+                    features.push({
+                        type: 'Feature',
+                        geometry: {
+                            type: 'Polygon',
+                            coordinates: [[
+                                [sw.lng, sw.lat],
+                                [ne.lng, sw.lat],
+                                [ne.lng, ne.lat],
+                                [sw.lng, ne.lat],
+                                [sw.lng, sw.lat]
+                            ]]
+                        },
+                        properties: {
+                            label_name: label.name,
+                            label_color: label.color,
+                            distance: pixel.distance,
+                            threshold: label.threshold
+                        }
+                    });
+                }
+            }
+            const geojson = {
+                type: 'FeatureCollection',
+                features: features
+            };
+            const blob = new Blob([JSON.stringify(geojson, null, 2)], {type: 'application/geo+json'});
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `${currentViewportName}_labels.geojson`;
+            a.click();
+            URL.revokeObjectURL(url);
+            labelsExportedSinceChange = true;
+            updateLabelsUI();
+        }
+
         // Import saved labels from JSON file
         async function importSavedLabels(file) {
             const reader = new FileReader();
@@ -3717,7 +3819,7 @@
         async function exportMapAsJPG() {
             if (!maps.rgb) return;
 
-            const btn = document.getElementById('export-map-btn');
+            const btn = document.getElementById('export-dropdown-btn');
             btn.disabled = true;
             const MAX_ZOOM = 18;
             const TILE_SZ = 256;
@@ -3868,14 +3970,14 @@
                     a.download = `${currentViewportName}_labels_z${MAX_ZOOM}.jpg`;
                     a.click();
                     URL.revokeObjectURL(url);
-                    btn.textContent = 'Export Map';
+                    btn.textContent = 'Export \u25BE';
                     btn.disabled = false;
                 }, 'image/jpeg', 0.95);
 
             } catch (e) {
                 console.error('[EXPORT] Error exporting map:', e);
                 alert('Error exporting map. Check console for details.');
-                btn.textContent = 'Export Map';
+                btn.textContent = 'Export \u25BE';
                 btn.disabled = false;
             }
         }
@@ -3884,8 +3986,31 @@
         document.addEventListener('DOMContentLoaded', () => {
             document.getElementById('save-label-btn').addEventListener('click', saveCurrentSearchAsLabel);
             document.getElementById('toggle-all-overlays').addEventListener('click', toggleAllOverlays);
-            document.getElementById('export-labels-btn').addEventListener('click', exportSavedLabels);
-            document.getElementById('export-map-btn').addEventListener('click', exportMapAsJPG);
+            // Export dropdown toggle
+            document.getElementById('export-dropdown-btn').addEventListener('click', (e) => {
+                e.stopPropagation();
+                const menu = document.getElementById('export-dropdown-menu');
+                menu.style.display = menu.style.display === 'none' ? '' : 'none';
+            });
+            document.addEventListener('click', () => {
+                document.getElementById('export-dropdown-menu').style.display = 'none';
+            });
+            document.getElementById('export-dropdown-menu').addEventListener('click', (e) => {
+                e.stopPropagation();
+            });
+            // Export dropdown items
+            document.getElementById('export-labels-json-btn').addEventListener('click', () => {
+                document.getElementById('export-dropdown-menu').style.display = 'none';
+                exportSavedLabels();
+            });
+            document.getElementById('export-labels-geojson-btn').addEventListener('click', () => {
+                document.getElementById('export-dropdown-menu').style.display = 'none';
+                exportSavedLabelsGeoJSON();
+            });
+            document.getElementById('export-map-btn').addEventListener('click', () => {
+                document.getElementById('export-dropdown-menu').style.display = 'none';
+                exportMapAsJPG();
+            });
             document.getElementById('import-labels-btn').addEventListener('click', () => {
                 document.getElementById('import-labels-file').click();
             });
