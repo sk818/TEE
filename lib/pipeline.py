@@ -42,11 +42,18 @@ def cancel_pipeline(viewport_name):
             try:
                 # Kill the process group to catch all children
                 os.killpg(os.getpgid(proc.pid), signal.SIGTERM)
-                logger.info(f"[PIPELINE] Killed process group for '{viewport_name}' (PID: {proc.pid})")
+                logger.info(f"[PIPELINE] Sent SIGTERM to process group for '{viewport_name}' (PID: {proc.pid})")
+                try:
+                    proc.wait(timeout=2)
+                except subprocess.TimeoutExpired:
+                    proc.kill()
+                    proc.wait(timeout=1)
+                    logger.info(f"[PIPELINE] Force-killed process for '{viewport_name}' (PID: {proc.pid})")
             except (ProcessLookupError, PermissionError) as e:
                 logger.warning(f"[PIPELINE] Could not kill process: {e}")
                 try:
                     proc.kill()
+                    proc.wait(timeout=1)
                 except:
                     pass
         return True

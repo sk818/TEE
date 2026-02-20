@@ -32,7 +32,7 @@ from lib.viewport_utils import (
 )
 from lib.viewport_writer import set_active_viewport, clear_active_viewport, create_viewport_from_bounds
 from lib.pipeline import PipelineRunner, cancel_pipeline
-from lib.config import DATA_DIR, MOSAICS_DIR, PYRAMIDS_DIR, FAISS_DIR, VIEWPORTS_DIR, PROGRESS_DIR, ensure_dirs
+from lib.config import DATA_DIR, MOSAICS_DIR, PYRAMIDS_DIR, FAISS_DIR, EMBEDDINGS_DIR, VIEWPORTS_DIR, PROGRESS_DIR, ensure_dirs
 from backend.auth import init_auth
 
 # Configure logging
@@ -68,6 +68,128 @@ VENV_PYTHON = PROJECT_ROOT / "venv" / "bin" / "python3"
 if not VENV_PYTHON.exists():
     VENV_PYTHON = sys.executable  # Fallback to current Python if venv doesn't exist
 logger.info(f"Using Python: {VENV_PYTHON}")
+
+# ============================================================================
+# EMBEDDINGS CACHE CLEANUP
+# ============================================================================
+
+def cleanup_viewport_embeddings(viewport_name, viewport_bounds):
+    """Clean up cached embeddings tiles for a deleted/cancelled viewport.
+
+    Scans EMBEDDINGS_DIR for grid_{lon}_{lat} directories that overlap the
+    viewport bounds.  Tiles shared with other existing viewports are preserved.
+
+    Args:
+        viewport_name: Name of the viewport being removed.
+        viewport_bounds: Dict with minLon/minLat/maxLon/maxLat.
+
+    Returns:
+        List of deleted directory names.
+    """
+    import shutil
+
+    deleted_items = []
+    if not EMBEDDINGS_DIR.exists():
+        return deleted_items
+
+    # Collect bounds of all OTHER existing viewports
+    other_bounds = []
+    for vp_name in list_viewports():
+        if vp_name == viewport_name:
+            continue
+        try:
+            vp = read_viewport_file(vp_name)
+            other_bounds.append(vp['bounds'])
+        except Exception:
+            continue
+
+    def tile_overlaps_bounds(lon, lat, bounds):
+        """Check if a 0.1-degree tile at (lon, lat) overlaps the given bounds."""
+        tile_min_lon = lon
+        tile_max_lon = lon + 0.1
+        tile_min_lat = lat
+        tile_max_lat = lat + 0.1
+        return (tile_max_lon > bounds['minLon'] and tile_min_lon < bounds['maxLon'] and
+                tile_max_lat > bounds['minLat'] and tile_min_lat < bounds['maxLat'])
+
+    # Scan all subdirectories (e.g. global_0.1_degree_representation/)
+    for representation_dir in EMBEDDINGS_DIR.iterdir():
+        if not representation_dir.is_dir():
+            continue
+        # Each representation dir contains year subdirs
+        for year_dir in representation_dir.iterdir():
+            if not year_dir.is_dir():
+                continue
+            empty_after_cleanup = True
+            for grid_dir in list(year_dir.iterdir()):
+                if not grid_dir.is_dir() or not grid_dir.name.startswith('grid_'):
+                    if grid_dir.exists():
+                        empty_after_cleanup = False
+                    continue
+
+                # Parse grid coordinates: grid_{lon}_{lat}
+                parts = grid_dir.name.split('_')
+                # Handle negative coords: grid_-1.5_52.0 → parts = ['grid', '-1.5', '52.0']
+                # or grid_10.0_-3.5 → parts = ['grid', '10.0', '-3.5']
+                try:
+                    # Rejoin after 'grid_' and split by last '_' to handle negatives
+                    coord_str = grid_dir.name[5:]  # strip 'grid_'
+                    # Find the split point: last '_' that is preceded by a digit
+                    # (i.e., not the negative sign)
+                    split_idx = None
+                    for i in range(len(coord_str) - 1, 0, -1):
+                        if coord_str[i] == '_' and coord_str[i-1].isdigit():
+                            split_idx = i
+                            break
+                    if split_idx is None:
+                        empty_after_cleanup = False
+                        continue
+                    grid_lon = float(coord_str[:split_idx])
+                    grid_lat = float(coord_str[split_idx + 1:])
+                except (ValueError, IndexError):
+                    empty_after_cleanup = False
+                    continue
+
+                # Skip tiles that don't overlap the deleted viewport
+                if not tile_overlaps_bounds(grid_lon, grid_lat, viewport_bounds):
+                    empty_after_cleanup = False
+                    continue
+
+                # Skip tiles that overlap any remaining viewport
+                shared = False
+                for ob in other_bounds:
+                    if tile_overlaps_bounds(grid_lon, grid_lat, ob):
+                        shared = True
+                        break
+                if shared:
+                    empty_after_cleanup = False
+                    continue
+
+                # Safe to delete
+                try:
+                    shutil.rmtree(grid_dir)
+                    deleted_items.append(f"embeddings: {representation_dir.name}/{year_dir.name}/{grid_dir.name}")
+                    logger.info(f"[CLEANUP] Deleted embeddings tile: {grid_dir}")
+                except Exception as e:
+                    logger.warning(f"[CLEANUP] Could not delete {grid_dir}: {e}")
+                    empty_after_cleanup = False
+
+            # Remove empty year directory
+            if empty_after_cleanup:
+                try:
+                    year_dir.rmdir()
+                    deleted_items.append(f"embeddings: {representation_dir.name}/{year_dir.name}/ (empty)")
+                    logger.info(f"[CLEANUP] Removed empty year dir: {year_dir}")
+                except OSError:
+                    pass  # Not empty after all
+
+    if deleted_items:
+        logger.info(f"[CLEANUP] Cleaned up {len(deleted_items)} embeddings items for '{viewport_name}'")
+    else:
+        logger.info(f"[CLEANUP] No embeddings tiles to clean up for '{viewport_name}'")
+
+    return deleted_items
+
 
 # ============================================================================
 # HELPER FUNCTIONS FOR DATA PREPARATION
@@ -1012,6 +1134,16 @@ def api_cancel_processing(viewport_name):
                 except:
                     pass
 
+        # Clean up embeddings tile cache (read bounds before deleting viewport file)
+        try:
+            viewport = read_viewport_file(viewport_name)
+            emb_deleted = cleanup_viewport_embeddings(viewport_name, viewport['bounds'])
+            deleted_items.extend(emb_deleted)
+        except FileNotFoundError:
+            logger.warning(f"[CANCEL] Viewport file already gone, skipping embeddings cleanup")
+        except Exception as e:
+            logger.warning(f"[CANCEL] Embeddings cleanup failed: {e}")
+
         # Delete viewport config and definition files
         viewports_dir = Path(__file__).parent.parent / 'viewports'
         for pattern in [f'{viewport_name}.txt', f'{viewport_name}_config.json']:
@@ -1141,6 +1273,13 @@ def api_delete_viewport():
             except Exception as e:
                 logger.warning(f"Error deleting FAISS index directory for {viewport_name}: {e}")
 
+        # Clean up embeddings tile cache
+        if bounds:
+            try:
+                emb_deleted = cleanup_viewport_embeddings(viewport_name, bounds)
+                deleted_items.extend(emb_deleted)
+            except Exception as e:
+                logger.warning(f"Error cleaning up embeddings for {viewport_name}: {e}")
 
         # Also delete legacy labels JSON file if it exists
         labels_file = viewports_dir / f'{viewport_name}_labels.json'
