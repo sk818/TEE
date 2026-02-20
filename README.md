@@ -2,14 +2,14 @@
 
 **Version 1.2.0** | [Docker Hub](https://hub.docker.com/r/sk818/tee)
 
-A comprehensive system for downloading, processing, and visualizing Sentinel-2 satellite embeddings across multiple years (2017-2025) with an interactive web interface for geographic viewports.
+A system for downloading, processing, and visualizing Sentinel-2 satellite embeddings (2017-2025) with an interactive web interface.
 
 ## Overview
 
-TEE (Tessera Embeddings Explorer) integrates geospatial data processing with deep learning embeddings to create an interactive platform for exploring satellite imagery over time. The system:
+TEE integrates geospatial data processing with deep learning embeddings to create an interactive exploration platform. The system:
 
 - **Downloads** Tessera embeddings from GeoTessera for multiple years
-- **Processes** embeddings into RGB visualizations and pyramid structures
+- **Processes** embeddings into RGB visualizations and pyramid tile structures
 - **Builds** FAISS indices for efficient similarity search
 - **Visualizes** embeddings through an interactive web-based viewer
 - **Enables** temporal analysis by switching between years
@@ -30,9 +30,9 @@ TEE (Tessera Embeddings Explorer) integrates geospatial data processing with dee
 
 ### Viewport Management
 - Create custom geographic viewports interactively
-- **Landmark/geocode search** — type a place name (e.g. "London") to jump the map, place the viewport box, and auto-fill the viewport name
-- **Direct coordinate input** — enter lat/long coordinates like Google Maps (e.g. "51.5074, -0.1278" or "37.7749 -122.4194")
-- **Click-to-lock preview box** — 5km box follows the mouse, locks on click, and can be repositioned by clicking again
+- **Landmark/geocode search** — type a place name (e.g. "London") to jump the map and auto-fill the viewport name
+- **Direct coordinate input** — enter lat/long coordinates (e.g. "51.5074, -0.1278")
+- **Click-to-lock preview box** — 5km box follows the mouse, locks on click, repositionable
 - Multi-year processing with progress tracking
 - Automatic navigation to viewer after processing
 
@@ -41,65 +41,23 @@ TEE (Tessera Embeddings Explorer) integrates geospatial data processing with dee
 - **All similarity search runs locally in the browser** — no queries sent to server
 - FAISS data (embeddings + coordinates) downloaded once and cached in IndexedDB
 - Brute-force L2 search over ~250K vectors completes in ~100-200ms
-- Visualize search results with real-time threshold slider (instant local filtering)
+- Real-time threshold slider for instant local filtering
 - Labels and search are fully private — only tile images are fetched from the server
 
-### Advanced Viewer: 6-Panel Exploration & Temporal Analysis
-The **Advanced Viewer** extends the standard viewer with a comprehensive 6-panel layout for advanced analysis:
+### Advanced Viewer (6-Panel Layout)
 
-#### Layout
-1. **Panel 1 (OSM)** - OpenStreetMap base layer (geographic reference)
-2. **Panel 2 (RGB)** - Satellite RGB imagery with label painting tools
-3. **Panel 3 (Embeddings Y1)** - First year embeddings with similarity search
-4. **Panel 4 (UMAP)** - 2D UMAP projection of embedding space (auto-computed on load)
-5. **Panel 5 (Heatmap)** - Temporal distance heatmap (Y1 vs Y2 pixel-by-pixel differences)
-6. **Panel 6 (Embeddings Y2)** - Second year embeddings for temporal comparison
+The viewer includes a **6-panel layout** toggle for advanced analysis:
 
-#### Features
-- **One-Click Similarity Search** - Click any pixel on Panel 3 to instantly search for similar pixels across the viewport
-- **Real-Time Threshold Control** - Adjust the similarity slider in the header to dynamically filter results
-- **Persistent Colored Overlays** - Save similarity search results as named labels with custom colors
-- **Cross-Panel Gold Triangle Markers** - Clicking Panel 3 places a marker on Panels 1, 2, and 4; clicking Panel 1 places markers on Panels 2, 3, 4, 5, and 6. Markers from a previous panel click are cleared when clicking a different panel.
-- **Header-Based Label Controls** - Save as Label, label count, view labels, and toggle overlays are all in the main header bar (no floating overlays obscure the panels)
-- **UMAP Visualization** - Automatic 2D projection of 128D embeddings with satellite RGB coloring
-- **Temporal Distance Heatmap** - Tile-based L2 distance computation between years with adaptive subsampling
-- **Temporal Analysis** - Switch Panel 6 year independently to compare embedding changes over time
-- **Label Management** - Toggle label visibility, delete labels, view pixel counts per label
-- **Year-Based Label Updates** - Labels automatically refresh when switching years to show changes in classification
+1. **OSM** — OpenStreetMap geographic reference
+2. **RGB** — Satellite imagery with label painting tools
+3. **Embeddings Y1** — First year embeddings with similarity search
+4. **UMAP** — 2D projection of embedding space (auto-computed on load)
+5. **Heatmap** — Temporal distance heatmap (Y1 vs Y2 pixel-by-pixel differences)
+6. **Embeddings Y2** — Second year embeddings for temporal comparison
 
-#### How to Use
-1. Open the **Viewport Selector** and choose a viewport
-2. Select **"Advanced Viewer"** from the viewer dropdown
-3. **Explore embeddings:**
-   - Panel 3/6: Click pixels to search for similar locations
-   - Adjust threshold slider for real-time filtering
-   - All panels stay synchronized as you pan/zoom
-4. **Analyze UMAP projection:**
-   - Panel 4 automatically shows 2D embedding space
-   - Colors reflect satellite RGB at each location
-   - Click UMAP points to highlight corresponding geographic locations
-5. **Compare temporal changes:**
-   - Select different year in Panel 6
-   - Panel 5 shows pixel-by-pixel embedding distance between years
-   - Blue = similar embeddings, Red = different embeddings
-6. **Create labels:**
-   - Click "💾 Save Current as Label" to save similarity search results
-   - Labels automatically color-code UMAP points
-   - Toggle visibility or delete as needed
+Key capabilities: one-click similarity search, real-time threshold control, persistent colored label overlays, cross-panel synchronized markers, UMAP visualization with satellite RGB coloring, temporal distance heatmap, and year-based label updates.
 
-#### Label Data
-- Labels are stored in **browser localStorage** — fully private, no data sent to server
-- Only metadata is persisted (source pixel, embedding, threshold, color, name); pixel coverage is recomputed on load
-- Survives page reloads — your labels are always preserved
-- Automatically refresh when switching years to track temporal changes
-
-#### Sharing Labels
-- Labels can be exported as a compact JSON file via the **Export Labels** button
-- The exported file contains each label's 128-dim embedding vector, threshold, and metadata — no pixel arrays
-- Share label files with collaborators via email or any file-sharing mechanism
-- Recipients import the file using the **Import** button; pixel coverage is recomputed locally from their own FAISS data
-- **Labels are portable across viewports**: a "bare ground" label created in one location will find bare-ground pixels in any other viewport, since the similarity search matches by embedding distance, not geographic coordinates
-- This enables collaborative workflows where one person defines land-cover categories and others apply them to different regions
+Labels are stored in browser localStorage (private, survive reloads). Labels can be exported/imported as compact JSON files for sharing — they are portable across viewports since matching uses embedding distance, not coordinates.
 
 ## Quick Start
 
@@ -109,8 +67,6 @@ The **Advanced Viewer** extends the standard viewer with a comprehensive 6-panel
 - ~5GB storage per viewport (varies by number of years)
 
 ### Option A: Docker Installation (Recommended)
-
-The easiest way to run TEE is with Docker:
 
 1. **Install Docker Desktop:**
    - Mac: `brew install --cask docker` or download from [docker.com](https://www.docker.com/products/docker-desktop/)
@@ -156,156 +112,217 @@ The easiest way to run TEE is with Docker:
    pip install -r requirements.txt
    ```
 
-4. **Set up GeoTessera authentication** (if needed):
-   - Create `.env` file with GeoTessera credentials
-   - Or export environment variables as needed
-
-### Usage
-
-1. **Start the web server:**
+4. **Start the server:**
    ```bash
-   python3 backend/web_server.py          # debug mode (default)
-   python3 backend/web_server.py --prod   # production mode (debug off)
+   bash restart.sh
    ```
-   Server runs on http://localhost:8001. Use `--port` and `--host` to override defaults.
+   Web server on http://localhost:8001, tile server on http://localhost:5125.
 
-2. **Open the viewport selector:**
-   Navigate to http://localhost:8001 in your browser
+5. **Create a viewport:** Open http://localhost:8001, click "+ Create New Viewport", search for a location or click the map, select years, and click Create.
 
-3. **Create a new viewport:**
-   - Click "+ Create New Viewport"
-   - **Option A:** Type a place name in the search box (e.g. "London") and select a result — the map pans, places the 5km preview box, and pre-fills the viewport name
-   - **Option B:** Enter coordinates directly (e.g. "51.5074, -0.1278") — works like Google Maps
-   - **Option C:** Click directly on the map to place the 5km preview box
-   - The box locks on click; click again elsewhere to reposition it
-   - Edit the viewport name if desired, select which years to download (default: 2024), and click "Create"
-   - Wait for automatic processing (downloading, RGB creation, pyramid building, FAISS indexing)
-   - Viewer automatically opens when complete
+## Deployment
 
-4. **Explore embeddings:**
-   - Use the year selector dropdown to switch between years
-   - Zoom and pan the embedding map
-   - Click pixels in explorer mode to find similar locations
-   - Adjust similarity threshold to see more/fewer results
+### Local vs Server
 
-## Project Structure
+| | Local (single machine) | Server (VM behind Apache) |
+|---|---|---|
+| Setup | `bash restart.sh` | `sudo bash deploy.sh` then `sudo bash restart.sh` |
+| User | Your user | `tee` system user |
+| Data | `~/data/` | `/home/tee/data/` |
+| Logs | `./logs/` | `/var/log/tee/` |
+| Binding | `0.0.0.0` (direct access) | `127.0.0.1` (Apache proxies) |
+| Tiles | Viewer talks to `:5125` directly | Apache proxies `/tiles` to `:5125` |
+| HTTPS | N/A | Apache handles TLS; set `TEE_HTTPS=1` |
 
+`restart.sh` auto-detects the environment: if a `tee` system user exists, services run as `tee` with server settings; otherwise they run as the current user in local mode. No code changes needed between server and laptop.
+
+### Local Development
+
+```bash
+bash restart.sh
+# Web server on http://localhost:8001, tile server on http://localhost:5125
 ```
-TEE/
-├── README.md                          # This file
-├── requirements.txt                   # Python dependencies
-├── Dockerfile                         # Docker container definition
-├── docker-compose.yml                 # Docker Compose configuration
-│
-├── deploy.sh                          # First-time VM setup (creates tee user, venv, dirs)
-├── restart.sh                         # Start/restart web + tile servers
-├── shutdown.sh                        # Stop all servers
-├── status.sh                          # Show project status (git, data, services)
-│
-├── public/                            # Web interface
-│   ├── viewer.html                    # Standard embedding viewer with map interface
-│   ├── experimental_viewer.html       # Advanced 6-panel viewer with UMAP & temporal analysis
-│   ├── viewport_selector.html         # Viewport creation and management
-│   └── README.md                      # Frontend documentation
-│
-├── backend/                           # Flask web server
-│   ├── web_server.py                  # API endpoints and server
-│   └── auth.py                        # Per-user authentication (passwd file + sessions)
-│
-├── scripts/                           # Management scripts
-│   └── manage_users.py                # Add/remove/list users for authentication
-│
-├── lib/                               # Python utilities
-│   ├── config.py                      # Centralized configuration (paths, env vars)
-│   ├── pipeline.py                    # Unified pipeline orchestration
-│   ├── viewport_utils.py              # Viewport file operations
-│   ├── viewport_writer.py             # Viewport configuration writer
-│   └── progress_tracker.py            # Progress tracking utilities
-│
-├── viewports/                         # Viewport configurations (user-created, gitignored)
-│   └── README.md                      # Viewport directory documentation
-│
-├── download_embeddings.py             # GeoTessera embedding downloader
-├── create_rgb_embeddings.py           # Convert embeddings to RGB
-├── create_pyramids.py                 # Build zoom-level pyramid structure
-├── create_faiss_index.py              # Build similarity search indices
-├── compute_umap.py                    # Compute UMAP projection
-├── compute_pca.py                     # Compute PCA projection
-├── setup_viewport.py                  # Orchestrate full workflow
-└── tile_server.py                     # Tile server for map visualization
+
+Data is stored in `~/data/` by default (override with `TEE_DATA_DIR`). Logs go to `./logs/`.
+
+For manual startup with options:
+```bash
+python3 backend/web_server.py          # debug mode (default)
+python3 backend/web_server.py --prod   # production mode (debug off)
+```
+Use `--port` and `--host` to override defaults.
+
+### Server Deployment (Behind Apache)
+
+**First-time setup:**
+```bash
+cd /opt
+sudo git clone https://github.com/sk818/TEE.git tee
+cd /opt/tee
+sudo bash deploy.sh          # Creates tee user, venv, data dirs
+sudo -u tee /opt/tee/venv/bin/python3 scripts/manage_users.py add admin
+sudo bash restart.sh          # Start services
+curl http://localhost:8001/health   # Verify
+```
+
+**Day-to-day operations:**
+```bash
+cd /opt/tee
+sudo git pull && sudo bash restart.sh   # Update and restart
+sudo bash shutdown.sh                    # Stop services
+bash status.sh                           # Check status
+tail -f /var/log/tee/web_server.log      # View logs
+```
+
+The viewer uses relative URLs, so it works identically behind a local or remote server. Configure your reverse proxy to forward:
+- `/` → Flask (port 8001) for the web server and API
+- `/tiles/` → tile server (port 5125) for map tiles
+
+When both servers are behind the same reverse proxy, no additional configuration is needed. See `deployment_plan.md` for full Apache configuration, firewall rules, and architecture details.
+
+## Authentication & User Management
+
+TEE supports optional per-user authentication. When enabled, unauthenticated users can browse in read-only **demo mode** with a **Login** button in the header. Logged-in users see their username, a **Change Password** button, and a **Logout** button.
+
+### Enabling Authentication
+
+Authentication is controlled by the presence of a `passwd` file in the data directory (`~/data/passwd`). If no passwd file exists, auth is disabled and all users have open access with no quota limits.
+
+### Managing Users
+
+Use the `manage_users.py` script (run with the venv Python so bcrypt is available):
+
+```bash
+# Add a user (prompts for password with confirmation)
+./venv/bin/python3 scripts/manage_users.py add admin
+
+# Add another user
+./venv/bin/python3 scripts/manage_users.py add alice
+
+# List all users
+./venv/bin/python3 scripts/manage_users.py list
+
+# Verify a user's password
+./venv/bin/python3 scripts/manage_users.py check admin
+
+# Remove a user
+./venv/bin/python3 scripts/manage_users.py remove alice
+```
+
+In Docker:
+```bash
+docker exec -it <container> python3 scripts/manage_users.py add admin
+```
+
+### Disabling Authentication
+
+Remove all users or delete the passwd file:
+```bash
+./venv/bin/python3 scripts/manage_users.py remove admin
+# or
+rm ~/data/passwd
+```
+When the last user is removed, the script deletes the passwd file automatically, returning to open access. No server restart is needed — the passwd file is re-read on every request.
+
+### The `admin` User
+
+The `admin` user has special privileges:
+- **No disk quota** — can create viewports without size limits
+- All other users are subject to a **2 GB disk quota** per user
+
+### Disk Quota
+
+Each non-admin user has a **2 GB disk quota** for viewport data. When creating a viewport, the server estimates the disk usage and rejects the request if it would exceed the quota. Delete existing viewports to free up space.
+
+### Changing Passwords
+
+Logged-in users can change their password via the **Password** button in the header. Passwords must be at least 6 characters.
+
+### HTTPS Session Cookies
+
+When deploying behind HTTPS, set `TEE_HTTPS=1` to mark session cookies as secure:
+```bash
+export TEE_HTTPS=1
+```
+
+## Configuration
+
+### Environment Variables
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `TEE_DATA_DIR` | `~/data` | Data directory (mosaics, pyramids, FAISS indices, passwd) |
+| `TEE_APP_DIR` | Project root | Application directory (auto-detected from `lib/config.py`) |
+| `TEE_HTTPS` | unset | Set to `1` to mark session cookies as `Secure` (for HTTPS) |
+| `GEOTESSERA_API_KEY` | — | GeoTessera API credentials (if required) |
+
+### Preset Viewports
+
+Modify `viewports/{name}.txt` to customize preset viewports:
+```
+name: My Viewport
+description: Optional description
+bounds: 77.55,13.0,77.57,13.02
 ```
 
 ## Data Pipeline
 
-The system processes satellite embeddings through five main stages with **parallel multi-year processing**:
+The system processes satellite embeddings through five main stages with **parallel multi-year processing**. All pipeline execution flows through `lib/pipeline.py::PipelineRunner`, providing consistent behavior for both web-based and CLI entry points.
 
-### Unified Orchestration (lib/pipeline.py)
+### CLI One-Liner
 
-All pipeline execution flows through `lib/pipeline.py::PipelineRunner`, providing a single source of truth for:
-- Both web-based viewport creation (`api_create_viewport`)
-- Command-line setup (`setup_viewport.py`)
-- Consistent error handling and verification across entry points
+```bash
+./venv/bin/python3 setup_viewport.py --years 2023,2024,2025 --umap-year 2024
+```
 
-### Pipeline Stages (Parallel Per-Year)
+This runs the full pipeline: download → RGB → pyramids → FAISS → UMAP.
 
-Each stage processes **all selected years in parallel** through single script calls:
+Or use the web interface: `bash restart.sh`, open http://localhost:8001, click "+ Create New Viewport", select years and click Create. Processing runs in the background with status tracking.
 
-### 1. Download Embeddings
+### Pipeline Stages
+
+Each stage processes **all selected years in parallel**:
+
+#### 1. Download Embeddings
 ```bash
 python3 download_embeddings.py --years 2017,2021,2025
 ```
-- Connects to GeoTessera
-- Downloads Sentinel-2 embeddings for selected years (in parallel)
+- Downloads Sentinel-2 embeddings from GeoTessera (all years concurrently)
 - Saves as GeoTIFF files in `~/data/mosaics/`
-- ✓ Multi-year support: Downloads all years concurrently
 
-### 2. Create RGB Visualizations
+#### 2. Create RGB Visualizations
 ```bash
 python3 create_rgb_embeddings.py
 ```
-- Converts 512D embeddings to RGB using PCA
-- Processes all downloaded years in parallel
+- Converts 128D embeddings to RGB using the first 3 bands
 - Outputs to `~/data/mosaics/rgb/`
 
-### 3. Build Pyramid Structure
+#### 3. Build Pyramid Structure
 ```bash
 python3 create_pyramids.py
 ```
-- Creates multi-level zoom pyramids (0-5) for all years
-- Each level is 3× upscaled with nearest-neighbor resampling to preserve crisp 10m embedding boundaries
-- Enables efficient web-based viewing
-- **✓ Viewer becomes available** once ANY year has pyramids
+- Creates multi-level zoom pyramids (0-5) with 3x nearest-neighbor upscaling
+- **Viewer becomes available** once ANY year has pyramids
 - Output: `~/data/pyramids/{viewport}/{year}/`
 
-### 4. Create FAISS Indices
+#### 4. Create FAISS Indices
 ```bash
 python3 create_faiss_index.py
 ```
 - Builds vector similarity search indices for all years
-- Year-specific indices for temporal coherence
-- Enables fast similarity queries
-- **✓ Labeling controls become available** once ANY year has FAISS
+- **Labeling controls become available** once ANY year has FAISS
 - Output: `~/data/faiss_indices/{viewport}/{year}/`
 
-### 5. Compute UMAP (Optional)
+#### 5. Compute UMAP (Optional)
 ```bash
 python3 compute_umap.py {viewport_name} {year}
 ```
-- Computes 2D UMAP projection from first completed year
-- Used by Advanced Viewer for visualization (Panel 4)
-- Takes 1-2 minutes for 264K embeddings
-- **✓ UMAP visualization becomes available** once computed
+- Computes 2D UMAP projection (~1-2 min for 264K embeddings)
+- Used by the 6-panel layout (Panel 4)
+- **UMAP visualization becomes available** once computed
 - Output: `~/data/faiss_indices/{viewport}/{year}/umap_coords.npy`
 
-### 6. View in Browser
-- Pyramid tiles served at http://localhost:5125
-- Embeddings displayed in interactive viewer
-- Similarity search uses FAISS indices
-- Advanced Viewer shows UMAP with automatic computation on first load
-
 ### Incremental Feature Availability
-
-Features become available progressively as processing completes:
 
 | Stage | Feature | Available When |
 |-------|---------|-----------------|
@@ -313,105 +330,11 @@ Features become available progressively as processing completes:
 | After Stage 4 (FAISS) | Labeling/similarity search | ANY year has FAISS index |
 | After Stage 5 (UMAP) | UMAP visualization (Panel 4) | UMAP computed for any year |
 
-## Workflow: Complete Setup with UMAP
-
-For a complete end-to-end setup with UMAP visualization (CLI mode):
-
-```bash
-./venv/bin/python3 setup_viewport.py --years 2023,2024,2025 --umap-year 2024
-```
-
-This orchestrates through unified pipeline (`lib/pipeline.py`):
-1. Download embeddings for 2023, 2024, 2025 (in parallel)
-2. Create RGB visualizations for all years
-3. Build pyramid tiles for all years (**viewer available after this**)
-4. Create FAISS indices for each year (**labeling available after this**)
-5. Compute UMAP for 2024 (**UMAP visualization available after this**)
-6. Output summary of created data
-
-Or use the web interface:
-```bash
-bash restart.sh
-# Open http://localhost:8001
-# Click "+ Create New Viewport"
-# Select years and click Create
-# Processing happens in background with status tracking
-# Viewer automatically switches on when pyramids are ready
-```
-
-### Web-Based Viewport Creation
-
-When creating a viewport through the web interface:
-1. **api_create_viewport()** calls **trigger_data_download_and_processing()**
-2. Full pipeline (`PipelineRunner`) runs in background
-3. Status is tracked and accessible via `/api/operations/pipeline-status/{viewport_name}`
-4. **Viewer only monitors** - it does NOT initiate any processes
-5. Features become available progressively as each stage completes
-
-### Key Architectural Change
-
-**Single Source of Truth**: All pipeline logic is now in `lib/pipeline.py::PipelineRunner`, used by:
-- Web-based viewport creation
-- Command-line `setup_viewport.py`
-- Manual API calls
-
-This ensures consistent behavior regardless of entry point.
-
-## Pipeline Architecture
-
-### Unified Orchestration System
-
-TEE uses a unified pipeline orchestration system (`lib/pipeline.py`) that ensures consistent processing regardless of entry point:
-
-```
-┌─ Web UI (api_create_viewport)     ─┐
-│                                    │
-├─ CLI (setup_viewport.py)           ├─→ PipelineRunner.run_full_pipeline()
-│                                    │   ├─ Download embeddings
-│  All entry points converge on      │   ├─ Create RGB
-│  single pipeline implementation    │   ├─ Create pyramids ← Viewer available
-│                                    │   ├─ Create FAISS ← Labeling available
-└─ Direct API calls                  ┘   └─ Compute UMAP ← UMAP available
-```
-
-### Key Design Principles
-
-1. **Single Source of Truth**: All pipeline logic in `lib/pipeline.py`
-2. **Incremental Feature Availability**: Features activate as soon as their dependencies complete
-3. **Monitoring Only**: Viewer monitors pipeline progress but never initiates processes
-4. **Parallel Multi-Year Processing**: All stages process multiple years in parallel
-5. **Robust Error Tracking**: All stages track success/failure with detailed error messages
-
 ### Status Tracking
 
-Pipeline status is tracked in memory via operation_id: `{viewport_name}_full_pipeline`
-
-```
-Status values:
-- 'starting': Pipeline initializing
-- 'success': All stages completed successfully
-- 'failed': One or more stages failed
-
-Current stage tracking:
-- 'downloading_embeddings'
-- 'creating_rgb'
-- 'creating_pyramids'
-- 'creating_faiss'
-- 'complete' (or 'exception'/'timeout' on error)
-```
-
-Check status via:
+Check pipeline status via:
 ```bash
 curl http://localhost:8001/api/operations/pipeline-status/{viewport_name}
-```
-
-Response includes:
-```json
-{
-  "status": "success",
-  "current_stage": "complete",
-  "error": null
-}
 ```
 
 ## API Reference
@@ -489,149 +412,51 @@ Content-Type: application/json
 {"current_password": "old", "new_password": "new"}
 ```
 
-## Deployment
+## Project Structure
 
-### Local Development
-
-Start both servers locally:
-```bash
-bash restart.sh
-# Web server on http://localhost:8001, tile server on http://localhost:5125
 ```
-
-Data is stored in `~/data/` by default (override with `TEE_DATA_DIR`).
-
-### VM Deployment (Behind Apache)
-
-For deployment on a public-facing VM behind Apache reverse proxy:
-
-**First-time setup:**
-```bash
-cd /opt
-sudo git clone https://github.com/sk818/TEE.git tee
-cd /opt/tee
-sudo bash deploy.sh          # Creates tee user, venv, data dirs
-sudo -u tee /opt/tee/venv/bin/python3 scripts/manage_users.py add admin
-sudo bash restart.sh          # Start services
-curl http://localhost:8001/health   # Verify
-```
-
-**Day-to-day operations:**
-```bash
-cd /opt/tee
-sudo git pull && sudo bash restart.sh   # Update and restart
-sudo bash shutdown.sh                    # Stop services
-bash status.sh                           # Check status
-tail -f /var/log/tee/web_server.log      # View logs
-```
-
-`restart.sh` auto-detects the environment: if a `tee` system user exists, services run as `tee`; otherwise they run as the current user. No code changes needed between server and laptop.
-
-See `deployment_plan.md` for full Apache configuration, firewall rules, and architecture details.
-
-### Remote Server (HTTPS)
-
-The viewer uses relative URLs, so it works identically behind a local or remote server. Configure your reverse proxy to forward:
-- `/` → Flask (port 8001) for the web server and API
-- `/tiles/` → tile server (port 5125) for map tiles
-
-When both servers are behind the same reverse proxy, no additional configuration is needed.
-
-### Architecture: Client-Server Separation
-
-The viewer is a single HTML file (`public/viewer.html`) that can be served from any web server or CDN. It communicates with the backend via:
-
-| Endpoint | Purpose | Direction |
-|----------|---------|-----------|
-| `/api/*` | Viewport management, pipeline status | Client → Web server |
-| `/api/faiss-data/...` | One-time FAISS data download (~130MB) | Client → Web server |
-| `${TILE_SERVER}/tiles/...` | Map tile images | Client → Tile server |
-
-After the initial FAISS data download (cached in IndexedDB), similarity search and labeling run entirely in the browser with no further server communication.
-
-## Authentication & User Management
-
-TEE supports optional per-user authentication. When enabled, unauthenticated users can browse in read-only **demo mode** with a **Login** button in the header. Logged-in users see their username, a **Change Password** button, and a **Logout** button in the header of both the viewport selector and viewer.
-
-### Enabling Authentication
-
-Authentication is controlled by the presence of a `passwd` file in the data directory (`~/data/passwd`). If no passwd file exists, auth is disabled and all users have open access with no quota limits.
-
-### Managing Users
-
-Use the `manage_users.py` script (run with the venv Python so bcrypt is available):
-
-```bash
-# Add a user (prompts for password with confirmation)
-./venv/bin/python3 scripts/manage_users.py add admin
-
-# Add another user
-./venv/bin/python3 scripts/manage_users.py add alice
-
-# List all users
-./venv/bin/python3 scripts/manage_users.py list
-
-# Verify a user's password
-./venv/bin/python3 scripts/manage_users.py check admin
-
-# Remove a user
-./venv/bin/python3 scripts/manage_users.py remove alice
-```
-
-In Docker:
-```bash
-docker exec -it <container> python3 scripts/manage_users.py add admin
-```
-
-### Disabling Authentication
-
-Remove all users or delete the passwd file:
-```bash
-./venv/bin/python3 scripts/manage_users.py remove admin
-# or
-rm ~/tee_data/passwd
-```
-When the last user is removed, the script deletes the passwd file automatically, returning to open access. No server restart is needed — the passwd file is re-read on every request.
-
-### The `admin` User
-
-The `admin` user has special privileges:
-- **No disk quota** — can create viewports without size limits
-- All other users are subject to a **2 GB disk quota** per user
-
-### Disk Quota
-
-Each non-admin user has a **2 GB disk quota** for viewport data. When creating a viewport, the server estimates the disk usage and rejects the request if it would exceed the quota. Delete existing viewports to free up space.
-
-### Changing Passwords
-
-Logged-in users can change their password via the **Password** button in the header, which opens a modal dialog. This calls `POST /api/auth/change-password` with the current and new passwords. Passwords must be at least 6 characters.
-
-### HTTPS Session Cookies
-
-When deploying behind HTTPS, set `TEE_HTTPS=1` to mark session cookies as secure:
-```bash
-export TEE_HTTPS=1
-```
-
-## Configuration
-
-### Environment Variables
-
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `TEE_DATA_DIR` | `~/data` | Data directory (mosaics, pyramids, FAISS indices, passwd) |
-| `TEE_APP_DIR` | Project root | Application directory (auto-detected from `lib/config.py`) |
-| `TEE_HTTPS` | unset | Set to `1` to mark session cookies as `Secure` (for HTTPS) |
-| `GEOTESSERA_API_KEY` | — | GeoTessera API credentials (if required) |
-
-### Preset Viewports
-
-Modify `viewports/{name}.txt` to customize preset viewports:
-```
-name: My Viewport
-description: Optional description
-bounds: 77.55,13.0,77.57,13.02
+TEE/
+├── README.md                          # This file
+├── requirements.txt                   # Python dependencies
+├── Dockerfile                         # Docker container definition
+├── docker-compose.yml                 # Docker Compose configuration
+│
+├── deploy.sh                          # First-time VM setup (creates tee user, venv, dirs)
+├── restart.sh                         # Start/restart web + tile servers
+├── shutdown.sh                        # Stop all servers
+├── status.sh                          # Show project status (git, data, services)
+│
+├── public/                            # Web interface
+│   ├── viewer.html                    # Embedding viewer (3-panel and 6-panel layouts)
+│   ├── viewport_selector.html         # Viewport creation and management
+│   ├── login.html                     # Login page
+│   └── README.md                      # Frontend documentation
+│
+├── backend/                           # Flask web server
+│   ├── web_server.py                  # API endpoints and server
+│   └── auth.py                        # Per-user authentication (passwd file + sessions)
+│
+├── scripts/                           # Management scripts
+│   └── manage_users.py                # Add/remove/list users for authentication
+│
+├── lib/                               # Python utilities
+│   ├── config.py                      # Centralized configuration (paths, env vars)
+│   ├── pipeline.py                    # Unified pipeline orchestration
+│   ├── viewport_utils.py              # Viewport file operations
+│   ├── viewport_writer.py             # Viewport configuration writer
+│   └── progress_tracker.py            # Progress tracking utilities
+│
+├── viewports/                         # Viewport configurations (user-created, gitignored)
+│   └── README.md                      # Viewport directory documentation
+│
+├── download_embeddings.py             # GeoTessera embedding downloader
+├── create_rgb_embeddings.py           # Convert embeddings to RGB
+├── create_pyramids.py                 # Build zoom-level pyramid structure
+├── create_faiss_index.py              # Build similarity search indices
+├── compute_umap.py                    # Compute UMAP projection
+├── compute_pca.py                     # Compute PCA projection
+├── setup_viewport.py                  # Orchestrate full workflow
+└── tile_server.py                     # Tile server for map visualization
 ```
 
 ## Development
@@ -645,13 +470,6 @@ python3 download_embeddings.py --years 2023,2024
 
 **Process single viewport:**
 Set the active viewport first, then run pipeline scripts.
-
-### Performance Notes
-
-- **Memory**: ~550MB steady state, ~850MB peak during pipeline processing
-- **Storage**: ~150-300MB per year per viewport
-- **Processing**: 10-30 minutes per year depending on viewport size
-- **Pyramid tiles**: ~500MB-1GB per year
 
 ## Troubleshooting
 
@@ -677,24 +495,13 @@ Set the active viewport first, then run pipeline scripts.
 - Confirm pyramids exist for that year
 - Check that FAISS index was built
 
-## Key Files
+## Performance
 
-| File | Purpose |
-|------|---------|
-| `setup_viewport.py` | Orchestrate complete workflow (download → FAISS → UMAP) |
-| `download_embeddings.py` | Download Tessera embeddings for selected years |
-| `create_rgb_embeddings.py` | Generate RGB preview from embeddings |
-| `create_pyramids.py` | Build pyramid tile structure for web viewing |
-| `create_faiss_index.py` | Create similarity search indices |
-| `compute_umap.py` | Compute 2D UMAP projection for Advanced Viewer (Panel 4) |
-| `backend/web_server.py` | Flask API and viewport management |
-| `public/viewer.html` | Standard embedding viewer |
-| `public/experimental_viewer.html` | Advanced 6-panel viewer with UMAP & temporal analysis |
-| `public/viewport_selector.html` | Viewport creation interface |
+**Memory & storage:**
+- ~550MB steady state, ~850MB peak during pipeline processing
+- ~150-300MB per year per viewport for embeddings; ~500MB-1GB per year for pyramid tiles
 
-## Performance Benchmarks
-
-Typical processing times on standard hardware:
+**Typical processing times:**
 
 | Stage | Time (per year) | Notes |
 |-------|-----------------|-------|
@@ -704,12 +511,7 @@ Typical processing times on standard hardware:
 | Create FAISS index | 5-15 min | All years process in parallel |
 | **Total** | **17-45 min** | Same time for 1 year or 8 years |
 
-**Parallel Processing**: Multiple years are downloaded and processed concurrently. The total time is approximately the same whether you request 1 year or 8 years (limited by the slowest stage).
-
-**Incremental Availability**: You don't need to wait for all years - features become available as each year completes:
-- Viewer available after first year completes Stage 3 (pyramids)
-- Labeling available after first year completes Stage 4 (FAISS)
-- UMAP available once computed (typically ~1-2 min)
+Multiple years are downloaded and processed concurrently — total time is approximately the same whether you request 1 year or 8 years. Features become available incrementally as each stage completes (see [Incremental Feature Availability](#incremental-feature-availability)).
 
 ## License
 
