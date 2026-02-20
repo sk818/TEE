@@ -1,6 +1,6 @@
 # TEE: Tessera Embeddings Explorer
 
-**Version 1.2.0** | [Docker Hub](https://hub.docker.com/r/sk818/tee)
+**Version 2.0.0** | [Docker Hub](https://hub.docker.com/r/sk818/tee)
 
 A system for downloading, processing, and visualizing Sentinel-2 satellite embeddings (2017-2025) with an interactive web interface.
 
@@ -35,6 +35,7 @@ TEE integrates geospatial data processing with deep learning embeddings to creat
 - **Click-to-lock preview box** — 5km box follows the mouse, locks on click, repositionable
 - Multi-year processing with progress tracking
 - Automatic navigation to viewer after processing
+- **Full cleanup on cancel/delete** — removes mosaics, pyramids, FAISS indices, and cached embeddings tiles; shared tiles used by other viewports are preserved
 
 ### Explorer Mode (Client-Side Search)
 - Click pixels on the embedding map to extract embeddings
@@ -74,8 +75,8 @@ Labels are stored in browser localStorage (private, survive reloads). Labels can
 
 2. **Pull and run from Docker Hub (easiest):**
    ```bash
-   docker pull sk818/tee:1.2.0
-   docker run -p 8001:8001 -v ~/tee_data:/data sk818/tee:1.2.0
+   docker pull sk818/tee:2.0.0
+   docker run -p 8001:8001 -v ~/tee_data:/data sk818/tee:2.0.0
    ```
 
    **Or build from source:**
@@ -479,6 +480,11 @@ Set the active viewport first, then run pipeline scripts.
 
 ### Tile server not responding
 - If map tiles fail to load, restart both servers: `bash restart.sh`
+
+### Disk space not reclaimed after deleting a viewport
+- Cancelling or deleting a viewport now automatically cleans up cached embeddings tiles in `~/data/embeddings/`
+- Tiles shared with other viewports are preserved
+- To manually clear all embeddings caches (when no viewports need them): `rm -rf ~/data/embeddings/global_0.1_degree_representation/`
 
 ### No data appears in viewer
 - Verify pyramids exist: `ls ~/data/pyramids/{viewport}/{year}/`
