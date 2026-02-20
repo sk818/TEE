@@ -2185,13 +2185,17 @@
                 select.value = '3';
             }
 
-            // Leaflet maps need invalidateSize() after container resize
+            // Leaflet maps and Three.js scene need resize after container resize
             setTimeout(() => {
                 Object.values(maps).forEach(map => {
                     if (map && map.invalidateSize) {
                         map.invalidateSize();
                     }
                 });
+                // Resize Three.js scene (Panel 4)
+                if (umapCanvasLayer && umapCanvasLayer.resize) {
+                    umapCanvasLayer.resize();
+                }
             }, 350);  // Wait for CSS transition
 
             // Save preference
