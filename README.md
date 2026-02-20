@@ -119,15 +119,15 @@ The easiest way to run TEE is with Docker:
 2. **Pull and run from Docker Hub (easiest):**
    ```bash
    docker pull sk818/tee:1.2.0
-   docker run -p 8001:8001 -v ~/blore_data:/data sk818/tee:1.2.0
+   docker run -p 8001:8001 -v ~/tee_data:/data sk818/tee:1.2.0
    ```
 
    **Or build from source:**
    ```bash
-   git clone https://github.com/sk818/TEE.git blore
-   cd blore
+   git clone https://github.com/sk818/TEE.git tee
+   cd tee
    docker build -t tee .
-   docker run -p 8001:8001 -v ~/blore_data:/data tee
+   docker run -p 8001:8001 -v ~/tee_data:/data tee
    ```
 
    **Or with docker-compose:**
@@ -141,8 +141,8 @@ The easiest way to run TEE is with Docker:
 
 1. **Clone the repository:**
    ```bash
-   git clone https://github.com/sk818/TEE.git blore
-   cd blore
+   git clone https://github.com/sk818/TEE.git tee
+   cd tee
    ```
 
 2. **Create and activate virtual environment:**
@@ -191,11 +191,16 @@ The easiest way to run TEE is with Docker:
 ## Project Structure
 
 ```
-blore/
+TEE/
 ├── README.md                          # This file
 ├── requirements.txt                   # Python dependencies
 ├── Dockerfile                         # Docker container definition
 ├── docker-compose.yml                 # Docker Compose configuration
+│
+├── deploy.sh                          # First-time VM setup (creates tee user, venv, dirs)
+├── restart.sh                         # Start/restart web + tile servers
+├── shutdown.sh                        # Stop all servers
+├── status.sh                          # Show project status (git, data, services)
 │
 ├── public/                            # Web interface
 │   ├── viewer.html                    # Standard embedding viewer with map interface
@@ -251,7 +256,7 @@ python3 download_embeddings.py --years 2017,2021,2025
 ```
 - Connects to GeoTessera
 - Downloads Sentinel-2 embeddings for selected years (in parallel)
-- Saves as GeoTIFF files in `blore_data/mosaics/`
+- Saves as GeoTIFF files in `~/data/mosaics/`
 - ✓ Multi-year support: Downloads all years concurrently
 
 ### 2. Create RGB Visualizations
@@ -260,7 +265,7 @@ python3 create_rgb_embeddings.py
 ```
 - Converts 512D embeddings to RGB using PCA
 - Processes all downloaded years in parallel
-- Outputs to `blore_data/mosaics/rgb/`
+- Outputs to `~/data/mosaics/rgb/`
 
 ### 3. Build Pyramid Structure
 ```bash
@@ -270,7 +275,7 @@ python3 create_pyramids.py
 - Each level is 3× upscaled with nearest-neighbor resampling to preserve crisp 10m embedding boundaries
 - Enables efficient web-based viewing
 - **✓ Viewer becomes available** once ANY year has pyramids
-- Output: `blore_data/pyramids/{viewport}/{year}/`
+- Output: `~/data/pyramids/{viewport}/{year}/`
 
 ### 4. Create FAISS Indices
 ```bash
@@ -280,7 +285,7 @@ python3 create_faiss_index.py
 - Year-specific indices for temporal coherence
 - Enables fast similarity queries
 - **✓ Labeling controls become available** once ANY year has FAISS
-- Output: `blore_data/faiss_indices/{viewport}/{year}/`
+- Output: `~/data/faiss_indices/{viewport}/{year}/`
 
 ### 5. Compute UMAP (Optional)
 ```bash
@@ -290,7 +295,7 @@ python3 compute_umap.py {viewport_name} {year}
 - Used by Advanced Viewer for visualization (Panel 4)
 - Takes 1-2 minutes for 264K embeddings
 - **✓ UMAP visualization becomes available** once computed
-- Output: `blore_data/faiss_indices/{viewport}/{year}/umap_coords.npy`
+- Output: `~/data/faiss_indices/{viewport}/{year}/umap_coords.npy`
 
 ### 6. View in Browser
 - Pyramid tiles served at http://localhost:5125
@@ -494,26 +499,43 @@ bash restart.sh
 # Web server on http://localhost:8001, tile server on http://localhost:5125
 ```
 
-### Remote Server (HTTPS)
+Data is stored in `~/data/` by default (override with `TEE_DATA_DIR`).
 
-The viewer (`viewer.html`) works identically against local or remote servers. All API calls use relative URLs, so the viewer automatically adapts to the serving origin.
+### VM Deployment (Behind Apache)
 
-**With Apache/Nginx reverse proxy + Gunicorn:**
+For deployment on a public-facing VM behind Apache reverse proxy:
+
+**First-time setup:**
 ```bash
-# Start the web server with tile server URL pointing to your domain
-gunicorn backend.web_server:app --bind 0.0.0.0:8001 \
-  --env TILE_SERVER_URL=https://your-domain.com
-
-# Or pass via CLI flag
-python3 backend/web_server.py --tile-server https://your-domain.com
+cd /opt
+sudo git clone https://github.com/sk818/TEE.git tee
+cd /opt/tee
+sudo bash deploy.sh          # Creates tee user, venv, data dirs
+sudo -u tee /opt/tee/venv/bin/python3 scripts/manage_users.py add admin
+sudo bash restart.sh          # Start services
+curl http://localhost:8001/health   # Verify
 ```
 
-Configure your reverse proxy to forward:
-- `/` → Gunicorn (port 8001) for the web server and API
-- `/tiles/` → tile server (port 5125) for map tiles
-- `/health` → tile server health check
+**Day-to-day operations:**
+```bash
+cd /opt/tee
+sudo git pull && sudo bash restart.sh   # Update and restart
+sudo bash shutdown.sh                    # Stop services
+bash status.sh                           # Check status
+tail -f logs/web_server.log              # View logs
+```
 
-When `--tile-server` is not set, the client defaults to the page's own origin (`window.location.origin`), which works when both web and tile servers are behind the same reverse proxy.
+`restart.sh` auto-detects the environment: if a `tee` system user exists, services run as `tee`; otherwise they run as the current user. No code changes needed between server and laptop.
+
+See `deployment_plan.md` for full Apache configuration, firewall rules, and architecture details.
+
+### Remote Server (HTTPS)
+
+The viewer uses relative URLs, so it works identically behind a local or remote server. Configure your reverse proxy to forward:
+- `/` → Flask (port 8001) for the web server and API
+- `/tiles/` → tile server (port 5125) for map tiles
+
+When both servers are behind the same reverse proxy, no additional configuration is needed.
 
 ### Architecture: Client-Server Separation
 
@@ -533,7 +555,7 @@ TEE supports optional per-user authentication. When enabled, unauthenticated use
 
 ### Enabling Authentication
 
-Authentication is controlled by the presence of a `passwd` file in the data directory (`blore_data/passwd`). If no passwd file exists, auth is disabled and all users have open access with no quota limits.
+Authentication is controlled by the presence of a `passwd` file in the data directory (`~/data/passwd`). If no passwd file exists, auth is disabled and all users have open access with no quota limits.
 
 ### Managing Users
 
@@ -567,7 +589,7 @@ Remove all users or delete the passwd file:
 ```bash
 ./venv/bin/python3 scripts/manage_users.py remove admin
 # or
-rm ~/blore_data/passwd
+rm ~/tee_data/passwd
 ```
 When the last user is removed, the script deletes the passwd file automatically, returning to open access. No server restart is needed — the passwd file is re-read on every request.
 
@@ -596,15 +618,12 @@ export TEE_HTTPS=1
 
 ### Environment Variables
 
-Create a `.env` file in the project root:
-```env
-# GeoTessera API credentials (if required)
-GEOTESSERA_API_KEY=your_api_key
-
-# Server ports
-WEB_SERVER_PORT=8001
-TILE_SERVER_PORT=5125
-```
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `TEE_DATA_DIR` | `~/data` | Data directory (mosaics, pyramids, FAISS indices, passwd) |
+| `TEE_APP_DIR` | Project root | Application directory (auto-detected from `lib/config.py`) |
+| `TEE_HTTPS` | unset | Set to `1` to mark session cookies as `Secure` (for HTTPS) |
+| `GEOTESSERA_API_KEY` | — | GeoTessera API credentials (if required) |
 
 ### Preset Viewports
 
@@ -627,15 +646,9 @@ python3 download_embeddings.py --years 2023,2024
 **Process single viewport:**
 Set the active viewport first, then run pipeline scripts.
 
-### Development Scripts
-
-- **save.sh** - Backup viewport data and FAISS indices
-- **restore.sh** - Restore from backup
-- **restart.sh** - Restart web and tile servers
-
 ### Performance Notes
 
-- **Memory**: FAISS indices loaded on-demand (~2-3GB per year)
+- **Memory**: ~550MB steady state, ~850MB peak during pipeline processing
 - **Storage**: ~150-300MB per year per viewport
 - **Processing**: 10-30 minutes per year depending on viewport size
 - **Pyramid tiles**: ~500MB-1GB per year
@@ -650,8 +663,8 @@ Set the active viewport first, then run pipeline scripts.
 - If map tiles fail to load, restart both servers: `bash restart.sh`
 
 ### No data appears in viewer
-- Verify pyramids exist: `ls blore_data/pyramids/{viewport}/{year}/`
-- Check FAISS indices: `ls blore_data/faiss_indices/{viewport}/{year}/`
+- Verify pyramids exist: `ls ~/data/pyramids/{viewport}/{year}/`
+- Check FAISS indices: `ls ~/data/faiss_indices/{viewport}/{year}/`
 - Re-run `create_pyramids.py` or `create_faiss_index.py` as needed
 
 ### Slow similarity search
@@ -660,7 +673,7 @@ Set the active viewport first, then run pipeline scripts.
 - Process fewer years per viewport
 
 ### Year doesn't appear in dropdown
-- Verify embeddings were downloaded: `ls blore_data/mosaics/*_{year}.tif`
+- Verify embeddings were downloaded: `ls ~/data/mosaics/*_{year}.tif`
 - Confirm pyramids exist for that year
 - Check that FAISS index was built
 
@@ -718,8 +731,8 @@ MIT License - See LICENSE file for details
 
 For issues or questions:
 1. Check the troubleshooting section
-2. Review server logs: `backend/web_server.log`
-3. Verify data files exist in `blore_data/`
+2. Review server logs: `logs/web_server.log` and `logs/tile_server.log`
+3. Verify data files exist in `~/data/`
 4. Check browser console for JavaScript errors
 
 ## Citation

@@ -1,31 +1,29 @@
 #!/bin/bash
 ##
-# Shutdown the Blore Viewport Manager Web Server
-#
-# Cleanly stops any running web servers.
+# Shut down all TEE services (web server + tile server).
 ##
 
-echo "🛑 Shutting down Blore Viewport Manager Web Server..."
-echo ""
+echo "Shutting down TEE services..."
 
 STOPPED=false
 
-# Kill any Python processes running the web server
-if pkill -f "python.*backend/web_server.py" 2>/dev/null; then
-    echo "✓ Stopped Python web server process"
-    STOPPED=true
-fi
+for pattern in "python.*backend/web_server.py" "python.*tile_server.py" \
+               "gunicorn.*backend.web_server" "gunicorn.*tile_server"; do
+    if pkill -f "$pattern" 2>/dev/null; then
+        echo "  Stopped: $pattern"
+        STOPPED=true
+    fi
+done
 
-# Kill any processes using port 8001
-if lsof -ti:8001 2>/dev/null | xargs kill -9 2>/dev/null; then
-    echo "✓ Freed port 8001"
-    STOPPED=true
-fi
+for port in 8001 5125; do
+    if lsof -ti:$port 2>/dev/null | xargs kill -9 2>/dev/null; then
+        echo "  Freed port $port"
+        STOPPED=true
+    fi
+done
 
 if [ "$STOPPED" = true ]; then
-    echo ""
-    echo "✅ Web server shut down successfully"
+    echo "All services stopped."
 else
-    echo ""
-    echo "⚠️  No running web server found"
+    echo "No running services found."
 fi

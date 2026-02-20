@@ -5,7 +5,7 @@
 #   docker-compose logs -f      # View logs
 #   docker-compose down         # Stop
 #
-# Data is persisted in ~/blore_data on the host
+# Data is persisted in ~/tee_data on the host
 
 services:
   web:
@@ -13,7 +13,7 @@ services:
     ports:
       - "8001:8001"
     volumes:
-      - ~/blore_data:/data
+      - ~/tee_data:/data
       - ./viewports:/app/viewports
     environment:
       - TEE_DATA_DIR=/data
@@ -28,11 +28,11 @@ services:
 
   tiles:
     build: .
-    command: ["gunicorn", "-w", "1", "--threads", "4", "-b", "0.0.0.0:5125", "tile_server:app"]
+    command: ["python3", "tile_server.py", "--prod", "--host", "0.0.0.0", "--port", "5125"]
     ports:
       - "5125:5125"
     volumes:
-      - ~/blore_data:/data
+      - ~/tee_data:/data
     environment:
       - TEE_DATA_DIR=/data
       - TEE_APP_DIR=/app

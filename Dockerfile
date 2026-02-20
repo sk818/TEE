@@ -1,7 +1,7 @@
 # TEE (Tessera Embeddings Explorer) Docker Image
 #
 # Build: docker build -t tee .
-# Run:   docker run -p 8001:8001 -v ~/blore_data:/data tee
+# Run:   docker run -p 8001:8001 -v ~/tee_data:/data tee
 #
 # Environment variables:
 #   TEE_DATA_DIR - Data directory (default: /data)
@@ -42,4 +42,4 @@ HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
     CMD curl -f http://localhost:8001/health || exit 1
 
 # Run the web server
-CMD ["gunicorn", "-w", "1", "--threads", "4", "-b", "0.0.0.0:8001", "backend.web_server:app"]
+CMD ["python3", "backend/web_server.py", "--prod", "--host", "0.0.0.0", "--port", "8001"]

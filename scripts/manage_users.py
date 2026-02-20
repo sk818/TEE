@@ -20,7 +20,7 @@ from pathlib import Path
 import bcrypt
 
 # Resolve data directory same way as lib/config.py
-DATA_DIR = Path(os.environ.get('TEE_DATA_DIR', Path.home() / 'blore_data'))
+DATA_DIR = Path(os.environ.get('TEE_DATA_DIR', Path.home() / 'data'))
 PASSWD_FILE = DATA_DIR / 'passwd'
 
 

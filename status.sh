@@ -1,66 +1,55 @@
 #!/bin/bash
 
-# Blore Project Status Script
-# Quickly shows backup and sync status
+# TEE Project Status Script
 
-echo "📊 Blore Project Status"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+# Resolve data directory (same logic as lib/config.py)
+if [ -n "$TEE_DATA_DIR" ]; then
+    DATA_DIR="$TEE_DATA_DIR"
+elif id tee >/dev/null 2>&1; then
+    DATA_DIR="/home/tee/data"
+else
+    DATA_DIR="$HOME/data"
+fi
+
+echo "TEE Project Status"
 echo "========================"
 echo ""
 
 # Git status
 echo "Git Repository:"
-echo "  Branch: $(git branch --show-current)"
-echo "  Status: $(if git diff --quiet && git diff --cached --quiet; then echo "✓ Clean"; else echo "⚠️  Changes pending"; fi)"
-echo "  Size: $(du -sh .git | cut -f1)"
+echo "  Branch: $(cd "$SCRIPT_DIR" && git branch --show-current 2>/dev/null || echo 'N/A')"
+echo "  Status: $(cd "$SCRIPT_DIR" && if git diff --quiet && git diff --cached --quiet; then echo 'Clean'; else echo 'Changes pending'; fi 2>/dev/null)"
 echo ""
 
 # Data directories
-DATA_DIR="$HOME/blore_data"
-echo "Local Data (~/blore_data):"
+echo "Data ($DATA_DIR):"
 if [ -d "$DATA_DIR" ]; then
-    echo "  mosaics:      $(du -sh "$DATA_DIR/mosaics" 2>/dev/null | cut -f1 || echo "not found")"
-    echo "  embeddings:   $(du -sh "$DATA_DIR/embeddings" 2>/dev/null | cut -f1 || echo "not found")"
-    echo "  pyramids:     $(du -sh "$DATA_DIR/pyramids" 2>/dev/null | cut -f1 || echo "not found")"
+    echo "  mosaics:       $(du -sh "$DATA_DIR/mosaics" 2>/dev/null | cut -f1 || echo "not found")"
+    echo "  embeddings:    $(du -sh "$DATA_DIR/embeddings" 2>/dev/null | cut -f1 || echo "not found")"
+    echo "  pyramids:      $(du -sh "$DATA_DIR/pyramids" 2>/dev/null | cut -f1 || echo "not found")"
     echo "  faiss_indices: $(du -sh "$DATA_DIR/faiss_indices" 2>/dev/null | cut -f1 || echo "not found")"
 else
-    echo "  ❌ Data directory not found at: $DATA_DIR"
-fi
-echo ""
-
-# OneDrive status
-echo "OneDrive Backup:"
-ONEDRIVE_BACKUP=~/OneDrive\ -\ University\ of\ Cambridge/research/blore/data
-if [ -d "$ONEDRIVE_BACKUP" ]; then
-    echo "  Path: $ONEDRIVE_BACKUP"
-    if [ -d "$ONEDRIVE_BACKUP/mosaics" ]; then
-        echo "  ✓ Backups found"
-    else
-        echo "  ⚠️  Backup directory exists but is empty"
-    fi
-else
-    echo "  ❌ OneDrive path not accessible: $ONEDRIVE_BACKUP"
+    echo "  Data directory not found: $DATA_DIR"
 fi
 echo ""
 
 # Disk space
 echo "Disk Space:"
-df -h . | tail -1 | awk '{printf "  Used: %s / %s (%s available)\n", $3, $2, $4}'
+df -h "$DATA_DIR" 2>/dev/null | tail -1 | awk '{printf "  Used: %s / %s (%s available)\n", $3, $2, $4}'
 echo ""
 
-# Recent backups
-echo "Recent Backups:"
-if [ -f "save.log" ]; then
-    echo "  Last save.sh run:"
-    tail -1 save.log | sed 's/^/    /'
+# Services
+echo "Services:"
+if pgrep -f "python.*backend/web_server.py" >/dev/null 2>&1; then
+    echo "  Web server:  running"
 else
-    echo "  No save.log found (never backed up)"
+    echo "  Web server:  stopped"
 fi
-echo ""
-
-# Quick actions
-echo "Quick Actions:"
-echo "  ./save.sh             - Backup code & data"
-echo "  ./restore.sh          - Restore data from OneDrive"
-echo "  ./save.sh --dry-run   - Preview what would be backed up"
-echo "  git log --oneline     - View commit history"
+if pgrep -f "python.*tile_server.py" >/dev/null 2>&1; then
+    echo "  Tile server: running"
+else
+    echo "  Tile server: stopped"
+fi
 echo ""
