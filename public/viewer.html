@@ -146,6 +146,18 @@
             font-weight: 600;
         }
 
+        @keyframes pulse-warning {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+
+        .export-btn-highlight {
+            background: #ff9800 !important;
+            color: #000 !important;
+            border-color: #e68a00 !important;
+            font-weight: 700 !important;
+        }
+
         #map-container {
             position: fixed;
             top: 110px;
@@ -438,6 +450,7 @@
             <button id="export-labels-btn" style="padding: 8px 12px; background: #333; color: white; border: 1px solid #555; border-radius: 4px; cursor: pointer; font-size: 13px; white-space: nowrap;">
                 Export Labels
             </button>
+            <span id="unsaved-labels-warning" style="display: none; background: #ff9800; color: #000; padding: 4px 10px; border-radius: 3px; font-weight: 700; font-size: 12px; white-space: nowrap; animation: pulse-warning 1.5s ease-in-out 3;">⚠ Unsaved labels — export to avoid losing work</span>
             <button id="import-labels-btn" style="padding: 8px 12px; background: #333; color: white; border: 1px solid #555; border-radius: 4px; cursor: pointer; font-size: 13px; white-space: nowrap;">
                 Import
             </button>
@@ -3347,11 +3360,23 @@
         }
 
         // Update labels UI list
+        let labelsExportedSinceChange = false;
         function updateLabelsUI() {
             const listEl = document.getElementById('labels-list');
             const countEl = document.getElementById('label-count');
 
             countEl.textContent = savedLabels.length;
+
+            // Highlight export button and show warning when unexported labels exist
+            const exportBtn = document.getElementById('export-labels-btn');
+            const warning = document.getElementById('unsaved-labels-warning');
+            if (savedLabels.length > 0 && !labelsExportedSinceChange) {
+                exportBtn.classList.add('export-btn-highlight');
+                warning.style.display = '';
+            } else {
+                exportBtn.classList.remove('export-btn-highlight');
+                warning.style.display = 'none';
+            }
 
             if (savedLabels.length === 0) {
                 listEl.innerHTML = '<div style="color: #999; font-size: 12px; padding: 10px;">No labels yet. Click a pixel to search and save results.</div>';
@@ -3459,6 +3484,7 @@
             };
 
             savedLabels.push(labelData);
+            labelsExportedSinceChange = false;
             persistLabels();
             updateLabelsUI();
             updateOverlay();
@@ -3481,6 +3507,7 @@
             if (!confirm('Delete this label?')) return;
 
             savedLabels = savedLabels.filter(l => l.id !== labelId);
+            labelsExportedSinceChange = false;
             persistLabels();
             updateLabelsUI();
             updateOverlay();
@@ -3526,6 +3553,8 @@
             a.download = `${currentViewportName}_labels.json`;
             a.click();
             URL.revokeObjectURL(url);
+            labelsExportedSinceChange = true;
+            updateLabelsUI();
         }
 
         // Import saved labels from JSON file
@@ -3551,6 +3580,7 @@
                         added++;
                     }
                     persistLabels();
+                    labelsExportedSinceChange = true;
                     updateLabelsUI();
                     console.log(`✓ Imported ${added} labels (${imported.length - added} skipped as duplicates)`);
                     if (added > 0) {
