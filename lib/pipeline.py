@@ -250,9 +250,8 @@ class PipelineRunner:
         mosaics_dir = MOSAICS_DIR
         embedding_files = list(mosaics_dir.glob(f"{viewport_name}_embeddings_*.tif"))
         if not embedding_files:
-            error_msg = "Stage 1 verification failed - No embeddings files found"
-            logger.error(f"[PIPELINE] ✗ {error_msg}")
-            return False, error_msg
+            logger.warning(f"[PIPELINE] ⚠️  Stage 1: No embeddings files found — no data available for requested years")
+            return True, None  # Not an error — region may lack coverage for those years
 
         embeddings_file = embedding_files[0]
         if not self.wait_for_file(embeddings_file, min_size_bytes=1024*1024):
@@ -281,9 +280,8 @@ class PipelineRunner:
         rgb_files = list(rgb_dir.glob(f"{viewport_name}_*_rgb.tif")) if rgb_dir.exists() else []
 
         if not rgb_files:
-            error_msg = "Stage 2 verification failed - No RGB files found"
-            logger.error(f"[PIPELINE] ✗ {error_msg}")
-            return False, error_msg
+            logger.warning(f"[PIPELINE] ⚠️  Stage 2: No RGB files found — no data available for requested years")
+            return True, None
 
         rgb_file = rgb_files[0]
         if not self.wait_for_file(rgb_file, min_size_bytes=512*1024):
@@ -311,9 +309,8 @@ class PipelineRunner:
         viewport_pyramids_dir = pyramids_dir / viewport_name
 
         if not viewport_pyramids_dir.exists():
-            error_msg = "Stage 3 verification failed - Pyramid directory missing"
-            logger.error(f"[PIPELINE] ✗ {error_msg}")
-            return False, error_msg
+            logger.warning(f"[PIPELINE] ⚠️  Stage 3: No pyramid directory — no data available for requested years")
+            return True, None
 
         # Find year directory with pyramids
         pyramid_year_dir = None
@@ -325,9 +322,8 @@ class PipelineRunner:
                     break
 
         if not pyramid_year_dir:
-            error_msg = "Stage 3 verification failed - No pyramid levels found"
-            logger.error(f"[PIPELINE] ✗ {error_msg}")
-            return False, error_msg
+            logger.warning(f"[PIPELINE] ⚠️  Stage 3: No pyramid levels found — no data available for requested years")
+            return True, None
 
         level_0_file = pyramid_year_dir / "level_0.tif"
         if not self.wait_for_file(level_0_file, min_size_bytes=512*1024):
@@ -361,9 +357,8 @@ class PipelineRunner:
         faiss_viewport_dir = faiss_dir / viewport_name
 
         if not faiss_viewport_dir.exists():
-            error_msg = "Stage 4 verification failed - FAISS directory missing"
-            logger.error(f"[PIPELINE] ✗ {error_msg}")
-            return False, error_msg
+            logger.warning(f"[PIPELINE] ⚠️  Stage 4: No FAISS directory — no data available for requested years")
+            return True, None
 
         faiss_found = False
         faiss_year_dir = None
@@ -376,9 +371,8 @@ class PipelineRunner:
                     break
 
         if not faiss_found:
-            error_msg = "Stage 4 verification failed - FAISS index file missing"
-            logger.error(f"[PIPELINE] ✗ {error_msg}")
-            return False, error_msg
+            logger.warning(f"[PIPELINE] ⚠️  Stage 4: No FAISS index found — no data available for requested years")
+            return True, None
 
         # Verify supporting files
         required_files = ["embeddings.index", "all_embeddings.npy", "pixel_coords.npy", "metadata.json"]

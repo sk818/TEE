@@ -310,8 +310,8 @@ def create_faiss_index():
             available_years.append(year)
 
     if not available_years:
-        logger.error(f"No embeddings found for {viewport_id}")
-        sys.exit(1)
+        logger.warning(f"No embeddings found for {viewport_id} — no data available for requested years")
+        return
 
     logger.info(f"Found embeddings for years: {available_years}")
 

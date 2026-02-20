@@ -294,6 +294,69 @@
             color: #d32f2f;
         }
 
+        .viewport-item-btn.add-year:hover {
+            background: #e8f5e9;
+            border-color: #388e3c;
+            color: #388e3c;
+        }
+
+        /* Add Year Modal */
+        .modal-overlay {
+            display: none;
+            position: fixed;
+            top: 0; left: 0; right: 0; bottom: 0;
+            background: rgba(0,0,0,0.5);
+            z-index: 10000;
+            justify-content: center;
+            align-items: center;
+        }
+        .modal-overlay.open {
+            display: flex;
+        }
+        .modal-content {
+            background: white;
+            border-radius: 8px;
+            padding: 24px;
+            width: 340px;
+            max-width: 90vw;
+            box-shadow: 0 8px 32px rgba(0,0,0,0.2);
+        }
+        .modal-content h3 {
+            margin: 0 0 16px 0;
+            font-size: 16px;
+            color: #333;
+        }
+        .modal-years-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 8px;
+            margin-bottom: 16px;
+        }
+        .modal-years-grid label {
+            display: flex;
+            align-items: center;
+            font-size: 13px;
+            cursor: pointer;
+        }
+        .modal-years-grid label.disabled {
+            opacity: 0.5;
+            cursor: default;
+        }
+        .modal-years-grid input {
+            width: 16px;
+            height: 16px;
+            margin-right: 8px;
+            cursor: pointer;
+        }
+        .modal-years-grid label.disabled input {
+            cursor: default;
+        }
+        .modal-actions {
+            display: flex;
+            gap: 8px;
+            justify-content: flex-end;
+        }
+
         /* Current Viewport Panel */
         .current-viewport {
             padding: 12px;
@@ -765,6 +828,7 @@
         // Auth check: set demo mode for unauthenticated users
         let isLoggedIn = false;
         let authEnabled = false;
+        let lastLoadedViewports = [];
         fetch('/api/auth/status').then(r => r.json()).then(data => {
             authEnabled = data.auth_enabled;
             if (data.logged_in && data.user) {
@@ -1733,6 +1797,7 @@ Max Lon: ${bounds.maxLon.toFixed(4)}°
                 const data = await response.json();
 
                 if (data.success) {
+                    lastLoadedViewports = data.viewports;
                     displayViewports(data.viewports);
                 }
             } catch (error) {
@@ -1760,6 +1825,9 @@ Max Lon: ${bounds.maxLon.toFixed(4)}°
                 const deleteBtn = (!authEnabled || isLoggedIn)
                     ? `<button class="viewport-item-btn delete" onclick="deleteViewport('${vp.name}')">Delete</button>`
                     : '';
+                const addYearBtn = (!authEnabled || isLoggedIn)
+                    ? `<button class="viewport-item-btn add-year" onclick="openAddYearModal('${vp.name}')">+ Year</button>`
+                    : '';
 
                 return `
                     <div class="viewport-item ${isActive}">
@@ -1768,6 +1836,7 @@ Max Lon: ${bounds.maxLon.toFixed(4)}°
                         <div class="viewport-item-coords" style="color: #0066cc; font-weight: 500; margin-top: 3px;">💾 ${sizeText}</div>
                         <div class="viewport-item-actions">
                             <button class="viewport-item-btn" onclick="switchViewport('${vp.name}')">Select</button>
+                            ${addYearBtn}
                             ${deleteBtn}
                         </div>
                     </div>
@@ -2265,6 +2334,106 @@ Max Lon: ${bounds.maxLon.toFixed(4)}°
         document.getElementById('changePasswordModal').addEventListener('click', function(e) {
             if (e.target === this) hideChangePassword();
         });
+
+        // --- Add Year Modal ---
+        let addYearViewportData = null; // stores the viewport list data for the modal
+
+        function openAddYearModal(viewportName) {
+            // Find viewport data from the last loaded list
+            const vp = lastLoadedViewports && lastLoadedViewports.find(v => v.name === viewportName);
+            if (!vp) {
+                alert('Viewport data not found. Please refresh the page.');
+                return;
+            }
+            addYearViewportData = vp;
+
+            const configured = new Set(vp.years_configured || []);
+            const available = new Set(vp.years_available || []);
+            const allConfigured = configured; // years in config (processing or done)
+
+            document.getElementById('addYearModalTitle').textContent = `Add Years to ${viewportName}`;
+
+            const grid = document.getElementById('addYearGrid');
+            grid.innerHTML = '';
+            for (let year = 2017; year <= 2025; year++) {
+                const isConfigured = allConfigured.has(year);
+                const label = document.createElement('label');
+                if (isConfigured) label.className = 'disabled';
+                const cb = document.createElement('input');
+                cb.type = 'checkbox';
+                cb.value = year;
+                cb.className = 'add-year-checkbox';
+                if (isConfigured) {
+                    cb.checked = true;
+                    cb.disabled = true;
+                }
+                label.appendChild(cb);
+                const statusText = available.has(year) ? ` ${year} (ready)` : isConfigured ? ` ${year} (processing)` : ` ${year}`;
+                label.appendChild(document.createTextNode(statusText));
+                grid.appendChild(label);
+            }
+
+            document.getElementById('addYearModal').classList.add('open');
+        }
+
+        function closeAddYearModal() {
+            document.getElementById('addYearModal').classList.remove('open');
+            addYearViewportData = null;
+        }
+
+        async function confirmAddYears() {
+            if (!addYearViewportData) return;
+            const viewportName = addYearViewportData.name;
+
+            const newYears = [];
+            document.querySelectorAll('.add-year-checkbox').forEach(cb => {
+                if (cb.checked && !cb.disabled) {
+                    newYears.push(parseInt(cb.value));
+                }
+            });
+
+            if (newYears.length === 0) {
+                alert('Please select at least one new year to add.');
+                return;
+            }
+
+            try {
+                const response = await fetch(`/api/viewports/${viewportName}/add-years`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ years: newYears })
+                });
+
+                const data = await response.json();
+
+                if (data.success) {
+                    closeAddYearModal();
+                    alert(`Adding year(s) ${newYears.join(', ')} to ${viewportName}. Processing will continue in the background.`);
+                    loadViewports();
+                } else {
+                    alert(`Error: ${data.error}`);
+                }
+            } catch (error) {
+                alert(`Error adding years: ${error.message}`);
+            }
+        }
+
+        // Close add-year modal on overlay click
+        document.getElementById('addYearModal').addEventListener('click', function(e) {
+            if (e.target === this) closeAddYearModal();
+        });
     </script>
+
+    <!-- Add Year Modal -->
+    <div class="modal-overlay" id="addYearModal">
+        <div class="modal-content">
+            <h3 id="addYearModalTitle">Add Years</h3>
+            <div class="modal-years-grid" id="addYearGrid"></div>
+            <div class="modal-actions">
+                <button class="btn btn-secondary btn-small" onclick="closeAddYearModal()">Cancel</button>
+                <button class="btn btn-primary btn-small" onclick="confirmAddYears()">Add</button>
+            </div>
+        </div>
+    </div>
 </body>
 </html>

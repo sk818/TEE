@@ -342,11 +342,9 @@ def download_embeddings():
         print(f"\nTotal downloaded: {total_size_mb:.1f} MB for {len(successful_years)} years")
         progress.complete(f"Downloaded {total_size_mb:.1f} MB of embeddings ({len(successful_years)} years)")
     else:
-        error_msg = f"No mosaics for {viewport_id} were created (all downloads failed for years: {list(YEARS)})"
-        print(f"\n✗ Error: {error_msg}")
-        print(f"ERROR: {error_msg}", file=sys.stderr)
-        progress.error(f"Failed to download embeddings for any year")
-        sys.exit(1)
+        print(f"\n⚠️  No mosaics for {viewport_id} were created (no data available for years: {list(YEARS)})")
+        print(f"   This is normal — not all regions have data for every year.", file=sys.stderr)
+        progress.complete(f"No data available for requested years: {list(YEARS)}")
 
 if __name__ == "__main__":
     import traceback

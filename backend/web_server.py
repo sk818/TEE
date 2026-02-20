@@ -442,6 +442,21 @@ def api_list_viewports():
                 viewport['is_active'] = (viewport_name == active_name)
                 # Calculate and include data size
                 viewport['data_size_mb'] = get_viewport_data_size(viewport_name, active_name)
+                # Include year information
+                viewport_pyramids_dir = PYRAMIDS_DIR / viewport_name
+                years_available = []
+                if viewport_pyramids_dir.exists():
+                    for year in range(2017, 2026):
+                        if (viewport_pyramids_dir / str(year) / "level_0.tif").exists():
+                            years_available.append(year)
+                viewport['years_available'] = sorted(years_available, reverse=True)
+                config_file = VIEWPORTS_DIR / f"{viewport_name}_config.json"
+                if config_file.exists():
+                    with open(config_file) as cf:
+                        cfg = json.load(cf)
+                    viewport['years_configured'] = sorted(cfg.get('years') or [], reverse=True)
+                else:
+                    viewport['years_configured'] = []
                 viewport_data.append(viewport)
             except Exception as e:
                 logger.warning(f"Error reading viewport {viewport_name}: {e}")
@@ -1337,6 +1352,98 @@ def api_delete_viewport():
 
     except Exception as e:
         logger.error(f"Error deleting viewport: {e}")
+        return jsonify({'success': False, 'error': str(e)}), 400
+
+
+@app.route('/api/viewports/<viewport_name>/add-years', methods=['POST'])
+def api_add_years(viewport_name):
+    """Add years to an existing viewport and re-run the pipeline."""
+    try:
+        validate_viewport_name(viewport_name)
+    except ValueError as e:
+        return jsonify({'success': False, 'error': str(e)}), 400
+    try:
+        # Validate viewport exists
+        viewport = read_viewport_file(viewport_name)
+
+        data = request.get_json()
+        new_years = data.get('years')
+        if not new_years or not isinstance(new_years, list):
+            return jsonify({'success': False, 'error': 'years must be a non-empty list of integers'}), 400
+
+        # Validate year values
+        for y in new_years:
+            if not isinstance(y, int) or y < 2017 or y > 2025:
+                return jsonify({'success': False, 'error': f'Invalid year: {y}. Must be 2017-2025.'}), 400
+
+        # Check no pipeline is already running — cancel it first if so
+        operation_id = f"{viewport_name}_full_pipeline"
+        with tasks_lock:
+            if operation_id in tasks:
+                status = tasks[operation_id].get('status')
+                if status in ('starting', 'in_progress'):
+                    # Cancel the existing run; trigger_data_download_and_processing
+                    # will start a fresh one with the merged year list, and the
+                    # pipeline skips already-processed years automatically.
+                    tasks[operation_id] = {
+                        'status': 'cancelled',
+                        'current_stage': 'cancelled',
+                        'error': 'Superseded by add-years request'
+                    }
+                    logger.info(f"[ADD YEARS] Cancelled existing pipeline for '{viewport_name}' to add new years")
+        # Kill the actual subprocess if one is running
+        cancel_pipeline(viewport_name)
+
+        # Read current config
+        config_file = VIEWPORTS_DIR / f"{viewport_name}_config.json"
+        if config_file.exists():
+            with open(config_file) as f:
+                config = json.load(f)
+        else:
+            config = {'years': [], 'created_by': session.get('user')}
+
+        existing_years = config.get('years') or []
+        merged_years = sorted(set(existing_years) | set(new_years))
+
+        # Disk quota check for non-admin users
+        user = session.get('user')
+        if user and user != 'admin':
+            bounds = viewport['bounds']
+            bounds_tuple = (bounds['minLon'], bounds['minLat'], bounds['maxLon'], bounds['maxLat'])
+            # Only estimate cost of the NEW years being added
+            estimated_mb = estimate_viewport_size(bounds_tuple, len(new_years))
+            current_mb = get_user_total_data_size(user)
+            if current_mb + estimated_mb > USER_QUOTA_MB:
+                return jsonify({
+                    'success': False,
+                    'error': (
+                        f'Disk quota exceeded. '
+                        f'Your existing viewports use {current_mb:.0f} MB, '
+                        f'adding {len(new_years)} year(s) would add ~{estimated_mb:.0f} MB, '
+                        f'but your limit is {USER_QUOTA_MB} MB ({USER_QUOTA_MB / 1024:.0f} GB). '
+                        f'Delete some viewports to free up space.'
+                    )
+                }), 403
+
+        # Update config with merged years
+        config['years'] = merged_years
+        with open(config_file, 'w') as f:
+            json.dump(config, f)
+        logger.info(f"[ADD YEARS] Updated config for '{viewport_name}': years={merged_years}")
+
+        # Trigger pipeline with merged years (existing years will be skipped)
+        logger.info(f"[ADD YEARS] Triggering pipeline for '{viewport_name}' with years={merged_years}...")
+        trigger_data_download_and_processing(viewport_name, years=merged_years)
+
+        return jsonify({
+            'success': True,
+            'message': f'Adding years {new_years} to viewport {viewport_name}. Processing in background...',
+            'years': merged_years
+        })
+    except FileNotFoundError:
+        return jsonify({'success': False, 'error': f'Viewport {viewport_name} not found'}), 404
+    except Exception as e:
+        logger.error(f"Error adding years to viewport: {e}")
         return jsonify({'success': False, 'error': str(e)}), 400
 
 
