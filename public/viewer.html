@@ -4156,7 +4156,7 @@
     L.PixelatedTileLayer = L.GridLayer.extend({
         options: {
             tileSize: 256,
-            crossOrigin: 'use-credentials'
+            crossOrigin: 'anonymous'
         },
 
         initialize: function(urlTemplate, options) {
@@ -4178,7 +4178,7 @@
             ctx.msImageSmoothingEnabled = false;
 
             const img = new Image();
-            img.crossOrigin = 'use-credentials';
+            img.crossOrigin = this.options.crossOrigin;
 
             img.onload = () => {
                 // Re-apply after image load (some browsers reset it)
