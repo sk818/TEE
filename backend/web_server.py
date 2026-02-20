@@ -455,15 +455,27 @@ def api_list_viewports():
                     with open(config_file) as cf:
                         cfg = json.load(cf)
                     viewport['years_configured'] = sorted(cfg.get('years') or [], reverse=True)
+                    viewport['private'] = cfg.get('private', False)
+                    viewport['created_by'] = cfg.get('created_by')
                 else:
                     viewport['years_configured'] = []
+                    viewport['private'] = False
+                    viewport['created_by'] = None
                 viewport_data.append(viewport)
             except Exception as e:
                 logger.warning(f"Error reading viewport {viewport_name}: {e}")
 
+        # Filter out private viewports for non-owners
+        current_user = session.get('user')
+        filtered = []
+        for vp in viewport_data:
+            if vp.get('private') and current_user != 'admin' and current_user != vp.get('created_by'):
+                continue
+            filtered.append(vp)
+
         return jsonify({
             'success': True,
-            'viewports': viewport_data,
+            'viewports': filtered,
             'active': active_name
         })
     except Exception as e:
@@ -626,7 +638,8 @@ def api_create_viewport():
         viewport['name'] = name
 
         # Save selected years and ownership to config file (for auto-resume + quota)
-        config = {'years': years, 'created_by': session.get('user')}
+        private_flag = bool(data.get('private', False))
+        config = {'years': years, 'created_by': session.get('user'), 'private': private_flag}
         config_file = VIEWPORTS_DIR / f"{name}_config.json"
         with open(config_file, 'w') as f:
             json.dump(config, f)

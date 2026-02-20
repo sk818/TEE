@@ -776,6 +776,12 @@
                                     <button type="button" onclick="selectNoYears()" style="background: none; border: none; color: #667eea; cursor: pointer; text-decoration: underline; padding: 0; font-size: 12px;">Select None</button>
                                 </div>
                             </div>
+                            <div id="privateCheckboxRow" style="display: none; margin-top: 8px; margin-bottom: 8px;">
+                                <label style="display: flex; align-items: center; font-weight: normal; font-size: 13px; cursor: pointer;">
+                                    <input type="checkbox" id="privateViewport" style="width: 16px; height: 16px; margin-right: 8px; cursor: pointer;">
+                                    Private (only visible to you)
+                                </label>
+                            </div>
                             <div class="button-group">
                                 <button class="btn btn-primary btn-small" onclick="confirmViewportCreation()">Create</button>
                                 <button class="btn btn-secondary btn-small" onclick="cancelViewportCreation()">Cancel</button>
@@ -1219,6 +1225,8 @@
             if (isFirstPlacement) {
                 document.getElementById('formFields').style.display = 'block';
                 document.getElementById('closeButton').style.display = 'none';
+                document.getElementById('privateCheckboxRow').style.display = isLoggedIn ? 'block' : 'none';
+                document.getElementById('privateViewport').checked = false;
                 document.getElementById('viewportName').value = '';
                 document.getElementById('viewportName').focus();
 
@@ -1279,7 +1287,7 @@
                 const response = await fetch('/api/viewports/create', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ bounds, name, description: `${VIEWPORT_SIZE_KM}km × ${VIEWPORT_SIZE_KM}km`, years })
+                    body: JSON.stringify({ bounds, name, description: `${VIEWPORT_SIZE_KM}km × ${VIEWPORT_SIZE_KM}km`, years, private: document.getElementById('privateViewport').checked })
                 });
 
                 const data = await response.json();
