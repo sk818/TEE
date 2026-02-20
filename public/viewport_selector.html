@@ -764,7 +764,9 @@
     <script>
         // Auth check: set demo mode for unauthenticated users
         let isLoggedIn = false;
+        let authEnabled = false;
         fetch('/api/auth/status').then(r => r.json()).then(data => {
+            authEnabled = data.auth_enabled;
             if (data.logged_in && data.user) {
                 isLoggedIn = true;
                 document.getElementById('userName').textContent = data.user;
@@ -799,8 +801,8 @@
         let map;
         let viewportBox;
         let currentViewport = null;
-        let mapCenter = [20.0, 78.0]; // Default center of India (will be updated when viewport loads)
-        let mapZoom = 5; // Default zoom (will be updated when viewport loads)
+        let mapCenter = [52.2053, 0.1218]; // Default: Cambridge, UK (will be updated when viewport loads)
+        let mapZoom = 10; // Default zoom (will be updated when viewport loads)
 
         // Viewport selection state
         let previewBox = null;
@@ -1755,7 +1757,7 @@ Max Lon: ${bounds.maxLon.toFixed(4)}°
                 const sizeText = dataSize > 1000
                     ? `${(dataSize / 1024).toFixed(1)} GB`
                     : `${dataSize.toFixed(0)} MB`;
-                const deleteBtn = isLoggedIn
+                const deleteBtn = (!authEnabled || isLoggedIn)
                     ? `<button class="viewport-item-btn delete" onclick="deleteViewport('${vp.name}')">Delete</button>`
                     : '';
 
