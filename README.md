@@ -1,6 +1,6 @@
 # TEE: Tessera Embeddings Explorer
 
-**Version 2.0.0** | [Docker Hub](https://hub.docker.com/r/sk818/tee)
+**Version 2.0.1** | [Docker Hub](https://hub.docker.com/r/sk818/tee)
 
 A system for downloading, processing, and visualizing Sentinel-2 satellite embeddings (2017-2025) with an interactive web interface.
 
@@ -60,6 +60,14 @@ Key capabilities: one-click similarity search, real-time threshold control, pers
 
 Labels are stored in browser localStorage (private, survive reloads). Labels can be exported/imported as compact JSON files for sharing — they are portable across viewports since matching uses embedding distance, not coordinates.
 
+### Export Options
+
+A consolidated **Export** dropdown provides three formats:
+
+- **Labels (JSON)** — compact metadata for sharing and re-importing into TEE
+- **Labels (GeoJSON)** — FeatureCollection with 10m polygons per pixel, aligned to zoom-18 Mercator projection for pixel-perfect overlay in QGIS/GIS tools. Properties include `label_name`, `label_color`, `distance`, and `threshold`.
+- **Map (JPG)** — high-resolution satellite image with label overlays and legend, rendered at zoom level 18
+
 ## Quick Start
 
 ### Prerequisites
@@ -75,8 +83,8 @@ Labels are stored in browser localStorage (private, survive reloads). Labels can
 
 2. **Pull and run from Docker Hub (easiest):**
    ```bash
-   docker pull sk818/tee:2.0.0
-   docker run -p 8001:8001 -v ~/tee_data:/data sk818/tee:2.0.0
+   docker pull sk818/tee:2.0.1
+   docker run -p 8001:8001 -v ~/tee_data:/data sk818/tee:2.0.1
    ```
 
    **Or build from source:**

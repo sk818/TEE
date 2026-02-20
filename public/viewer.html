@@ -3990,7 +3990,8 @@
             document.getElementById('export-dropdown-btn').addEventListener('click', (e) => {
                 e.stopPropagation();
                 const menu = document.getElementById('export-dropdown-menu');
-                menu.style.display = menu.style.display === 'none' ? '' : 'none';
+                const isHidden = getComputedStyle(menu).display === 'none';
+                menu.style.display = isHidden ? 'block' : 'none';
             });
             document.addEventListener('click', () => {
                 document.getElementById('export-dropdown-menu').style.display = 'none';
@@ -4065,6 +4066,12 @@
             }
             document.getElementById('help-btn').addEventListener('click', toggleHelpPopup);
             document.getElementById('help-close-btn').addEventListener('click', toggleHelpPopup);
+
+            // Show help popup on first visit
+            if (!localStorage.getItem('helpShown')) {
+                document.getElementById('help-popup').style.display = 'block';
+                localStorage.setItem('helpShown', '1');
+            }
 
             // Status button - show/hide popup and fetch status
             document.getElementById('status-btn').addEventListener('click', async function() {
