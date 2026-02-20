@@ -47,7 +47,14 @@ fi
 
 # Start web server
 echo "  Web server on $HOST:8001"
-$RUN $PYTHON "$SCRIPT_DIR/backend/web_server.py" --prod --host "$HOST" --port 8001 \
+# In local mode, tell the viewer where the tile server is (no Apache proxy)
+# In server mode, Apache proxies /tiles to port 5125
+if [ "$MODE" = "local" ]; then
+    TILE_ARG="--tile-server http://localhost:5125"
+else
+    TILE_ARG=""
+fi
+$RUN $PYTHON "$SCRIPT_DIR/backend/web_server.py" --prod --host "$HOST" --port 8001 $TILE_ARG \
     >> "$LOG_DIR/web_server.log" 2>&1 &
 WEB_PID=$!
 
