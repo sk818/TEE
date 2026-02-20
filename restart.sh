@@ -33,10 +33,6 @@ else
 fi
 mkdir -p "$LOG_DIR"
 
-# Pull latest code
-echo "Pulling latest code..."
-git -C "$SCRIPT_DIR" pull --ff-only || { echo "git pull failed"; exit 1; }
-
 echo "Shutting down existing services..."
 
 # Kill any existing TEE processes
