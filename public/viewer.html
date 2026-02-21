@@ -1103,27 +1103,21 @@
 
         // ===== Cross-Year Timeline Functions =====
 
-        // Union search: single pass counts pixels matching ANY of the label embeddings
-        function searchMultiInFaissData(data, labelGroup) {
+        // Union search: single pass counts pixels matching ANY of the precomputed searches
+        function searchMultiInFaissData(data, searches) {
             const N = data.numVectors;
             const emb = data.embeddings;
-            const searches = labelGroup.map(l => ({
-                embedding: new Float32Array(l.embedding),
-                threshSq: l.threshold * l.threshold
-            }));
             let count = 0;
             for (let i = 0; i < N; i++) {
                 const base = i * 128;
-                let matched = false;
                 for (const s of searches) {
                     let distSq = 0;
                     for (let d = 0; d < 128; d++) {
                         const diff = emb[base + d] - s.embedding[d];
                         distSq += diff * diff;
                     }
-                    if (distSq <= s.threshSq) { matched = true; break; }
+                    if (distSq <= s.threshSq) { count++; break; }
                 }
-                if (matched) count++;
             }
             return count;
         }
@@ -1146,15 +1140,17 @@
             }
             // Not cached — download via downloadFaissData, then restore faissLocal
             const saved = faissLocal;
-            await downloadFaissData(viewport, year);
-            const data = {
-                embeddings: faissLocal.embeddings,
-                coords: faissLocal.coords,
-                metadata: faissLocal.metadata,
-                numVectors: faissLocal.numVectors
-            };
-            faissLocal = saved;
-            return data;
+            try {
+                await downloadFaissData(viewport, year);
+                return {
+                    embeddings: faissLocal.embeddings,
+                    coords: faissLocal.coords,
+                    metadata: faissLocal.metadata,
+                    numVectors: faissLocal.numVectors
+                };
+            } finally {
+                faissLocal = saved;
+            }
         }
 
         function getAvailableYears() {
@@ -1163,6 +1159,11 @@
         }
 
         async function computeLabelTimeline(labelGroup) {
+            // Precompute Float32Array embeddings once
+            const searches = labelGroup.map(l => ({
+                embedding: new Float32Array(l.embedding),
+                threshSq: l.threshold * l.threshold
+            }));
             const years = getAvailableYears();
             const results = [];
             const progressEl = document.getElementById('timeline-progress');
@@ -1170,7 +1171,7 @@
                 progressEl.textContent = `Loading year ${years[i]} (${i + 1} of ${years.length})...`;
                 await new Promise(r => setTimeout(r, 0));
                 const data = await loadFaissDataOnly(currentViewportName, years[i]);
-                const count = searchMultiInFaissData(data, labelGroup);
+                const count = searchMultiInFaissData(data, searches);
                 results.push({ year: years[i], count });
             }
             return results;
@@ -3624,7 +3625,8 @@
                 btn.addEventListener('click', (e) => {
                     const labelName = e.currentTarget.dataset.labelName;
                     const members = savedLabels.filter(l => l.name === labelName);
-                    members.forEach(l => toggleLabelVisibility(l.id, true));
+                    const newVisible = !members.some(l => l.visible);
+                    members.forEach(l => l.visible = newVisible);
                     updateOverlay();
                     updateLabelsUI();
                 });
@@ -3644,6 +3646,8 @@
             const totalPixels = members.reduce((sum, l) => sum + l.pixel_count, 0);
             const markerCount = members.length;
             const markerNote = markerCount > 1 ? ` (${markerCount} markers)` : '';
+            const anyVisible = members.some(l => l.visible);
+            const toggleText = anyVisible ? 'Hide' : 'Show';
             return `
                 <div class="label-item" style="padding: 10px; margin-bottom: 10px; border: 1px solid #ddd; border-radius: 4px; background: white; border-left: 4px solid ${color};">
                   <div style="display: flex; align-items: flex-start; justify-content: space-between;">
@@ -3656,7 +3660,7 @@
                     </div>
                     <div style="display: flex; gap: 6px;">
                       <button class="timeline-label-btn" data-label-name="${name}" style="padding: 5px 8px; background: #f0f0ff; border: 1px solid #b0b0ff; border-radius: 3px; cursor: pointer; font-size: 12px; color: #5500cc; font-weight: 600;" title="Show coverage timeline across years">Timeline</button>
-                      <button class="toggle-label-btn" data-label-name="${name}" style="padding: 5px 8px; background: #e8f0ff; border: 1px solid #b0d4ff; border-radius: 3px; cursor: pointer; font-size: 12px; color: #0066cc; font-weight: 600;" title="Toggle visibility">Show</button>
+                      <button class="toggle-label-btn" data-label-name="${name}" style="padding: 5px 8px; background: #e8f0ff; border: 1px solid #b0d4ff; border-radius: 3px; cursor: pointer; font-size: 12px; color: #0066cc; font-weight: 600;" title="Toggle visibility">${toggleText}</button>
                       <button class="delete-label-btn" data-label-name="${name}" style="padding: 5px 8px; background: #ffe8e8; border: 1px solid #ffb0b0; border-radius: 3px; cursor: pointer; font-size: 12px; color: #cc0000; font-weight: 600;" title="Delete label">Delete</button>
                     </div>
                   </div>
@@ -3797,41 +3801,6 @@
         }
 
         // Delete a saved label
-        function deleteSavedLabel(labelId) {
-            if (!confirm('Delete this label?')) return;
-
-            savedLabels = savedLabels.filter(l => l.id !== labelId);
-            labelsExportedSinceChange = false;
-
-            // Remove persistent markers for this label
-            persistentLabelMarkers = persistentLabelMarkers.filter(entry => {
-                if (entry.labelId === labelId) {
-                    for (const key of Object.keys(entry.markers)) {
-                        if (entry.markers[key] && maps[key]) maps[key].removeLayer(entry.markers[key]);
-                    }
-                    return false;
-                }
-                return true;
-            });
-
-            persistLabels();
-            updateLabelsUI();
-            updateOverlay();
-            console.log(`✓ Deleted label: ${labelId}`);
-        }
-
-        // Toggle label visibility (silent=true skips UI refresh, for batch use)
-        function toggleLabelVisibility(labelId, silent) {
-            const label = savedLabels.find(l => l.id === labelId);
-            if (label) {
-                label.visible = !label.visible;
-                if (!silent) {
-                    updateOverlay();
-                    updateLabelsUI();
-                }
-            }
-        }
-
         // Delete all labels with a given name
         function deleteLabelGroup(name) {
             const members = savedLabels.filter(l => l.name === name);
