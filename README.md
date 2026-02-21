@@ -45,6 +45,13 @@ TEE integrates geospatial data processing with deep learning embeddings to creat
 - Real-time threshold slider for instant local filtering
 - Labels and search are fully private — only tile images are fetched from the server
 
+### Cross-Year Label Timeline
+- **Track how label coverage changes over time** — click "Timeline" on any saved label to see pixel counts across all available years (2017–2025)
+- Uses the label's stored embedding and threshold for consistent comparison
+- Results displayed in a modal with a proportional **bar chart** (colored with the label's color) and a **percentage change summary** (e.g. "33% decrease from 2019 to 2023")
+- Loads each year's FAISS data from IndexedDB cache (or downloads in background) without disrupting the current session
+- All computation stays client-side — label privacy is preserved
+
 ### Advanced Viewer (6-Panel Layout)
 
 The viewer includes a **6-panel layout** toggle for advanced analysis:
@@ -56,7 +63,7 @@ The viewer includes a **6-panel layout** toggle for advanced analysis:
 5. **Heatmap** — Temporal distance heatmap (Y1 vs Y2 pixel-by-pixel differences)
 6. **Embeddings Y2** — Second year embeddings for temporal comparison
 
-Key capabilities: one-click similarity search, real-time threshold control, persistent colored label overlays, cross-panel synchronized markers, UMAP visualization with satellite RGB coloring, temporal distance heatmap, and year-based label updates.
+Key capabilities: one-click similarity search, real-time threshold control, persistent colored label overlays, cross-panel synchronized markers, UMAP visualization with satellite RGB coloring, temporal distance heatmap, year-based label updates, and cross-year label timeline analysis.
 
 Labels are stored in browser localStorage (private, survive reloads). Labels can be exported/imported as compact JSON files for sharing — they are portable across viewports since matching uses embedding distance, not coordinates.
 
