@@ -640,6 +640,11 @@
         <div style="background: white; border-radius: 8px; padding: 30px; box-shadow: 0 4px 20px rgba(0,0,0,0.3); width: 90%; max-width: 400px;">
             <h2 style="margin-top: 0; margin-bottom: 20px; color: #333;">Save Search as Label</h2>
 
+            <div id="existing-labels-list" style="margin-bottom: 16px; max-height: 150px; overflow-y: auto; display: none;">
+                <label style="display: block; font-weight: 600; margin-bottom: 8px; color: #333;">Use existing label:</label>
+                <div id="existing-labels-rows"></div>
+            </div>
+
             <div style="margin-bottom: 20px;">
                 <label style="display: block; font-weight: 600; margin-bottom: 8px; color: #333;">Label Name:</label>
                 <input type="text" id="label-name-input" placeholder="e.g., residential_roads" style="width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 4px; font-size: 14px; box-sizing: border-box;">
@@ -1725,6 +1730,7 @@
 
         // Cross-panel triangle markers (one per geographic panel, cleared on each new click)
         let crossPanelMarkers = {osm: null, rgb: null, embedding: null, heatmap: null, embedding2: null};
+        let persistentLabelMarkers = []; // {labelId, markers: {osm, rgb, ...}}
 
         const TRIANGLE_ICON = L.divIcon({
             className: 'triangle-marker',
@@ -1732,6 +1738,15 @@
             iconSize: [20, 20],
             iconAnchor: [10, 20]  // Tip of triangle anchored to the coordinate
         });
+
+        function makeColoredTriangleIcon(fillColor) {
+            return L.divIcon({
+                className: 'triangle-marker',
+                html: `<svg width="20" height="20" viewBox="0 0 20 20" style="overflow:visible;"><polygon points="0,0 20,0 10,20" fill="${fillColor}" stroke="#333" stroke-width="2" stroke-linejoin="round"/></svg>`,
+                iconSize: [20, 20],
+                iconAnchor: [10, 20]
+            });
+        }
 
         function setCrossPanelMarker(mapKey, lat, lon) {
             if (crossPanelMarkers[mapKey]) {
@@ -3470,6 +3485,45 @@
             document.getElementById('label-name-input').value = '';
             document.getElementById('label-color-input').value = suggestedColor;
             document.getElementById('color-hex-display').textContent = suggestedColor.toUpperCase();
+
+            // Populate existing labels list
+            const listContainer = document.getElementById('existing-labels-list');
+            const rowsContainer = document.getElementById('existing-labels-rows');
+            rowsContainer.innerHTML = '';
+
+            // Collect unique name+color pairs from saved labels
+            const seen = new Set();
+            const uniqueLabels = [];
+            for (const l of savedLabels) {
+                const key = l.name + '|' + l.color;
+                if (!seen.has(key)) {
+                    seen.add(key);
+                    uniqueLabels.push({ name: l.name, color: l.color });
+                }
+            }
+
+            if (uniqueLabels.length > 0) {
+                listContainer.style.display = 'block';
+                for (const ul of uniqueLabels) {
+                    const row = document.createElement('div');
+                    row.style.cssText = 'display: flex; align-items: center; gap: 10px; padding: 8px 10px; cursor: pointer; border-radius: 4px; border: 2px solid transparent; margin-bottom: 4px; background: #f5f5f5;';
+                    row.innerHTML = `<span style="width: 18px; height: 18px; border-radius: 3px; background: ${ul.color}; border: 1px solid #999; flex-shrink: 0;"></span><span style="color: #333; font-size: 14px;">${ul.name}</span>`;
+                    row.addEventListener('click', function() {
+                        document.getElementById('label-name-input').value = ul.name;
+                        document.getElementById('label-color-input').value = ul.color;
+                        document.getElementById('color-hex-display').textContent = ul.color.toUpperCase();
+                        // Highlight selected row
+                        rowsContainer.querySelectorAll('div').forEach(r => r.style.borderColor = 'transparent');
+                        row.style.borderColor = ul.color;
+                    });
+                    row.addEventListener('mouseenter', function() { row.style.background = '#e8e8e8'; });
+                    row.addEventListener('mouseleave', function() { row.style.background = '#f5f5f5'; });
+                    rowsContainer.appendChild(row);
+                }
+            } else {
+                listContainer.style.display = 'none';
+            }
+
             document.getElementById('save-label-modal-overlay').style.display = 'flex';
             document.getElementById('label-name-input').focus();
         }
@@ -3525,9 +3579,22 @@
             updateLabelsUI();
             updateOverlay();
 
-            // Clear the explorer preview (yellow overlay) and all markers
+            // Clear the explorer preview (yellow overlay)
             clearExplorerResults();
-            clearCrossPanelMarkers();
+
+            // Place persistent colored markers at the source pixel location on all panels
+            const coloredIcon = makeColoredTriangleIcon(color);
+            const srcLat = labelData.source_pixel.lat;
+            const srcLon = labelData.source_pixel.lon;
+            const entry = { labelId: labelData.id, markers: {} };
+            ['osm', 'rgb', 'embedding', 'heatmap', 'embedding2'].forEach(key => {
+                if (maps[key]) {
+                    entry.markers[key] = L.marker([srcLat, srcLon], { icon: coloredIcon })
+                        .bindTooltip(name, { direction: 'top', offset: [0, -20] })
+                        .addTo(maps[key]);
+                }
+            });
+            persistentLabelMarkers.push(entry);
 
             closeSaveLabelModal();
             console.log(`✓ Saved label: ${name} (${labelData.pixel_count} pixels)`);
@@ -3544,6 +3611,18 @@
 
             savedLabels = savedLabels.filter(l => l.id !== labelId);
             labelsExportedSinceChange = false;
+
+            // Remove persistent markers for this label
+            persistentLabelMarkers = persistentLabelMarkers.filter(entry => {
+                if (entry.labelId === labelId) {
+                    for (const key of Object.keys(entry.markers)) {
+                        if (entry.markers[key] && maps[key]) maps[key].removeLayer(entry.markers[key]);
+                    }
+                    return false;
+                }
+                return true;
+            });
+
             persistLabels();
             updateLabelsUI();
             updateOverlay();
@@ -3706,14 +3785,20 @@
             onAdd: function(map) {
                 this._map = map;
 
+                // Use a custom Leaflet pane so the canvas sits inside the map pane's
+                // stacking context — between overlayPane (400) and markerPane (600).
+                // This lets triangle markers render above the label overlay.
+                if (!map.getPane('labelOverlayPane')) {
+                    map.createPane('labelOverlayPane');
+                    map.getPane('labelOverlayPane').style.zIndex = '550';
+                    map.getPane('labelOverlayPane').style.pointerEvents = 'none';
+                }
+
                 this._canvas = document.createElement('canvas');
                 this._canvas.style.position = 'absolute';
-                this._canvas.style.top = '0';
-                this._canvas.style.left = '0';
                 this._canvas.style.pointerEvents = 'none';
-                this._canvas.style.zIndex = '500';
 
-                map.getContainer().appendChild(this._canvas);
+                map.getPane('labelOverlayPane').appendChild(this._canvas);
                 this._ctx = this._canvas.getContext('2d');
                 this._ctx.imageSmoothingEnabled = false;
                 this._updateCanvasSize();
@@ -3744,6 +3829,11 @@
                 const size = map.getSize();
 
                 this._updateCanvasSize();
+
+                // Position canvas so its (0,0) aligns with the container's (0,0)
+                const topLeft = map.containerPointToLayerPoint(L.point(0, 0));
+                this._canvas.style.transform = `translate(${topLeft.x}px, ${topLeft.y}px)`;
+
                 ctx.clearRect(0, 0, size.x, size.y);
 
                 const OVERLAP = 1.0;
