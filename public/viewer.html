@@ -3574,6 +3574,7 @@
             }
             persistLabels();
             updateOverlay();
+            updateLabelsUI();
         }
 
         // Update labels UI list
@@ -3640,14 +3641,7 @@
         // Render grouped label card
         function renderLabelGroup(name, members) {
             const color = members[0].color;
-            // Deduplicate pixels across markers by lat/lon
-            const seen = new Set();
-            for (const l of members) {
-                if (l.pixels) {
-                    for (const p of l.pixels) { seen.add(`${p.lat},${p.lon}`); }
-                }
-            }
-            const totalPixels = seen.size || members.reduce((sum, l) => sum + l.pixel_count, 0);
+            const totalPixels = members.reduce((sum, l) => sum + l.pixel_count, 0);
             const markerCount = members.length;
             const markerNote = markerCount > 1 ? ` (${markerCount} markers)` : '';
             return `
