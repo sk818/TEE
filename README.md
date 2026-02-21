@@ -83,8 +83,8 @@ A consolidated **Export** dropdown provides three formats:
 
 2. **Pull and run from Docker Hub (easiest):**
    ```bash
-   docker pull sk818/tee:2.0.1
-   docker run -p 8001:8001 -v ~/tee_data:/data sk818/tee:2.0.1
+   docker pull sk818/tee:2.0.2
+   docker run -p 8001:8001 -v ~/tee_data:/data sk818/tee:2.0.2
    ```
 
    **Or build from source:**
