@@ -1176,12 +1176,10 @@
             return results;
         }
 
-        async function showLabelTimeline(labelId) {
-            const label = savedLabels.find(l => l.id === labelId);
-            if (!label) return;
-
-            // Consolidate all markers with the same label name
-            const labelGroup = savedLabels.filter(l => l.name === label.name);
+        async function showLabelTimeline(labelName) {
+            const labelGroup = savedLabels.filter(l => l.name === labelName);
+            if (labelGroup.length === 0) return;
+            const label = labelGroup[0];
 
             const overlay = document.getElementById('timeline-modal-overlay');
             const nameEl = document.getElementById('timeline-label-name');
@@ -3602,47 +3600,63 @@
                 return;
             }
 
-            listEl.innerHTML = savedLabels.map(label => renderLabelItem(label)).join('');
+            // Group labels by name
+            const groups = new Map();
+            for (const label of savedLabels) {
+                if (!groups.has(label.name)) {
+                    groups.set(label.name, []);
+                }
+                groups.get(label.name).push(label);
+            }
+
+            listEl.innerHTML = Array.from(groups.entries()).map(([name, members]) => renderLabelGroup(name, members)).join('');
 
             // Attach event listeners
             listEl.querySelectorAll('.timeline-label-btn').forEach(btn => {
                 btn.addEventListener('click', (e) => {
-                    const labelId = e.currentTarget.dataset.labelId;
-                    showLabelTimeline(labelId);
+                    const labelName = e.currentTarget.dataset.labelName;
+                    showLabelTimeline(labelName);
                 });
             });
 
             listEl.querySelectorAll('.toggle-label-btn').forEach(btn => {
                 btn.addEventListener('click', (e) => {
-                    const labelId = e.currentTarget.dataset.labelId;
-                    toggleLabelVisibility(labelId);
+                    const labelName = e.currentTarget.dataset.labelName;
+                    const members = savedLabels.filter(l => l.name === labelName);
+                    members.forEach(l => toggleLabelVisibility(l.id, true));
+                    updateOverlay();
+                    updateLabelsUI();
                 });
             });
 
             listEl.querySelectorAll('.delete-label-btn').forEach(btn => {
                 btn.addEventListener('click', (e) => {
-                    const labelId = e.currentTarget.dataset.labelId;
-                    deleteSavedLabel(labelId);
+                    const labelName = e.currentTarget.dataset.labelName;
+                    deleteLabelGroup(labelName);
                 });
             });
         }
 
-        // Render individual label item HTML
-        function renderLabelItem(label) {
+        // Render grouped label card
+        function renderLabelGroup(name, members) {
+            const color = members[0].color;
+            const totalPixels = members.reduce((sum, l) => sum + l.pixel_count, 0);
+            const markerCount = members.length;
+            const markerNote = markerCount > 1 ? ` (${markerCount} markers)` : '';
             return `
-                <div class="label-item" data-label-id="${label.id}" style="padding: 10px; margin-bottom: 10px; border: 1px solid #ddd; border-radius: 4px; background: white; border-left: 4px solid ${label.color};">
+                <div class="label-item" style="padding: 10px; margin-bottom: 10px; border: 1px solid #ddd; border-radius: 4px; background: white; border-left: 4px solid ${color};">
                   <div style="display: flex; align-items: flex-start; justify-content: space-between;">
                     <div style="flex: 1;">
                       <div style="display: flex; align-items: center; margin-bottom: 4px;">
-                        <div style="width: 14px; height: 14px; background: ${label.color}; border-radius: 2px; margin-right: 8px;"></div>
-                        <div style="font-weight: 600; font-size: 13px; color: #333;">${label.name}</div>
+                        <div style="width: 14px; height: 14px; background: ${color}; border-radius: 2px; margin-right: 8px;"></div>
+                        <div style="font-weight: 600; font-size: 13px; color: #333;">${name}${markerNote}</div>
                       </div>
-                      <div style="font-size: 11px; color: #999; margin-left: 22px;">${label.pixel_count.toLocaleString()} pixels, threshold: ${label.threshold}${label.mean_distance != null ? `, similarity: ${label.mean_distance.toFixed(2)} avg (${label.min_distance.toFixed(2)}–${label.max_distance.toFixed(2)})` : ''}</div>
+                      <div style="font-size: 11px; color: #999; margin-left: 22px;">${totalPixels.toLocaleString()} pixels, threshold: ${members[0].threshold}</div>
                     </div>
                     <div style="display: flex; gap: 6px;">
-                      <button class="timeline-label-btn" data-label-id="${label.id}" style="padding: 5px 8px; background: #f0f0ff; border: 1px solid #b0b0ff; border-radius: 3px; cursor: pointer; font-size: 12px; color: #5500cc; font-weight: 600;" title="Show coverage timeline across years">Timeline</button>
-                      <button class="toggle-label-btn" data-label-id="${label.id}" style="padding: 5px 8px; background: #e8f0ff; border: 1px solid #b0d4ff; border-radius: 3px; cursor: pointer; font-size: 12px; color: #0066cc; font-weight: 600;" title="Toggle visibility">Show</button>
-                      <button class="delete-label-btn" data-label-id="${label.id}" style="padding: 5px 8px; background: #ffe8e8; border: 1px solid #ffb0b0; border-radius: 3px; cursor: pointer; font-size: 12px; color: #cc0000; font-weight: 600;" title="Delete label">Delete</button>
+                      <button class="timeline-label-btn" data-label-name="${name}" style="padding: 5px 8px; background: #f0f0ff; border: 1px solid #b0b0ff; border-radius: 3px; cursor: pointer; font-size: 12px; color: #5500cc; font-weight: 600;" title="Show coverage timeline across years">Timeline</button>
+                      <button class="toggle-label-btn" data-label-name="${name}" style="padding: 5px 8px; background: #e8f0ff; border: 1px solid #b0d4ff; border-radius: 3px; cursor: pointer; font-size: 12px; color: #0066cc; font-weight: 600;" title="Toggle visibility">Show</button>
+                      <button class="delete-label-btn" data-label-name="${name}" style="padding: 5px 8px; background: #ffe8e8; border: 1px solid #ffb0b0; border-radius: 3px; cursor: pointer; font-size: 12px; color: #cc0000; font-weight: 600;" title="Delete label">Delete</button>
                     </div>
                   </div>
                 </div>
@@ -3805,14 +3819,38 @@
             console.log(`✓ Deleted label: ${labelId}`);
         }
 
-        // Toggle label visibility
-        function toggleLabelVisibility(labelId) {
+        // Toggle label visibility (silent=true skips UI refresh, for batch use)
+        function toggleLabelVisibility(labelId, silent) {
             const label = savedLabels.find(l => l.id === labelId);
             if (label) {
                 label.visible = !label.visible;
-                updateOverlay();
-                updateLabelsUI();
+                if (!silent) {
+                    updateOverlay();
+                    updateLabelsUI();
+                }
             }
+        }
+
+        // Delete all labels with a given name
+        function deleteLabelGroup(name) {
+            const members = savedLabels.filter(l => l.name === name);
+            if (!confirm(`Delete "${name}" (${members.length} marker${members.length > 1 ? 's' : ''})?`)) return;
+            const ids = new Set(members.map(l => l.id));
+            savedLabels = savedLabels.filter(l => !ids.has(l.id));
+            labelsExportedSinceChange = false;
+            persistentLabelMarkers = persistentLabelMarkers.filter(entry => {
+                if (ids.has(entry.labelId)) {
+                    for (const key of Object.keys(entry.markers)) {
+                        if (entry.markers[key] && maps[key]) maps[key].removeLayer(entry.markers[key]);
+                    }
+                    return false;
+                }
+                return true;
+            });
+            persistLabels();
+            updateLabelsUI();
+            updateOverlay();
+            console.log(`✓ Deleted label group: ${name} (${ids.size} markers)`);
         }
 
         // Toggle all overlays
