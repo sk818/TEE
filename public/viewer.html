@@ -1189,18 +1189,15 @@
                 progressEl.textContent = `Loading year ${years[i]} (${i + 1} of ${years.length})...`;
                 await new Promise(r => setTimeout(r, 0));
                 const data = await loadFaissDataOnly(currentViewportName, years[i]);
-                console.log(`[TIMELINE] Year ${years[i]}: loaded ${data.numVectors} vectors, gt:`, data.metadata.geotransform);
                 // Re-extract embeddings from THIS year's data at each source pixel
                 const searches = [];
                 for (const l of labelGroup) {
                     const emb = extractFromData(data, l.source_pixel.lat, l.source_pixel.lon);
-                    console.log(`[TIMELINE] Year ${years[i]}: extractFromData(${l.source_pixel.lat}, ${l.source_pixel.lon}) → ${emb ? 'found ' + emb.length + 'D, first vals: ' + emb[0].toFixed(2) + ',' + emb[1].toFixed(2) : 'NULL'}`);
                     if (emb) {
                         searches.push({ embedding: emb, threshSq: l.threshold * l.threshold });
                     }
                 }
                 const count = searches.length > 0 ? searchMultiInFaissData(data, searches) : 0;
-                console.log(`[TIMELINE] Year ${years[i]}: ${searches.length} searches → ${count} matches (threshold=${labelGroup[0].threshold})`);
                 results.push({ year: years[i], count });
             }
             return results;
