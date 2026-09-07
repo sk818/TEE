@@ -2134,13 +2134,17 @@ function generateConfig() {
     const field = document.getElementById('val-field-select').value;
     if (!field) { alert('Select a field first'); return; }
 
+    // Spatial MLP / U-Net can't go in `classifiers` -- scripts/tee_evaluate.py
+    // rejects those names (it's pixel-only). Keep them in a separate
+    // web-UI-only key so Upload Config still restores the checkboxes without
+    // breaking the CLI.
+    const SPATIAL_NAMES = ['spatial_mlp', 'spatial_mlp_5x5', 'unet'];
     const checkboxes = document.querySelectorAll('.val-clf-header input:checked');
     const classifiers = {};
     const regressors = {};
+    const spatialModels = {};
     Array.from(checkboxes).forEach(cb => {
         const name = cb.value;
-        // Skip spatial classifiers for large-area mode
-        if (name === 'spatial_mlp' || name === 'spatial_mlp_5x5' || name === 'unet') return;
         // Collect params grouped by variant index
         const variantSets = {};
         document.querySelectorAll(`.val-params input[data-clf="${name}"], .val-params select[data-clf="${name}"]`).forEach(el => {
@@ -2155,8 +2159,9 @@ function generateConfig() {
         const paramValue = indices.length <= 1
             ? (variantSets[indices[0]] || {})
             : indices.map(i => variantSets[i] || {});
-        // Guess: if name ends with _reg it's a regressor, otherwise classifier
-        if (name.endsWith('_reg')) {
+        if (SPATIAL_NAMES.includes(name)) {
+            spatialModels[name] = paramValue;
+        } else if (name.endsWith('_reg')) {
             regressors[name] = paramValue;
         } else {
             classifiers[name] = paramValue;
@@ -2169,9 +2174,11 @@ function generateConfig() {
         "fields": [{ "name": field, "type": getTaskOverride() }],
         "_fields_type": "auto | classification | regression",
         "classifiers": classifiers,
-        "_classifiers_available": "nn, rf, xgboost, mlp, spatial_mlp, spatial_mlp_5x5, unet",
+        "_classifiers_available": "nn, rf, xgboost, mlp",
         "regressors": regressors,
         "_regressors_available": "nn_reg, rf_reg, mlp_reg, xgboost_reg",
+        "spatial_models": spatialModels,
+        "_spatial_models": "spatial_mlp, spatial_mlp_5x5, unet -- Validation panel only, not for the CLI",
         // The CLI config format (consumed by scripts/tee_evaluate.py, which loops
         // a list of years -- one full single-year eval per year) predates the
         // train/test-year split and isn't train/test-split-aware. Source this
@@ -2188,8 +2195,10 @@ function generateConfig() {
         "output_dir": "./eval_output",
         "dry_run": false,
         "seed": getSeed(),
+        "eval_mode": getEvalMode(),
+        "_eval_mode": "learning_curve | kfold (Validation panel setting)",
         "kfold": getKfoldK(),
-        "_kfold": "folds for scripts/tee_evaluate.py, which cross-validates (2-20)",
+        "_kfold": "folds for k-fold cross-validation (2-20)",
     };
 
     // Spatial bounding boxes (if any)
@@ -2860,6 +2869,14 @@ function applyConfig(config) {
         const kEl = document.getElementById('val-kfold-k');
         if (kEl) kEl.value = String(config.kfold);
     }
+    // Evaluation method (learning curve vs k-fold CV)
+    if (['learning_curve', 'kfold'].includes(config.eval_mode)) {
+        const em = document.getElementById('val-eval-mode');
+        if (em && em.value !== config.eval_mode) {
+            for (const o of em.options) o.selected = (o.value === config.eval_mode);
+            em.dispatchEvent(new Event('change'));  // toggles the #val-kfold-k-wrap
+        }
+    }
 
     // Set year. The config format isn't train/test-split-aware (see
     // generateConfig's "years" comment) -- both selects default to the same
@@ -2878,14 +2895,21 @@ function applyConfig(config) {
     });
     const clfNames = Object.keys(config.classifiers || {});
     const regNames = Object.keys(config.regressors || {});
-    const allModels = [...clfNames, ...regNames];
+    // spatial_models: the web-UI-only Spatial MLP / U-Net selection (see
+    // generateConfig). Older configs may instead carry these in classifiers.
+    const spatialNames = Object.keys(config.spatial_models || {});
+    const allModels = [...clfNames, ...regNames, ...spatialNames];
     for (const name of allModels) {
         const cb = document.querySelector(`.val-clf-header input[value="${name}"]`);
         if (cb) cb.checked = true;
     }
 
     // Set classifier params (supports both object and list-of-objects format)
-    const allParams = { ...(config.classifiers || {}), ...(config.regressors || {}) };
+    const allParams = {
+        ...(config.classifiers || {}),
+        ...(config.regressors || {}),
+        ...(config.spatial_models || {}),
+    };
     for (const [clf, paramValue] of Object.entries(allParams)) {
         if (Array.isArray(paramValue)) {
             // Multiple variants: first remove existing variant rows, then create them

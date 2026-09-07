@@ -1426,3 +1426,50 @@ class TestMapModelPicker:
             "validation/test_map_model_picker.mjs failed:\n"
             f"{result.stdout}\n{result.stderr}"
         )
+
+
+# ──────────────────────────────────────────────────
+# 30. Generate Config / Upload Config round-trips the full state
+#     generateConfig must NOT drop spatial_mlp / spatial_mlp_5x5 / unet, and
+#     must record eval_mode; applyConfig must restore both. (User report:
+#     spatial models and the k-fold selection weren't restored on upload.)
+# ──────────────────────────────────────────────────
+
+class TestConfigRoundTrip:
+    def test_generate_config_keeps_spatial_models_and_eval_mode(self, all_script_text):
+        i = all_script_text.find("function generateConfig(")
+        j = all_script_text.find("\nfunction ", i + 1)
+        body = all_script_text[i:j if j != -1 else i + 4000]
+        assert "Skip spatial classifiers" not in body, (
+            "generateConfig must not drop spatial_mlp / spatial_mlp_5x5 / unet"
+        )
+        # spatial models go in their own key -- the CLI rejects them in `classifiers`
+        assert '"spatial_models": spatialModels' in body, (
+            "generateConfig must record spatial_mlp / spatial_mlp_5x5 / unet under spatial_models"
+        )
+        assert '"eval_mode": getEvalMode()' in body, (
+            "generateConfig must record the evaluation method (eval_mode)"
+        )
+
+    def test_apply_config_restores_spatial_models_and_eval_mode(self, all_script_text):
+        i = all_script_text.find("function applyConfig(")
+        j = all_script_text.find("\nfunction ", i + 1)
+        body = all_script_text[i:j if j != -1 else i + 5000]
+        assert "config.spatial_models" in body, (
+            "applyConfig must restore checkboxes/params from config.spatial_models"
+        )
+        assert "config.eval_mode" in body and "val-eval-mode" in body, (
+            "applyConfig must restore #val-eval-mode from config.eval_mode"
+        )
+
+    def test_mjs_roundtrip(self):
+        if not (ROOT / "node_modules" / "linkedom").is_dir():
+            pytest.skip("node_modules/linkedom not installed -- run `npm install` from the repo root")
+        result = subprocess.run(
+            ["node", str(ROOT / "validation" / "test_config_roundtrip.mjs")],
+            capture_output=True, text=True, timeout=30,
+        )
+        assert result.returncode == 0, (
+            "validation/test_config_roundtrip.mjs failed:\n"
+            f"{result.stdout}\n{result.stderr}"
+        )

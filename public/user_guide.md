@@ -965,8 +965,8 @@ Below the metrics table, a **predicted-vs-actual scatter plot** shows each model
 
 You can save and restore your evaluation settings using config files:
 
-- **Generate Config** — downloads a JSON file capturing your current settings (classifiers and their parameters, task type, year, sampling, random seed, bounding boxes)
-- **Upload Config** — loads a previously saved config file and fills in all the controls
+- **Generate Config** — downloads a JSON file capturing your current settings: every selected model and its parameters (including Spatial MLP and U-Net, under a `spatial_models` key), the evaluation method (learning curve or k-fold, plus the fold count), task type, year, sampling, random seed, and bounding boxes
+- **Upload Config** — loads a previously saved config file and restores all of those controls
 
 This is useful for reproducibility (re-running the same evaluation later, seed and all) or for running evaluations from the command line.
 
