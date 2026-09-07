@@ -2835,28 +2835,38 @@ Max Lon: ${bounds.maxLon.toFixed(4)}°
             }
             addYearViewportData = vp;
 
-            const configured = new Set(vp.years_configured || []);
-            const available = new Set(vp.years_available || []);
-            const allConfigured = configured; // years in config (processing or done)
+            const configured = new Set((vp.years_configured || []).map(Number));
+            const available = new Set((vp.years_available || []).map(Number));
+            // Configured years the fetch produced nothing for (no coverage).
+            // Left re-selectable so the user can retry if coverage is added later.
+            const noData = new Set((vp.years_no_data || []).map(Number));
 
             document.getElementById('addYearModalTitle').textContent = `Add Years to ${viewportName}`;
 
             const grid = document.getElementById('addYearGrid');
             grid.innerHTML = '';
             for (let year = 2018; year <= 2025; year++) {
-                const isConfigured = allConfigured.has(year);
+                const isConfigured = configured.has(year);
+                const isNoData = noData.has(year);
+                // "Configured and still working on it" -> locked; "configured but
+                // no data" -> unlocked so it can be retried; unconfigured -> addable.
+                const locked = isConfigured && !isNoData;
                 const label = document.createElement('label');
-                if (isConfigured) label.className = 'disabled';
+                if (locked) label.className = 'disabled';
                 const cb = document.createElement('input');
                 cb.type = 'checkbox';
                 cb.value = year;
                 cb.className = 'add-year-checkbox';
-                if (isConfigured) {
+                if (locked) {
                     cb.checked = true;
                     cb.disabled = true;
                 }
                 label.appendChild(cb);
-                const statusText = available.has(year) ? ` ${year} (ready)` : isConfigured ? ` ${year} (processing)` : ` ${year}`;
+                let statusText;
+                if (available.has(year)) statusText = ` ${year} (ready)`;
+                else if (isNoData) statusText = ` ${year} (no data — select to retry)`;
+                else if (isConfigured) statusText = ` ${year} (processing)`;
+                else statusText = ` ${year}`;
                 label.appendChild(document.createTextNode(statusText));
                 grid.appendChild(label);
             }

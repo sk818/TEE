@@ -50,6 +50,33 @@ def _get_pyramid_years(viewport_name):
     return sorted(years, reverse=True)
 
 
+def _pipeline_active(viewport_name):
+    """True if a data pipeline is currently running for this viewport.
+
+    Used to tell "still processing" apart from "processing finished and this
+    year has no data" -- a configured year with no pyramid is only genuinely
+    processing while a pipeline is live.
+    """
+    operation_id = f"{viewport_name}_full_pipeline"
+    with tasks_lock:
+        t = tasks.get(operation_id)
+        if t and t.get('status') in ('starting', 'in_progress'):
+            return True
+    # `tasks` only knows about pipelines this worker started; the progress
+    # file is durable across restarts/workers. Treat it as stale (not
+    # active) after 20 min without an update -- covers a crashed pipeline
+    # that never wrote a terminal status.
+    pf = PROGRESS_DIR / f"{viewport_name}_pipeline_progress.json"
+    try:
+        if pf.exists() and (_time.time() - pf.stat().st_mtime) < 1200:
+            with open(pf) as f:
+                status = json.load(f).get('status')
+            return status not in ('complete', 'error', 'cancelled', None)
+    except Exception:
+        pass
+    return False
+
+
 def list_viewports(request):
     """List all available viewports."""
     try:
@@ -75,12 +102,21 @@ def list_viewports(request):
                     viewport['created_by'] = cfg.get('created_by')
                     # Only show pyramid years the user actually requested
                     configured_set = {int(y) for y in years_configured}
-                    viewport['years_available'] = [y for y in all_pyramid_years if y in configured_set]
+                    years_available = [y for y in all_pyramid_years if y in configured_set]
+                    viewport['years_available'] = years_available
+                    # Configured years with no pyramid: "processing" only while
+                    # a pipeline is live, otherwise the fetch produced nothing
+                    # for that year (no coverage) -- surface that as "no data".
+                    missing = sorted(configured_set - set(years_available), reverse=True)
+                    viewport['years_no_data'] = (
+                        [] if (not missing or _pipeline_active(viewport_name)) else missing
+                    )
                 else:
                     viewport['years_configured'] = []
                     viewport['private'] = False
                     viewport['created_by'] = None
                     viewport['years_available'] = all_pyramid_years
+                    viewport['years_no_data'] = []
                 viewport_data.append(viewport)
             except Exception as e:
                 logger.warning(f"Error reading viewport {viewport_name}: {e}")
