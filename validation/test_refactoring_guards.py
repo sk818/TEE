@@ -1144,6 +1144,14 @@ class TestMapPreviewOverlay:
             f"{result.stdout}\n{result.stderr}"
         )
 
+    def test_preview_renders_true_pixels_not_smoothed(self, all_script_text):
+        # The preview PNG is a downsampled reprojection Leaflet then
+        # stretches; without this it looks blurry and hides pixel edges
+        # (Louis Driver). The GeoTIFF itself is full resolution.
+        i = all_script_text.find("function addMapPreview(")
+        body = all_script_text[i:i + 1200]
+        assert "imageRendering = 'pixelated'" in body or 'imageRendering = "pixelated"' in body
+
 
 # ──────────────────────────────────────────────────
 # 22. Leaving rectangle-draw mode in Validation

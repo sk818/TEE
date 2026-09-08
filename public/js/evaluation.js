@@ -1786,7 +1786,14 @@ function addMapPreview(preview, crs) {
     const layer = L.imageOverlay(preview.png, preview.bounds, {
         opacity: valMapPreviewOpacity,
         interactive: false,
+        className: 'val-map-preview-img',
     }).addTo(window.maps.rgb);
+    // Show true pixels rather than the browser's bilinear smoothing: the
+    // preview PNG is a downsampled (<=1024px) reprojection that Leaflet
+    // then stretches, which otherwise looks blurry and hides pixel
+    // boundaries (Louis Driver). The GeoTIFF itself is full resolution.
+    const imgEl = layer.getElement && layer.getElement();
+    if (imgEl) imgEl.style.imageRendering = 'pixelated';
     valMapPreviewLayers.push(layer);
     // The preview PNG itself is EPSG:4326 (web-overlay only); crs is the
     // real GeoTIFF projection, shown so the widget isn't mistaken for the
