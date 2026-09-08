@@ -456,6 +456,16 @@ if (_evalModeEl) {
     _evalModeEl.addEventListener('change', () => {
         const wrap = document.getElementById('val-kfold-k-wrap');
         if (wrap) wrap.style.display = getEvalMode() === 'kfold' ? '' : 'none';
+        // Spatial MLP works in k-fold; U-Net does not (it trains on image
+        // patches, not points). Warn if it's ticked when k-fold is picked.
+        if (getEvalMode() === 'kfold') {
+            const unet = document.querySelector('.val-clf-header input[value="unet"]');
+            const status = document.getElementById('val-status');
+            if (unet && unet.checked && status) {
+                status.textContent = "U-Net isn't available in k-fold mode — it'll be skipped. Use the learning curve to evaluate it.";
+                status.style.color = '#b5850b';
+            }
+        }
     });
 }
 

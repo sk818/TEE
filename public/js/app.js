@@ -178,6 +178,7 @@ const dependencyRegistry = [
             document.getElementById('seg-k-input').disabled = false;
             document.getElementById('seg-k-minus').disabled = false;
             document.getElementById('seg-k-plus').disabled = false;
+            document.getElementById('seg-seed-input').disabled = false;
             document.getElementById('seg-controls').style.opacity = '1';
         },
         onNotReady: () => {
@@ -192,6 +193,7 @@ const dependencyRegistry = [
             document.getElementById('seg-k-input').disabled = true;
             document.getElementById('seg-k-minus').disabled = true;
             document.getElementById('seg-k-plus').disabled = true;
+            document.getElementById('seg-seed-input').disabled = true;
             document.getElementById('seg-controls').style.opacity = '0.4';
         },
         satisfied: false

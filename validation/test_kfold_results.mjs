@@ -124,5 +124,28 @@ ok(tbody.children.length === 1, 'one summary row');
 ok(/Mean ± std/.test(tbody.children[0].textContent), 'summary row is labelled');
 ok(/0\.8500 ± 0\.0300/.test(tbody.children[0].textContent), 'summary shows mean ± std');
 
+// --- Spatial MLP renders in the k-fold tables (v1.9.0) -----------
+// run_kfold_cv now returns spatial_mlp / spatial_mlp_5x5 alongside the
+// pixel models; the results table just iterates _resultsTableModels, so
+// they must flow straight through.
+tbody.innerHTML = '';
+globalThis.__setModels(['rf', 'spatial_mlp', 'spatial_mlp_5x5']);
+globalThis.__setTask('classification');
+api.appendFoldResultRow(1, {
+    rf: { mean_f1: 0.80 },
+    spatial_mlp: { mean_f1: 0.7712 },
+    spatial_mlp_5x5: { mean_f1: 0.7934 },
+});
+ok(/0\.7712/.test(tbody.children[0].textContent), 'spatial_mlp fold metric renders');
+ok(/0\.7934/.test(tbody.children[0].textContent), 'spatial_mlp_5x5 fold metric renders');
+tbody.innerHTML = '';
+api.renderKfoldClassificationTable({
+    rf: { mean_f1: 0.80, std_f1: 0.02 },
+    spatial_mlp: { mean_f1: 0.77, std_f1: 0.04 },
+    spatial_mlp_5x5: { mean_f1: 0.79, std_f1: 0.05 },
+});
+ok(/0\.7700 ± 0\.0400/.test(tbody.children[0].textContent), 'spatial_mlp in the mean ± std row');
+ok(/0\.7900 ± 0\.0500/.test(tbody.children[0].textContent), 'spatial_mlp_5x5 in the mean ± std row');
+
 console.log(`\n${passed} passed, ${failed} failed`);
 process.exit(failed > 0 ? 1 : 0);

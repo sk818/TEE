@@ -311,11 +311,16 @@ Once a cluster is promoted, its row in the **Labels** column gets a few small ic
 | Step | What to do |
 |------|------------|
 | 1 | In Panel 6, set **k** (the number of clusters) using the slider — start with 5–10 |
-| 2 | Click **Go** — TEE runs K-means and colours each cluster on the map |
-| 3 | Review the cluster list: each entry shows a colour swatch, pixel count, and percentage of the viewport |
-| 4 | Name the clusters you want to keep, then click the **Promote** arrow (↗) next to each one. Or click **Promote All** to promote everything at once. |
+| 2 | Optionally set the **seed** (default 42) — see below |
+| 3 | Click **Go** — TEE runs K-means and colours each cluster on the map |
+| 4 | Review the cluster list: each entry shows a colour swatch, pixel count, and percentage of the viewport |
+| 5 | Name the clusters you want to keep, then click the **Promote** arrow (↗) next to each one. Or click **Promote All** to promote everything at once. |
 
 > **Tip:** If two clusters represent the same habitat type, give them the same name before promoting — they will be merged into a single label automatically.
+
+### The clustering seed
+
+K-means starts from a random pick of initial cluster centres (K-means++) and, on a large viewport, runs on a random subsample of the pixels — so two runs with the same **k** could previously land on slightly different clusters. The **seed** box (default **42**) fixes both of those random draws: **the same seed + the same k + the same year's embeddings gives you the same clusters every time.** Change the seed if you want to try a different partition of the same data — for example when a cluster mixes two habitat types and you want to see whether another starting point separates them.
 
 ### Suggested Workflow
 
@@ -790,7 +795,11 @@ When you pick **K-fold cross-validation**, a **Folds (k)** box appears (2–20, 
 
 #### What gets split
 
-Not every pixel in your shapefile — the points that **Max pixel samples** and **Sampling strategy** already drew from your polygons (exactly as for a learning-curve run). K-fold then partitions *that* set. It **ignores the train/test rectangles** entirely (a spatial split doesn't apply here); if you have rectangles drawn and switch to k-fold, TEE warns you first. It supports **pixel classifiers only** (k-NN, Random Forest, XGBoost, MLP) — Spatial MLP and U-Net are dropped with a note in the log.
+Not every pixel in your shapefile — the points that **Max pixel samples** and **Sampling strategy** already drew from your polygons (exactly as for a learning-curve run). K-fold then partitions *that* set. It **ignores the train/test rectangles** entirely (a spatial split doesn't apply here); if you have rectangles drawn and switch to k-fold, TEE warns you first.
+
+It supports the **pixel classifiers** (k-NN, Random Forest, XGBoost, MLP) **and the Spatial MLP models** (3×3, 5×5). **U-Net is not available in k-fold mode** — it trains on 256×256 image patches, not points, so there is no point-based fold split for it; use the learning curve to evaluate U-Net. If U-Net is ticked when you run a k-fold evaluation it is dropped with a note in the log.
+
+Spatial MLP in k-fold cross-validates over its **neighbourhood-feature points** — a *different*, generally larger set than the pixel points, extracted from the same downloaded 256×256 tile crops (≤ 5000 px per patch). Picking k-fold with a Spatial MLP model therefore triggers the tile download, so the run is slower than a pixel-only k-fold run.
 
 #### How the folds are chosen
 
@@ -807,6 +816,7 @@ TEE uses scikit-learn's standard splitters:
 - **Classification (`StratifiedKFold`)**: within *each class*, that class's points are shuffled and dealt across the *k* folds, so every fold ends up with roughly the same class proportions as the full sample. If a class has **fewer than *k* points**, it can't appear in every fold — it will be missing from some training folds (the run continues; scikit-learn just warns).
 - Each fold is the **test set exactly once**; the other *k*−1 folds are the training set. **Every sampled point is predicted exactly once**, as a held-out point.
 - If **Max pixel samples** is set *and* a fold's training set (the *k*−1 folds' worth) still exceeds it, that training set is randomly subsampled down to the cap, seeded per fold. In practice the sample drawn upstream is already under the cap, so this rarely fires.
+- **Spatial MLP** runs its *own* `StratifiedKFold` / `KFold` over the neighbourhood-feature points — an independent partition of a different set, seeded from the same **Random seed**. Each training fold then gets the same 4× flip augmentation the learning curve uses before the model is fitted. So in a run with both pixel and Spatial MLP models, "fold 3" is not the same held-out geography across the two families — each is a mean ± std over its own *k* folds.
 
 #### What you get
 
@@ -817,6 +827,8 @@ The panel then shows a **per-fold table**, a **"Mean ± std" summary row**, and 
 #### K-fold is *not* a spatial split
 
 Folds are assigned by **random shuffling of points, not by geography**. Two points from neighbouring locations — or from the same polygon — can land in different folds (one training, one test). So k-fold here carries the **same spatial-autocorrelation optimism as a random train/test split**: nearby points that look alike can let the model "cheat". If you need a spatially honest estimate, use the **learning curve** with a [Spatial Train/Test Split](#spatial-train-test-split-optional). K-fold's advantage is a **lower-variance estimate that tests on every sampled point**, not spatial rigour.
+
+For **Spatial MLP** this is doubly true: its features are 3×3 or 5×5 windows, so neighbouring windows overlap in the pixels they see, and two windows that straddle a fold boundary share input — the optimism is larger than for the pixel models. Treat a k-fold Spatial MLP score as a best case.
 
 ### Reproducibility: The Random Seed
 
@@ -984,6 +996,8 @@ python scripts/tee_evaluate.py --config eval_config.json --dry-run
 ```
 
 `scripts/tee_evaluate.py` runs **k-fold cross-validation** (not the learning curve). The config file carries the settings that matter for a reproducible headless run: `"seed"` (default 42) and `"kfold"` (number of folds, default 5) — both are written by **Generate Config**, so a config saved from the web UI reproduces the same numbers on the command line. Task type is auto-detected from the field unless the config's `fields[].type` forces it.
+
+The command-line runner is **pixel models only** (k-NN, RF, XGBoost, MLP). Spatial MLP k-fold is available in the web Validation panel — which fetches the tile crops the neighbourhood features need — but not from `tee_evaluate.py`; the `spatial_models` key in a saved config is ignored by the CLI.
 
 The output file (`results.json`) contains one JSON object per line — each line is a progress event or a result. You can open it in a text editor, or load it in Python:
 

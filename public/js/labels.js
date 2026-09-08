@@ -2993,21 +2993,26 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 
     // Segmentation event wiring
+    const _segSeed = () => {
+        const el = document.getElementById('seg-seed-input');
+        const s = el ? parseInt(el.value, 10) : 42;
+        return (isNaN(s) || s < 0) ? 42 : s;
+    };
     document.getElementById('seg-run-btn').addEventListener('click', () => {
         const k = parseInt(document.getElementById('seg-k-input').value) || 5;
-        window.runKMeans(Math.max(2, Math.min(20, k)));
+        window.runKMeans(Math.max(2, Math.min(20, k)), _segSeed());
     });
     document.getElementById('seg-k-minus').addEventListener('click', () => {
         const input = document.getElementById('seg-k-input');
         const k = Math.max(2, (parseInt(input.value) || 5) - 1);
         input.value = k;
-        if (!window.segRunning) window.runKMeans(k);
+        if (!window.segRunning) window.runKMeans(k, _segSeed());
     });
     document.getElementById('seg-k-plus').addEventListener('click', () => {
         const input = document.getElementById('seg-k-input');
         const k = Math.min(20, (parseInt(input.value) || 5) + 1);
         input.value = k;
-        if (!window.segRunning) window.runKMeans(k);
+        if (!window.segRunning) window.runKMeans(k, _segSeed());
     });
     document.getElementById('seg-k-input').addEventListener('change', () => {
         const input = document.getElementById('seg-k-input');
@@ -3015,6 +3020,12 @@ document.addEventListener('DOMContentLoaded', () => {
         if (isNaN(k) || k < 2) k = 2;
         if (k > 20) k = 20;
         input.value = k;
+    });
+    document.getElementById('seg-seed-input').addEventListener('change', () => {
+        const input = document.getElementById('seg-seed-input');
+        let s = parseInt(input.value, 10);
+        if (isNaN(s) || s < 0) s = 42;
+        input.value = s;
     });
     document.getElementById('seg-clear-btn').addEventListener('click', window.clearSegmentation);
     document.getElementById('seg-export-btn').addEventListener('click', window.saveAllClustersAsLabels);

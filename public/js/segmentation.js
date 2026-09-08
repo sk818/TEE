@@ -6,6 +6,7 @@
 let segWorker = null;
 let segAssignments = null;   // Int32Array, length N
 let segK = 5;
+let segSeed = 42;          // seed for the last / next k-means run
 let segOverlay = null;       // L.imageOverlay instance
 let segLabels = [];          // [{id, color, name, count}, ...]
 let segRunning = false;      // prevent concurrent runs
@@ -42,13 +43,40 @@ Object.defineProperty(window, 'segK', {
     set: (v) => { segK = v; },
     configurable: true,
 });
+Object.defineProperty(window, 'segSeed', {
+    get: () => segSeed,
+    set: (v) => { segSeed = v; },
+    configurable: true,
+});
+
+// ── Seeded PRNG ──
+
+// mulberry32 — tiny deterministic PRNG so auto-labelling is reproducible:
+// same seed + k + vectors => identical clusters. Used on the main thread
+// (buildSample) and, via a copy embedded in the worker blob below, for
+// K-means++ init and empty-cluster re-seeding. Good enough for uniform
+// sampling; not cryptographic.
+function mulberry32(seed) {
+    let a = seed >>> 0;
+    return function () {
+        a |= 0; a = (a + 0x6D2B79F5) | 0;
+        let t = Math.imul(a ^ (a >>> 15), 1 | a);
+        t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+        return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+    };
+}
+if (typeof window !== 'undefined') {
+    Object.defineProperty(window, 'mulberry32', { get: () => mulberry32, configurable: true });
+}
 
 // ── K-means Worker ──
 
 // Inline Web Worker for k-means clustering (K-means++ init, early stopping, subsampling)
 const segWorkerBlob = new Blob([`
+    ${mulberry32.toString()}
     self.onmessage = function(e) {
-        const {N, dim, k, maxIter} = e.data;
+        const {N, dim, k, maxIter, seed} = e.data;
+        const rand = mulberry32((seed >>> 0) ^ 0x9e3779b9);
         const embeddings = new Float32Array(e.data.vectors);
         const sampleIdx = e.data.sampleIdx ? new Uint32Array(e.data.sampleIdx) : null;
         const S = sampleIdx ? sampleIdx.length : N;
@@ -56,7 +84,7 @@ const segWorkerBlob = new Blob([`
         const centroids = new Float32Array(k * dim);
 
         // --- K-means++ initialization (on sample) ---
-        const firstPt = sampleIdx ? sampleIdx[Math.floor(Math.random() * S)] : Math.floor(Math.random() * N);
+        const firstPt = sampleIdx ? sampleIdx[Math.floor(rand() * S)] : Math.floor(rand() * N);
         centroids.set(embeddings.subarray(firstPt * dim, (firstPt + 1) * dim), 0);
 
         const minDist2 = new Float64Array(S);
@@ -76,7 +104,7 @@ const segWorkerBlob = new Blob([`
                 if (dist < minDist2[si]) minDist2[si] = dist;
                 totalWeight += minDist2[si];
             }
-            let r = Math.random() * totalWeight;
+            let r = rand() * totalWeight;
             let chosen = 0;
             for (let si = 0; si < S; si++) {
                 r -= minDist2[si];
@@ -124,7 +152,7 @@ const segWorkerBlob = new Blob([`
             }
             for (let c = 0; c < k; c++) {
                 if (counts[c] === 0) {
-                    const ri = sampleIdx ? sampleIdx[Math.floor(Math.random() * S)] : Math.floor(Math.random() * N);
+                    const ri = sampleIdx ? sampleIdx[Math.floor(rand() * S)] : Math.floor(rand() * N);
                     centroids.set(embeddings.subarray(ri * dim, (ri + 1) * dim), c * dim);
                 } else {
                     const cBase = c * dim;
@@ -186,14 +214,16 @@ Object.defineProperty(window, 'SEG_PALETTE', {
     configurable: true,
 });
 
-// Build Fisher-Yates partial-shuffle sample of given size from [0..N)
-function buildSample(N, size) {
+// Build Fisher-Yates partial-shuffle sample of given size from [0..N).
+// `rand` is a seeded PRNG (mulberry32) -- required, so the same seed
+// picks the same sample every run.
+function buildSample(N, size, rand) {
     if (size >= N) return null; // no subsampling needed
     const indices = new Uint32Array(size);
     const pool = new Uint32Array(N);
     for (let i = 0; i < N; i++) pool[i] = i;
     for (let i = 0; i < size; i++) {
-        const j = i + Math.floor(Math.random() * (N - i));
+        const j = i + Math.floor(rand() * (N - i));
         const tmp = pool[i]; pool[i] = pool[j]; pool[j] = tmp;
         indices[i] = pool[i];
     }
@@ -202,14 +232,23 @@ function buildSample(N, size) {
 
 // ── K-means Execution ──
 
-async function runKMeans(k) {
+async function runKMeans(k, seed) {
     if (!window.localVectors || segRunning) return;
     segRunning = true;
     segK = k;
+    // One seed drives the whole run (subsample + K-means++ init): same
+    // seed + k + vectors => identical clusters. Default 42, matching the
+    // Validation panel.
+    if (seed === undefined || seed === null || isNaN(seed)) {
+        const sEl = document.getElementById('seg-seed-input');
+        seed = sEl ? (parseInt(sEl.value, 10) || 42) : 42;
+    }
+    segSeed = seed;
     const btn = document.getElementById('seg-run-btn');
     btn.disabled = true;
     btn.style.opacity = '0.5';
     document.getElementById('seg-k-input').value = k;
+    { const sEl = document.getElementById('seg-seed-input'); if (sEl) sEl.value = seed; }
 
     // Clear old overlay immediately so user sees a clean map during recomputation
     if (segOverlay && window.maps.panel5 && window.maps.panel5.hasLayer(segOverlay)) {
@@ -282,7 +321,7 @@ async function runKMeans(k) {
     const transferables = [embCopy];
 
     const sampleSize = Math.min(Math.max(5000, k * 500), N);
-    const sample = buildSample(N, sampleSize);
+    const sample = buildSample(N, sampleSize, mulberry32(seed >>> 0));
     const sampleBuf = sample ? sample.buffer : null;
     if (sampleBuf) transferables.push(sampleBuf);
 
@@ -342,7 +381,7 @@ async function runKMeans(k) {
     };
 
     segWorker.postMessage(
-        {vectors: embCopy, N, dim, k, maxIter: 20, sampleIdx: sampleBuf},
+        {vectors: embCopy, N, dim, k, maxIter: 20, sampleIdx: sampleBuf, seed: seed >>> 0},
         transferables
     );
 }

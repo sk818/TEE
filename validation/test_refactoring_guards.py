@@ -20,6 +20,9 @@ import pytest
 ROOT = Path(__file__).resolve().parent.parent
 VIEWER = ROOT / "public" / "viewer.html"
 JS_DIR = ROOT / "public" / "js"
+# tessera-eval lives in its own repo; a couple of guards below read its
+# source when a sibling checkout is present.
+TESSERA_EVAL = ROOT.parent / "tessera-eval" / "tessera_eval"
 
 
 # ──────────────────────────────────────────────────
@@ -623,6 +626,8 @@ class TestLargeAreaEvaluation:
         )
 
     def test_server_has_multi_shapefile(self):
+        if not (TESSERA_EVAL / "server.py").is_file():
+            pytest.skip("tessera-eval source not checked out alongside blore")
         source = (TESSERA_EVAL / "server.py").read_text()
         assert "clear-shapefiles" in source, (
             "server.py must support multi-shapefile upload (clear-shapefiles endpoint)"
@@ -1323,6 +1328,17 @@ class TestKfoldCvOption:
             f"{result.stdout}\n{result.stderr}"
         )
 
+    def test_kfold_supports_spatial_mlp_not_unet(self, html, all_script_text):
+        # v1.9.0: Spatial MLP works in k-fold; U-Net does not. The old
+        # "pixel models only" wording must be gone from the eval-mode hint.
+        hint = re.search(r'id="val-eval-mode-hint"[^>]*>([^<]*)<', html)
+        assert hint, "val-eval-mode-hint not found in viewer.html"
+        text = hint.group(1)
+        assert "pixel models only" not in text
+        assert "Spatial MLP" in text and "not U-Net" in text
+        # The eval-mode change handler warns when U-Net is ticked for k-fold.
+        assert "U-Net isn't available in k-fold mode" in all_script_text
+
 
 # ──────────────────────────────────────────────────
 # 27. PNG + CSV export of the validation visualisations
@@ -1471,5 +1487,42 @@ class TestConfigRoundTrip:
         )
         assert result.returncode == 0, (
             "validation/test_config_roundtrip.mjs failed:\n"
+            f"{result.stdout}\n{result.stderr}"
+        )
+
+
+# ──────────────────────────────────────────────────
+# 29. Auto-label k-means is seeded
+#     segmentation.js: mulberry32 PRNG + a `seed` (default 42,
+#     #seg-seed-input) threaded through buildSample and the worker blob so
+#     the same seed + k + vectors gives identical clusters. No bare
+#     Math.random() left in the k-means path.
+#     Behaviour: validation/test_segmentation_seed.mjs.
+# ──────────────────────────────────────────────────
+
+class TestSegmentationSeed:
+    def test_seed_input_present(self, html):
+        assert 'id="seg-seed-input"' in html, "viewer.html should have the #seg-seed-input control"
+
+    def test_no_bare_math_random_in_kmeans(self):
+        src = (JS_DIR / "segmentation.js").read_text()
+        region = src[src.index("K-means Worker"):src.index("Segmentation Overlay")]
+        assert "Math.random(" not in region, (
+            "the k-means path (worker blob + runKMeans + buildSample) must use "
+            "the seeded mulberry32 RNG, not Math.random()"
+        )
+
+    def test_runkmeans_threads_seed(self):
+        src = (JS_DIR / "segmentation.js").read_text()
+        assert "function runKMeans(k, seed)" in src
+        assert "seed: seed >>> 0" in src, "runKMeans must post the seed to the worker"
+
+    def test_mjs_behaviour(self):
+        result = subprocess.run(
+            ["node", str(ROOT / "validation" / "test_segmentation_seed.mjs")],
+            capture_output=True, text=True, timeout=30,
+        )
+        assert result.returncode == 0, (
+            "validation/test_segmentation_seed.mjs failed:\n"
             f"{result.stdout}\n{result.stderr}"
         )
