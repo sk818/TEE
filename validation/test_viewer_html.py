@@ -302,7 +302,11 @@ class TestClassificationOverlay:
         assert "pixelated" in fn_body
 
     def test_nearest_centroid_loop(self, script_text):
-        fn_body = script_text.split("function renderManualClassification")[1][:10000]
+        # The per-pixel nearest-centroid classification lives in
+        # computeManualClassification() (shared by the Panel 5 overlay and
+        # the classified-pixel export); renderManualClassification() just
+        # renders its result.
+        fn_body = script_text.split("function computeManualClassification")[1][:10000]
         # Should iterate over all pixels
         assert "for (let i = 0; i < N; i++)" in fn_body
         # Should compute distance to centroids

@@ -1500,6 +1500,57 @@ class TestConfigRoundTrip:
 
 
 # ──────────────────────────────────────────────────
+# 30. Regression-map clamp toggle (Louis Driver)
+#     #val-map-clamp (checked by default) -> create-map body `clamp`.
+#     Backend: clamp=false skips reg_clip; map_ready carries `clamped`.
+# ──────────────────────────────────────────────────
+
+class TestClampCheckbox:
+    def test_checkbox_and_body_field(self, html, all_script_text):
+        assert 'id="val-map-clamp"' in html and "checked" in html.split('id="val-map-clamp"')[1][:40]
+        assert "clamp:" in all_script_text and "val-map-clamp" in all_script_text
+
+    def test_backend_honours_clamp_false(self):
+        if not (TESSERA_EVAL / "server.py").is_file():
+            pytest.skip("tessera-eval source not checked out alongside blore")
+        src = (TESSERA_EVAL / "server.py").read_text()
+        assert 'clamp_regression = bool(body.get("clamp", True))' in src
+        assert '"clamped": reg_clip is not None' in src
+
+
+# ──────────────────────────────────────────────────
+# 31. Classified-pixel export for manual labelling (Louis Driver)
+#     "Classified pixels (not points)" in the export menu makes the vector
+#     formats export computeManualClassification() vectorised per class,
+#     via manualExportFeatures(). Behaviour: test_classified_pixel_export.mjs.
+# ──────────────────────────────────────────────────
+
+class TestClassifiedPixelExport:
+    def test_wiring(self):
+        src = (JS_DIR / "labels.js").read_text()
+        assert "function computeManualClassification(" in src
+        assert "function classifiedPixelFeatures(" in src
+        assert "function manualExportFeatures(" in src
+        # the three vector exports must go through manualExportFeatures()
+        assert src.count("manualLabels.flatMap(l => expandLabelToFeatures(l))") <= 2, (
+            "geojson / kml / shapefile exports should call manualExportFeatures(), "
+            "not manualLabels.flatMap(expandLabelToFeatures) directly"
+        )
+        assert "Classified pixels (not points)" in src
+        assert "_setExportClassifiedPixels" in src
+
+    def test_mjs_behaviour(self):
+        result = subprocess.run(
+            ["node", str(ROOT / "validation" / "test_classified_pixel_export.mjs")],
+            capture_output=True, text=True, timeout=30,
+        )
+        assert result.returncode == 0, (
+            "validation/test_classified_pixel_export.mjs failed:\n"
+            f"{result.stdout}\n{result.stderr}"
+        )
+
+
+# ──────────────────────────────────────────────────
 # 29. Auto-label k-means is seeded
 #     segmentation.js: mulberry32 PRNG + a `seed` (default 42,
 #     #seg-seed-input) threaded through buildSample and the worker blob so

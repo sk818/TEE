@@ -2029,6 +2029,12 @@ async function createMap() {
                 ...(taskForCreateMap() ? { task: taskForCreateMap() } : {}),
                 seed: getSeed(),
                 ...(mapYear ? { map_year: mapYear } : {}),
+                // Regression only; default true (backend default). Unchecking
+                // writes raw predictions instead of clamping to the training
+                // target span.
+                clamp: document.getElementById('val-map-clamp')
+                    ? document.getElementById('val-map-clamp').checked
+                    : true,
             }),
             signal: evalAbortController.signal,
         });

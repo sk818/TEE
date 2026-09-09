@@ -212,6 +212,8 @@ The **Export** button and its menu live in the Labelling-mode header bar, and it
 
 > **How export works:** For pixel labels (auto-labelling or similarity search), TEE converts the raster (grid of coloured pixels) to vector polygons (outlines) for the GeoJSON, Shapefile, and KML formats. This keeps files compact — a label covering 50,000 pixels becomes a few polygon shapes rather than 50,000 points — and import converts the polygons back to pixels. CSV is the exception noted above: one representative point per label, never the full shape.
 >
+> **Classified pixels (not points):** the export menu has a checkbox with this label. Tick it and the vector formats (GeoJSON / Shapefile / KML) export the **full manual-labelling classification** — every viewport pixel assigned to a class by polygon interiors and threshold-gated nearest-centroid, vectorised into one polygon set per class, exactly as a promoted auto-label cluster would be. This is what to use to turn a manual-labelling result into a map figure. It needs a **similarity threshold** set on your classes (otherwise only hand-drawn polygon interiors are classified); if nothing is classified, the export falls back to the placed labels. The classification matches the Panel 5 overlay you see on screen.
+>
 > **CSV import** expects a header row with latitude/longitude columns (`lat`/`lon`, `latitude`/`longitude`, or `x`/`y`) and, optionally, `name` and `code` columns. Multiple rows sharing the same name are grouped back into a single label, the same way GeoJSON import works. KML is export-only — TEE cannot import KML files back in.
 
 ### Sharing Labels
@@ -905,7 +907,7 @@ Only one model generates the map. Spatial MLP and U-Net never appear here — th
 - Class names are stored as metadata tags in the file (`class_1`, `class_2`, etc.), along with `classifier`, `train_year`, and `map_year`
 - The coordinate system is the **native UTM zone** of the source embeddings — the model predicts directly on that grid, with no embedding resampling. If a map area spans more than one UTM zone, the file uses the majority zone and only the minority-zone blocks' predictions are reprojected into it (never the embeddings themselves).
 - Compressed with DEFLATE for small file sizes
-- For a **regression** map (continuous target field), pixels are float32 with NaN for no-data, and predictions are **clamped to the range of the training targets** — a random-forest or MLP regressor can otherwise extrapolate to physically impossible values (negative heights, biomass above anything observed) on land unlike its training data. The clamp bounds are written as `clamp_min` / `clamp_max` tags and shown in the progress log.
+- For a **regression** map (continuous target field), pixels are float32 with NaN for no-data. By default predictions are **clamped to the range of the training targets** — a random-forest or MLP regressor can otherwise extrapolate to physically impossible values (negative heights, biomass above anything observed) on land unlike its training data. The clamp bounds are written as `clamp_min` / `clamp_max` tags and shown in the progress log. Uncheck **Clamp regression output to the training range** (next to the Create Map button) to write the raw predictions instead — useful for seeing *where* a model extrapolates, at the cost of some physically implausible values. Classification maps are unaffected by this checkbox.
 
 #### Limitations
 

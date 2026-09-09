@@ -1043,27 +1043,16 @@ function triggerManualClassification() {
     manualClassifyDebounceTimer = setTimeout(renderManualClassification, 300);
 }
 
-function renderManualClassification() {
-    // Only render in manual label mode
-    if (window.currentPanelMode !== 'labelling' || labelMode !== 'manual') {
-        if (manualClassifyOverlay && window.maps.panel5 && window.maps.panel5.hasLayer(manualClassifyOverlay)) {
-            window.maps.panel5.removeLayer(manualClassifyOverlay);
-        }
-        manualClassifyOverlay = null;
-        return;
-    }
-
-    // Collect visible labels that have embeddings
+// Panel-5 nearest-centroid classification of every viewport pixel:
+// polygon interiors first (always assigned), then threshold-gated
+// nearest-centroid for the rest. Shared by the on-screen overlay
+// (renderManualClassification) and the classified-pixel export.
+// Returns { classNames, classColorMap, assignments (Int8Array, -1 =
+// unassigned), N } or null when there's nothing to classify.
+function computeManualClassification() {
     const activeLabels = manualLabels.filter(l => l.visible && l.embedding);
-    if (activeLabels.length === 0 || !window.localVectors) {
-        if (manualClassifyOverlay && window.maps.panel5 && window.maps.panel5.hasLayer(manualClassifyOverlay)) {
-            window.maps.panel5.removeLayer(manualClassifyOverlay);
-        }
-        manualClassifyOverlay = null;
-        return;
-    }
+    if (activeLabels.length === 0 || !window.localVectors) return null;
 
-    // Build class name → index + color window.maps
     const classNames = [];   // unique label names
     const classColorMap = {};
     for (const label of activeLabels) {
@@ -1072,19 +1061,16 @@ function renderManualClassification() {
             classNames.push(label.name);
         }
     }
-    if (classNames.length === 0) return;
+    if (classNames.length === 0) return null;
 
     const dim = window.localVectors.dim;
     const N = window.localVectors.numVectors;
-    const coords = window.localVectors.coords;
     const emb = window.localVectors.values;
     const gt = window.localVectors.metadata.geotransform;
-    const grid = window.localVectors.gridLookup;
     // Dequantize inline: real = emb*scale[d] + min[d] (identity for float legacy).
     const { scale, min } = window.getDequant(window.localVectors);
 
-    // -1 = unassigned
-    const assignments = new Int8Array(N).fill(-1);
+    const assignments = new Int8Array(N).fill(-1); // -1 = unassigned
 
     // Pass 1: rasterize polygon interiors — always assigned
     for (const label of activeLabels) {
@@ -1108,11 +1094,10 @@ function renderManualClassification() {
         if (!label.embedding) continue;
         const t = label.threshold || 0;
         if (t <= 0) continue;
-        const classIdx = classNames.indexOf(label.name);
         sources.push({
             emb: new Float32Array(label.embedding),
             threshSq: t * t,
-            classIdx
+            classIdx: classNames.indexOf(label.name)
         });
     }
 
@@ -1138,6 +1123,61 @@ function renderManualClassification() {
             if (bestClass >= 0) assignments[i] = bestClass;
         }
     }
+
+    return { classNames, classColorMap, assignments, N };
+}
+
+// Vector polygon features for the current manual classification, one set
+// per class (like a promoted auto-label cluster). Empty array when
+// nothing is classified. Caller must have run ensureD3Contour().
+function classifiedPixelFeatures() {
+    const cls = computeManualClassification();
+    if (!cls || !window.localVectors) return [];
+    const { classNames, classColorMap, assignments, N } = cls;
+    const coords = window.localVectors.coords;
+    const gt = window.localVectors.metadata.geotransform;
+
+    const perClass = classNames.map(() => []);
+    for (let i = 0; i < N; i++) {
+        const c = assignments[i];
+        if (c < 0) continue;
+        perClass[c].push(coords[i * 2], coords[i * 2 + 1]);
+    }
+
+    const features = [];
+    classNames.forEach((name, ci) => {
+        if (perClass[ci].length === 0) return;
+        const code = (manualLabels.find(l => l.name === name) || {}).code || '';
+        const props = { name, color: classColorMap[name], code: code || '', type: 'classified' };
+        for (const f of vectorizePixelCoords(perClass[ci], gt)) {
+            f.properties = props;
+            features.push(f);
+        }
+    });
+    return features;
+}
+
+function renderManualClassification() {
+    // Only render in manual label mode
+    if (window.currentPanelMode !== 'labelling' || labelMode !== 'manual') {
+        if (manualClassifyOverlay && window.maps.panel5 && window.maps.panel5.hasLayer(manualClassifyOverlay)) {
+            window.maps.panel5.removeLayer(manualClassifyOverlay);
+        }
+        manualClassifyOverlay = null;
+        return;
+    }
+
+    const cls = computeManualClassification();
+    if (!cls) {
+        if (manualClassifyOverlay && window.maps.panel5 && window.maps.panel5.hasLayer(manualClassifyOverlay)) {
+            window.maps.panel5.removeLayer(manualClassifyOverlay);
+        }
+        manualClassifyOverlay = null;
+        return;
+    }
+    const { classNames, classColorMap, assignments, N } = cls;
+    const coords = window.localVectors.coords;
+    const gt = window.localVectors.metadata.geotransform;
 
     // Pre-parse colors
     const classColors = classNames.map(n => {
@@ -1521,6 +1561,10 @@ function exportManualLabels() {
         <button style="display: block; width: 100%; padding: 8px 12px; background: none; border: none; color: #ccc; font-size: 12px; text-align: left; cursor: pointer; border-top: 1px solid #444;" onmouseover="this.style.background='#444'" onmouseout="this.style.background='none'" onclick="doExportManualLabels('shapefile')" title="Export labels as ESRI Shapefile">ESRI Shapefile (ZIP)</button>
         <button style="display: block; width: 100%; padding: 8px 12px; background: none; border: none; color: #ccc; font-size: 12px; text-align: left; cursor: pointer; border-top: 1px solid #444;" onmouseover="this.style.background='#444'" onmouseout="this.style.background='none'" onclick="doExportManualLabels('csv')" title="Export one point per label (lat/lon columns) — for Google Earth Engine, ArcGIS Add XY Data, or a spreadsheet">CSV (points)</button>
         <button style="display: block; width: 100%; padding: 8px 12px; background: none; border: none; color: #ccc; font-size: 12px; text-align: left; cursor: pointer; border-top: 1px solid #444;" onmouseover="this.style.background='#444'" onmouseout="this.style.background='none'" onclick="doExportManualLabels('kml')" title="Export labels as KML for Google Earth / GEE / ArcGIS">KML</button>
+        <label id="labelling-export-classified" style="display: flex; align-items: center; gap: 6px; padding: 8px 12px; color: #ccc; font-size: 11px; border-top: 1px solid #444; cursor: pointer;" title="Tick to make GeoJSON / Shapefile / KML export the full pixel classification (one polygon set per class, like a promoted auto-label cluster) instead of one feature per placed label. Needs similarity thresholds set on your classes.">
+            <input type="checkbox" ${_exportClassifiedPixels ? 'checked' : ''} onchange="window._setExportClassifiedPixels(this.checked)" style="margin:0;">
+            Classified pixels (not points)
+        </label>
         <button style="display: block; width: 100%; padding: 8px 12px; background: none; border: none; color: #ccc; font-size: 12px; text-align: left; cursor: pointer; border-top: 1px solid #444;" onmouseover="this.style.background='#444'" onmouseout="this.style.background='none'" onclick="document.getElementById('labelling-export-menu').style.display='none'; exportMapAsJPG()" title="Save current map view as image">Map (JPG)</button>
     `;
     btn.parentElement.style.position = 'relative';
@@ -1557,7 +1601,7 @@ async function doExportManualLabels(format) {
         downloadFile(JSON.stringify(data, null, 2), `manual-labels-${window.currentViewportName || 'export'}.json`, 'application/json');
     } else if (format === 'geojson') {
         await ensureD3Contour();
-        const features = manualLabels.flatMap(l => expandLabelToFeatures(l));
+        const features = manualExportFeatures();
         const geojson = { type: 'FeatureCollection', features };
         downloadFile(JSON.stringify(geojson, null, 2), `manual-labels-${window.currentViewportName || 'export'}.geojson`, 'application/geo+json');
     } else if (format === 'shapefile') {
@@ -1567,6 +1611,25 @@ async function doExportManualLabels(format) {
     } else if (format === 'kml') {
         await exportManualLabelsKML();
     }
+}
+
+// When "Classified pixels" is ticked in the export menu, the vector
+// formats (GeoJSON / Shapefile / KML) export the full nearest-centroid
+// classification as one polygon set per class -- like a promoted
+// auto-label cluster -- instead of one feature per placed label. Lets a
+// manual-labelling result be turned into a map figure the same way
+// auto-labelling can (Louis Driver). Caller must have run ensureD3Contour().
+let _exportClassifiedPixels = false;
+
+function manualExportFeatures() {
+    if (_exportClassifiedPixels) {
+        const f = classifiedPixelFeatures();
+        if (f.length) return f;
+        // Nothing classified (no thresholds set / no polygons) -- fall back
+        // to the per-label features rather than exporting an empty file.
+        console.warn('[EXPORT] "Classified pixels" ticked but nothing is classified; exporting placed labels instead.');
+    }
+    return manualLabels.flatMap(l => expandLabelToFeatures(l));
 }
 
 // One row per label (not per exploded polygon feature) using each label's
@@ -1642,7 +1705,7 @@ function geojsonToKML(featureCollection) {
 
 async function exportManualLabelsKML() {
     await ensureD3Contour();
-    const features = manualLabels.flatMap(l => expandLabelToFeatures(l));
+    const features = manualExportFeatures();
     const kml = geojsonToKML({ type: 'FeatureCollection', features });
     downloadFile(kml, `manual-labels-${window.currentViewportName || 'export'}.kml`, 'application/vnd.google-earth.kml+xml');
 }
@@ -1675,7 +1738,7 @@ async function exportManualLabelsShapefile() {
         }
 
         // Vectorize pixel labels into polygons for compact export
-        const features = manualLabels.flatMap(l => expandLabelToFeatures(l));
+        const features = manualExportFeatures();
 
         const gj = { type: 'FeatureCollection', features };
 
@@ -3607,6 +3670,9 @@ window.updateImportBadge = updateImportBadge;
 // Import/Export
 window.exportManualLabels = exportManualLabels;
 window.doExportManualLabels = doExportManualLabels;
+window._setExportClassifiedPixels = (v) => { _exportClassifiedPixels = !!v; };
+window.classifiedPixelFeatures = classifiedPixelFeatures;
+window.computeManualClassification = computeManualClassification;
 window.downloadFile = downloadFile;
 window.exportManualLabelsShapefile = exportManualLabelsShapefile;
 window.importManualLabels = importManualLabels;

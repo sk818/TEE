@@ -1085,6 +1085,11 @@
                         <option value="">Auto (best from last run)</option>
                     </select>
 
+                    <label style="display:flex; align-items:center; gap:6px; margin-top:8px; font-size:12px; color:#bbb; cursor:pointer;" title="Regression maps only. On (default): predictions are clamped to the span of your training targets, so a model can't paint physically impossible values (negative heights etc.) on unfamiliar land. Off: the raw predictions are written — useful to see where a model extrapolates.">
+                        <input type="checkbox" id="val-map-clamp" checked style="margin:0;">
+                        Clamp regression output to the training range
+                    </label>
+
                     <button id="val-create-map-btn" class="validation-run-btn" disabled style="width:100%; margin-top:8px;" title="Train on all labels and predict every pixel in green map areas. Requires map bounding boxes and a prior evaluation run.">Create Map</button>
                 </div>
 

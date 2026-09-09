@@ -157,10 +157,21 @@ class TestPanel6EmptyMirror:
 
 class TestExportConsistency:
     def test_all_exports_use_expand_label_to_features(self, js):
-        """All export paths use expandLabelToFeatures (not per-point expansion)."""
-        calls = re.findall(r"manualLabels\.flatMap\(l\s*=>\s*expandLabelToFeatures\(l\)\)", js)
-        assert len(calls) >= 3, (
-            f"Expected ≥3 expandLabelToFeatures calls (geojson, shapefile, share), found {len(calls)}"
+        """Export paths vectorize labels rather than doing per-point
+        expansion. The manual-labelling menu (geojson / shapefile / kml)
+        now goes through manualExportFeatures(), which returns either the
+        per-label features (expandLabelToFeatures) or, when "Classified
+        pixels" is ticked, classifiedPixelFeatures(). The combined
+        Share/buildShapefileZip path still calls expandLabelToFeatures
+        directly."""
+        assert "function manualExportFeatures(" in js
+        assert "manualLabels.flatMap(l => expandLabelToFeatures(l))" in js, (
+            "manualExportFeatures must still fall back to expandLabelToFeatures"
+        )
+        menu_exports = re.findall(r"const features = manualExportFeatures\(\)", js)
+        assert len(menu_exports) >= 2, (
+            f"Expected geojson + kml (+shapefile) to call manualExportFeatures(), "
+            f"found {len(menu_exports)}"
         )
 
     def test_json_export_unchanged(self, js):
