@@ -16,8 +16,9 @@ With TEE you can:
 
 - **Explore** any 5km × 5km area on Earth, for any year from 2018 to 2025
 - **Find similar pixels** instantly — double-click anywhere to highlight all similar locations across your area
-- **Label habitats** using automatic clustering, manual pins, or polygon drawing
-- **Evaluate classifiers** on your own ground-truth data at any scale — from a single field to an entire country
+- **Label habitats** using automatic clustering (with a settable seed, so a run is reproducible), manual pins, or polygon drawing — and export the result as classified-pixel polygons, not just points
+- **Evaluate classifiers or regressors** on your own ground-truth data at any scale — from a single field to an entire country — with a learning curve or k-fold cross-validation, an honest spatial hold-out, and PNG/CSV export of every panel
+- **Generate classification or regression maps** as GeoTIFFs for GIS, with an in-browser preview
 - **Compare years** side by side to detect land-use change
 
 > **Privacy by design:** Similarity searches and labelling run entirely in your browser — no data is sent to the server. ML evaluation runs on your own machine. Ground-truth shapefiles never leave your computer. The hosted server only serves map tiles and satellite imagery.
@@ -283,7 +284,9 @@ When you draw a polygon, TEE needs to decide how to represent the land cover ins
 
 ### Classification Overlay
 
-Once you have two or more label classes defined, click **Classify** in Panel 5 to generate a full-viewport classification. TEE assigns every pixel to whichever label class it most closely resembles based on embedding distance. This gives you a quick preview of what a habitat map based on your labels would look like.
+Once you have two or more label classes defined, click **Classify** in Panel 5 to generate a full-viewport classification. TEE assigns every pixel to whichever label class it most closely resembles based on embedding distance (polygon interiors first, then threshold-gated nearest-centroid for the rest). This gives you a quick preview of what a habitat map based on your labels would look like.
+
+To take this classification out of TEE, tick **Classified pixels (not points)** in the label export menu before exporting to GeoJSON / Shapefile / KML — see [Exporting Labels](#exporting-labels). It needs a similarity threshold set on your classes.
 
 ---
 

@@ -12,9 +12,10 @@ A web-based tool for exploring and classifying land cover from Sentinel-2 satell
 
 - **Explore** any 5km x 5km area on Earth using 128-dimensional Tessera embeddings (2018-2025)
 - **Find similar pixels** instantly — double-click anywhere to highlight similar locations
-- **Label habitats** using K-means clustering, manual pins, polygon drawing, and standard schemas (UKHab, EUNIS, HOTW)
-- **Evaluate classifiers** (k-NN, Random Forest, XGBoost, MLP, Spatial MLP, U-Net) on ground-truth shapefiles at any scale
-- **Generate classification maps** as GeoTIFFs for use in GIS
+- **Label habitats** using K-means clustering (with a settable seed for reproducible clusters), manual pins, polygon drawing, and standard schemas (UKHab, EUNIS, HOTW)
+- **Export** hand-drawn or classified pixels as GeoJSON / Shapefile / KML polygons, not just points
+- **Evaluate classifiers** (k-NN, Random Forest, XGBoost, MLP, Spatial MLP, U-Net) for **classification or regression**, with **learning curves** or **k-fold cross-validation**, on ground-truth shapefiles at any scale — with a spatial hold-out, separate train/test years, or a separate held-out test file, all keyed off one random seed, and PNG/CSV export of every panel
+- **Generate classification / regression maps** as GeoTIFFs (native UTM, optional value clamping) for use in GIS, with an in-browser preview
 - **Compare years** side by side to detect land-use change
 
 > **Privacy by design:** Similarity searches and labelling run entirely in your browser. ML evaluation runs on your own compute server. Ground-truth data never leaves your machine.
@@ -56,15 +57,17 @@ Then open http://localhost:8001 and go to Validation > Evaluate.
 
 The **[User Guide](public/user_guide.md)** covers everything:
 
-- Creating and managing viewports
+- Creating and managing viewports (and the "Add Years" flow / no-data years)
 - Similarity search and labelling workflows
 - Classification schemas (UKHab, EUNIS, HOTW)
-- Auto-labelling with K-means
+- Auto-labelling with K-means, including the clustering seed
 - Compute server setup (local, GPU, all-local modes)
-- Validation with learning curves and confusion matrices
-- Classifier parameters and hyperparameter variants
-- Spatial train/test splits
-- Exporting labels and generating classification maps
+- Validation: learning curves, k-fold cross-validation (mechanics and fold selection), confusion matrices, regression metrics and scatter
+- Classification vs regression, the task-type override, and one settable random seed
+- Classifier parameters and hyperparameter variants; the Spatial MLP and U-Net models
+- Spatial train/test splits, separate train/test years, and a separate held-out test file
+- PNG / CSV export of the validation panels (hi-res)
+- Exporting labels (points or classified-pixel polygons) and generating classification / regression maps, with projection guidance and value clamping
 - Sharing labels with other users
 - CLI for headless batch evaluation
 
